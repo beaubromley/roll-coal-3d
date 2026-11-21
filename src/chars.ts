@@ -1,10 +1,12 @@
-import { LoadAssetContainerAsync, AssetContainer, Scene, TransformNode, AnimationGroup, AbstractMesh, Skeleton } from "@babylonjs/core";
+import { Color3, LoadAssetContainerAsync, AssetContainer, Scene, TransformNode, AnimationGroup, AbstractMesh, Skeleton } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 
 /** One animated, skinned character instance (own skeleton and animation groups). */
 export interface CharInstance {
   holder: TransformNode;
   meshes: AbstractMesh[];
+  /** this instance's own (cloned) materials, e.g. to recolor clothes by name */
+  materials: { name: string; set(hex: string): void }[];
   skeleton: Skeleton | null;
   idle: AnimationGroup | null; walk: AnimationGroup | null; run: AnimationGroup | null;
   /** find a bone's transform node by (suffix of) its name, e.g. "Head" */
@@ -47,12 +49,17 @@ export class CharKit {
     roots.forEach((r) => { r.parent = holder; });
     holder.scaling.setAll(target / this.height);
     const meshes = roots.flatMap((r) => r.getChildMeshes(false)) as AbstractMesh[];
-    const find = (re: RegExp) => inst.animationGroups.find((g) => re.test(g.name)) ?? null;
+    const find = (re: RegExp) => inst.animationGroups.find((g) => new RegExp("(^|[|:_ ])" + re.source + "$", "i").test(g.name)) ?? inst.animationGroups.find((g) => re.test(g.name)) ?? null;
     const idle = find(/idle/i), walk = find(/walk/i) ?? (inst.animationGroups.length === 1 ? inst.animationGroups[0] : null), run = find(/run/i);
     inst.animationGroups.forEach((g) => { g.stop(); g.enableBlending = true; g.blendingSpeed = 0.07; g.loopAnimation = true; });
     const nodes = roots.flatMap((r) => [r, ...r.getChildTransformNodes(false)]);
     return {
-      holder, meshes, skeleton: inst.skeletons[0] ?? null, idle, walk, run,
+      holder, meshes,
+      materials: [...new Set(meshes.map((m) => m.material).filter(Boolean))].map((mt: any) => ({
+        name: String(mt.name).replace(id, ""),
+        set: (hex: string) => { const col = Color3.FromHexString(hex).toLinearSpace(); if ("albedoColor" in mt) mt.albedoColor = col; else if ("diffuseColor" in mt) mt.diffuseColor = col; },
+      })),
+      skeleton: inst.skeletons[0] ?? null, idle, walk, run,
       bone: (name) => nodes.find((n) => n.name.replace(id, "").replace(/^.*:/, "").toLowerCase() === name.toLowerCase()) ?? null,
       dispose: () => { inst.animationGroups.forEach((g) => g.dispose()); holder.dispose(false, true); },
     };

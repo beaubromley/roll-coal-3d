@@ -122,24 +122,33 @@ export class Human {
     const sc = this.scene, c = ck.instantiate(1.78);
     this.ch = c; c.holder.parent = this.root;
     for (const m of c.meshes) this.meshes.push(m as Mesh);
-    for (const n of ["Head", "Spine2", "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "LeftArm", "RightArm", "LeftForeArm", "RightForeArm"]) this.bones[n] = c.bone(n);
+    // bone names differ between rigs (Mixamo vs Quaternius): look each role up under both
+    const alias: Record<string, string[]> = {
+      Head: ["Head_end", "HeadTop_End", "Head"], Spine2: ["Chest", "Spine2", "Torso"],
+      LeftUpLeg: ["UpperLeg.L", "LeftUpLeg"], RightUpLeg: ["UpperLeg.R", "RightUpLeg"], LeftLeg: ["LowerLeg.L", "LeftLeg"], RightLeg: ["LowerLeg.R", "RightLeg"],
+    };
+    for (const [k, names] of Object.entries(alias)) this.bones[k] = names.map((n) => c.bone(n)).find(Boolean) ?? null;
+    // flat-colour models (Quaternius): tint clothes per person, and drop any bundled hat so the hard hat reads
+    const tint = (re: RegExp, hex: string | undefined) => { if (hex) for (const mt of c.materials) if (re.test(mt.name)) mt.set(hex); };
+    tint(/^Beige/, o.shirt); tint(/^LightBlue/, o.pants); tint(/^Skin/, o.skin);
+    for (const mesh of c.meshes) if (/head/i.test(mesh.name) && /^Beige/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
     const mk = (mesh: Mesh, hex: string) => { mesh.material = m(sc, hex); mesh.parent = this.root; this.meshes.push(mesh); this.ppe.push(mesh); return mesh; };
     const parts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
     const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
     const hatCol = o.hat ?? "#f4f4f4";
     if (o.hat) {
-      add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 14, slice: 0.55 }, sc), hatCol, "Head", 0, 0.16, 0.02);
-      add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, 0.165, 0.03);
-      add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, 0.16, 0.19);
-      add(MeshBuilder.CreateBox("rdg", { width: 0.035, height: 0.025, depth: 0.27 }, sc), hatCol, "Head", 0, 0.31, 0.02);
+      add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 14, slice: 0.55 }, sc), hatCol, "Head", 0, -0.1, 0.0);
+      add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, -0.095, 0.01);
+      add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, -0.1, 0.17);
+      add(MeshBuilder.CreateBox("rdg", { width: 0.035, height: 0.025, depth: 0.27 }, sc), hatCol, "Head", 0, 0.05, 0.0);
     }
     if (o.vest) {
-      add(MeshBuilder.CreateBox("v", { width: 0.5, height: 0.52, depth: 0.3 }, sc), "#e8f542", "Spine2", 0, -0.04, 0.02);
-      add(MeshBuilder.CreateBox("vs1", { width: 0.51, height: 0.06, depth: 0.31 }, sc), "#cfd3d6", "Spine2", 0, -0.12, 0.02);
-      add(MeshBuilder.CreateBox("vs2", { width: 0.51, height: 0.06, depth: 0.31 }, sc), "#cfd3d6", "Spine2", 0, 0.08, 0.02);
+      add(MeshBuilder.CreateBox("v", { width: 0.4, height: 0.5, depth: 0.25 }, sc), "#e8f542", "Spine2", 0, -0.04, 0.02);
+      add(MeshBuilder.CreateBox("vs1", { width: 0.41, height: 0.06, depth: 0.26 }, sc), "#cfd3d6", "Spine2", 0, -0.12, 0.02);
+      add(MeshBuilder.CreateBox("vs2", { width: 0.41, height: 0.06, depth: 0.26 }, sc), "#cfd3d6", "Spine2", 0, 0.08, 0.02);
     }
     if (o.detail) {
-      add(MeshBuilder.CreateBox("gl", { width: 0.15, height: 0.05, depth: 0.03 }, sc), "#9fd3e8", "Head", 0, 0.08, 0.115);
+      add(MeshBuilder.CreateBox("gl", { width: 0.15, height: 0.05, depth: 0.03 }, sc), "#9fd3e8", "Head", 0, -0.12, 0.105);
     }
     this.chParts = parts;
     this.ppeLocal = new Vector3();

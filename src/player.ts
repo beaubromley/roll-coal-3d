@@ -25,6 +25,7 @@ export class Player {
   onLockFailed: () => void = () => {};
   enabled = true;
   gScale = 1;
+  private camY: number | null = null;
   moved = 0;
   private fallStart = 0;
   onFall: (m: number) => void = () => {};
@@ -152,11 +153,18 @@ export class Player {
     // axis-separated horizontal motion + resolve
     this.pos.x += vx * dt; this.pos.z += vz * dt;
     this.resolveXZ(feet);
+    // walking down stairs: stay glued to the next tread instead of free-falling onto it (no bouncing)
+    let snapped = false;
+    if (this.grounded && this.vel.y <= 0) {
+      const s2 = this.support(this.pos.x, this.pos.z, this.pos.y);
+      const drop = this.pos.y - s2;
+      if (drop > 0.0005 && drop <= STEP) { this.pos.y = s2; this.vel.y = 0; snapped = true; this.fallStart = s2; }
+    }
     // vertical
     const prevY = this.pos.y;
-    this.pos.y += this.vel.y * dt;
+    if (!snapped) this.pos.y += this.vel.y * dt;
     const sup = this.support(this.pos.x, this.pos.z, prevY);
-    if (this.pos.y <= sup + 0.0001 && this.vel.y <= 0) {
+    if (snapped || (this.pos.y <= sup + 0.0001 && this.vel.y <= 0)) {
       if (!this.grounded) {
         const fall = this.fallStart - sup;
         if (fall > 3.2) this.onFall(fall);
@@ -174,6 +182,9 @@ export class Player {
     if (moving) { this.stepAcc += dt * speed; if (this.stepAcc > 1.9) { this.stepAcc = 0; this.onStep(); } }
     this.moved = moving ? speed : 0;
 
+    // smoothed height for the camera so steps don't jolt the view
+    if (this.camY === null || Math.abs(this.pos.y - this.camY) > 2.5) this.camY = this.pos.y;
+    else this.camY += (this.pos.y - this.camY) * Math.min(1, dt * 14);
     // body
     this.body.root.position.copyFrom(this.pos);
     if (len > 0) {
@@ -186,12 +197,12 @@ export class Player {
     this.body.root.setEnabled(this.third);
 
     // camera
-    const eye = this.eyePos();
+    const eye = new Vector3(this.pos.x, (this.camY ?? this.pos.y) + EYE, this.pos.z);
     if (!this.third) {
       this.cam.position.copyFrom(eye);
       this.cam.setTarget(eye.add(this.lookDir()));
     } else {
-      const target = new Vector3(this.pos.x, this.pos.y + 1.55, this.pos.z);
+      const target = new Vector3(this.pos.x, (this.camY ?? this.pos.y) + 1.55, this.pos.z);
       const back = this.lookDir().scale(-1);
       const sideOff = new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).scale(0.45);
       const anchor = target.add(sideOff);

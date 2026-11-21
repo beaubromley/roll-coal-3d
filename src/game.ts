@@ -1,13 +1,15 @@
 import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport } from "@babylonjs/core";
 import { Rig, F } from "./rig";
 import { Player } from "./player";
-import { Sim, WELL, clockString, formationAt, poreAt, fracAt } from "./sim";
+import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP } from "./sim";
 import { Sfx } from "./audio";
 import { UI, Who, Choice, $ } from "./ui";
 import { Human } from "./npcs";
 import { pushOutXZ } from "./builder";
+import { Mini } from "./minigames";
+import { defineMissions } from "./tasks";
 
-interface Step {
+export interface Step {
   text: string;
   at?: () => Vector3 | null;
   label?: string;
@@ -16,7 +18,7 @@ interface Step {
   watch?: () => boolean;
   enter?: () => void;
 }
-interface Mission {
+export interface Mission {
   id: string; title: string; sub: string; steps: Step[];
   trigger: () => boolean; start?: () => void; end?: () => void;
   a?: number; m?: number; priority?: boolean;
@@ -57,12 +59,46 @@ export class Game {
   constructor(public scene: Scene, public rig: Rig, public player: Player, public sim: Sim, public sfx: Sfx, public ui: UI,
               env: { hemi: HemisphericLight; sun: DirectionalLight }) {
     this.env = env;
-    this.ui.onPanelClose = () => { this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
+    this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
     this.player.onStep = () => this.sfx.step();
     this.buildAmbient();
     this.buildMissions();
     this.wirePause();
+  }
+
+  // ---------- minigames + shortcut debts ----------
+  mini = new Mini(this);
+  miniTick: ((dt: number) => void) | null = null;
+  /** Consequences of taking the "wing it" shortcut: they come due later (sim minutes or depth), with a chance. */
+  debts: { id: string; dueT?: number; dueDepth?: number; chance: number; run: () => void }[] = [];
+  addDebt(d: { id: string; afterMin?: number; atDepth?: number; chance: number; run: () => void }) {
+    this.debts.push({ id: d.id, dueT: d.afterMin !== undefined ? this.sim.s.t + d.afterMin : undefined, dueDepth: d.atDepth, chance: d.chance, run: d.run });
+  }
+  private processDebts() {
+    if (!this.debts.length || this.paused) return;
+    const s = this.sim.s;
+    for (const d of [...this.debts]) {
+      const due = (d.dueT !== undefined && s.t >= d.dueT) || (d.dueDepth !== undefined && s.depth >= d.dueDepth);
+      if (!due) continue;
+      this.debts.splice(this.debts.indexOf(d), 1);
+      if (Math.random() <= d.chance) d.run();
+    }
+  }
+  shortcutToast(what: string) { this.ui.toast("SHORTCUT TAKEN", what); this.sfx.click(); }
+  openMini(html: string, tick?: (dt: number) => void, wide = false): HTMLElement {
+    this.player.enabled = false; this.player.unlock(); this.live = false;
+    const p = this.ui.panel(html, { wide, closable: false }); this.ui.closable = false;
+    let last = performance.now();
+    this.miniTick = tick ?? null;
+    (this.ui as any).panelTick = () => { const n = performance.now(); const dt = Math.min(0.05, (n - last) / 1000); last = n; this.miniTick?.(dt); };
+    return p;
+  }
+  closeMini() { this.ui.closable = true; this.ui.closePanel(); }
+  forceStall(why = "") {
+    const s = this.sim.s; if (s.stallT > 0) return;
+    s.stallT = 12; s.stats.stalls++; s.cost += 8000; s.auto.on = false;
+    this.radio("dale", why || "Motor stalled! Picking up off bottom — somebody guessed wrong on those weights.", 9000);
   }
 
   // ---------- pause ----------
@@ -179,56 +215,92 @@ export class Game {
   openCabin() {
     const s = this.sim.s;
     const render = () => {
-      const k = s.kick;
+      const k = s.kick, a = s.auto, opt = this.flags.drillOffWopt as number | undefined;
+      const busy = s.mode === "tripping" || s.mode === "casing";
       return `<div class="eyebrow">Driller's Cabin</div><h2>Driller's Console</h2>
         <div class="grid2">
           <div>
-            ${this.statRow("Depth", fmt(s.depth) + " ft")}${this.statRow("Formation", formationAt(s.depth).name)}
-            ${this.statRow("ROP", fmt(s.rop) + " ft/hr")}${this.statRow("Bit health", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : "")}
-            ${this.statRow("Standpipe pressure", fmt(s.spp) + " psi")}${this.statRow("Mud weight", s.mw.toFixed(2) + " ppg")}
-            ${this.statRow("Pit volume", fmt(s.pit) + " bbl", k.active ? "bad" : "")}${this.statRow("Mode", s.mode.toUpperCase())}
+            <div class="row"><span>Depth</span><b id="c_depth"></b></div><div class="row"><span>Formation</span><b id="c_form"></b></div>
+            <div class="row"><span>ROP</span><b id="c_rop"></b></div><div class="row"><span>Diff pressure</span><b id="c_dp"></b></div>
+            <div class="row"><span>Bit health</span><b id="c_bit"></b></div><div class="row"><span>Standpipe pressure</span><b id="c_spp"></b></div>
+            <div class="row"><span>Mud weight</span><b id="c_mw"></b></div><div class="row"><span>Pit volume</span><b id="c_pit"></b></div>
+            <div class="row"><span>Mode</span><b id="c_mode"></b></div>
           </div>
           <div>
-            <div class="hint">Weight on bit: <b id="wv">${s.wobTarget}</b> klbs</div>
-            <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${s.mode === "tripping" || s.mode === "casing" ? "disabled" : ""}/>
-            <div class="hint" style="margin-top:10px">Pump rate: <b id="fv">${s.flowTarget}</b> gpm</div>
+            <div class="autobox">
+              <div class="row"><span>AUTODRILLER</span><b id="a_state" class="warn">${a.on ? "ON" : "OFF"}</b></div>
+              <div class="hint">WOB set point: <b id="aw">${a.wob}</b> klbs${opt ? ` · drill-off knee ≈ ${opt}` : ""}</div>
+              <input type="range" id="a_wob" min="5" max="60" step="1" value="${a.wob}" />
+              <div class="hint">ROP limit: <b id="ar">${a.rop}</b> ft/hr</div>
+              <input type="range" id="a_rop" min="40" max="380" step="10" value="${a.rop}" />
+              <div class="hint">Differential pressure limit: <b id="ad">${a.dp}</b> psi <span style="color:var(--red)">(motor stalls above 1,650)</span></div>
+              <input type="range" id="a_dp" min="300" max="2400" step="50" value="${a.dp}" />
+              <div class="hint" id="a_lim" style="min-height:18px"></div>
+              <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button><button class="b alt" id="a_test" ${busy ? "disabled" : ""}>Drill-off test</button></div>
+            </div>
+            <div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
+            <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
+            <div class="hint" style="margin-top:6px">Pump rate: <b id="fv">${s.flowTarget}</b> gpm</div>
             <input type="range" id="flow" min="400" max="1000" step="50" value="${s.flowTarget}"/>
-            <p class="hint">More WOB = faster, but the bit wears like a cheap tire. Flow lifts ROP and ECD.</p>
           </div>
         </div>
         <div class="btns" id="cbtn"></div>`;
     };
     const p = this.open(render(), { wide: true, live: true });
     const bind = () => {
-      const wob = p.querySelector<HTMLInputElement>("#wob")!, flow = p.querySelector<HTMLInputElement>("#flow")!;
-      wob.oninput = () => { s.wobTarget = Number(wob.value); p.querySelector("#wv")!.textContent = wob.value; };
-      wob.onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus? Your funeral, boss. Bit's gonna scream."); else this.radio("dale", `Copy. ${s.wobTarget} on the weight.`, 4000); };
-      flow.oninput = () => { s.flowTarget = Number(flow.value); p.querySelector("#fv")!.textContent = flow.value; };
+      const q = <T extends HTMLElement>(id: string) => p.querySelector<T>("#" + id)!;
+      const sl = (id: string, out: string, apply: (v: number) => void) => { const el = q<HTMLInputElement>(id); el.oninput = () => { apply(Number(el.value)); q(out).textContent = el.value; }; };
+      sl("wob", "wv", (v) => { s.wobTarget = v; });
+      sl("flow", "fv", (v) => { s.flowTarget = v; });
+      sl("a_wob", "aw", (v) => { s.auto.wob = v; });
+      sl("a_rop", "ar", (v) => { s.auto.rop = v; });
+      sl("a_dp", "ad", (v) => { s.auto.dp = v; });
+      q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
+      q("a_toggle").onclick = () => {
+        const a = s.auto;
+        if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
+        const opt = this.flags.drillOffWopt as number | undefined, notes: string[] = [];
+        if (a.dp > 1650) notes.push("A diff limit over 1,650 won't stop a motor stall. That's not a limit, that's a suggestion.");
+        if (a.rop < 100) notes.push("That ROP limit is going to strangle us. We'll crawl.");
+        if (opt && a.wob > opt + 6) notes.push(`Weight over the knee (≈${opt}) just wears the bit and buys nothing.`);
+        if (opt && a.wob < opt - 8) notes.push(`We're leaving ROP on the table below ≈${opt} klbs.`);
+        if (!opt) notes.push("No drill-off, so those weights are a guess. Hope you're feeling lucky.");
+        a.on = true; this.sfx.good();
+        this.radio("dale", notes.length ? notes[0] : "Autodriller's in. Set points look sane — nice.", 8000);
+        if (!notes.length || notes.length === 1 && !!opt) this.gain(0.15, 0);
+        this.rerenderCabin(p, render, bind);
+      };
+      q("a_test").onclick = () => this.mini.drillOff((r) => {
+        if (r.skipped) { this.shortcutToast("Skipped the test."); this.radio("dale", "Guessing it is."); }
+        else { this.gain(r.score > 0.7 ? 0.15 : 0, 0); this.radio("dale", r.score > 0.7 ? `Knee's around ${Math.round(r.value ?? 28)}. That tracks.` : `You're calling it ${Math.round(r.value ?? 28)}. Okay.`, 6000); }
+        this.openCabin();
+      });
       const btns: string[] = [];
       if (s.kick.active && !s.kick.shut) btns.push(`<button class="b red" data-a="shut">SHUT IN THE WELL</button>`);
       if (s.kill.stage === "flowcheck") btns.push(`<button class="b green" data-a="open">Flow check OK — open BOP & resume</button>`);
       if ((s.mode === "drilling" || s.mode === "connection") && !s.kick.active) btns.push(`<button class="b alt" data-a="trip">Trip for a new bit</button>`);
-      if (s.depth >= WELL.td - 0.5 && (s.mode === "idle")) btns.push(`<button class="b green" data-a="casing">Run 9⅝″ casing & cement</button>`);
+      if (s.depth >= WELL.td - 0.5 && s.mode === "idle") btns.push(`<button class="b green" data-a="casing">Run 9⅝″ casing & cement</button>`);
       btns.push(`<button class="b alt" data-close>Close</button>`);
-      const box = p.querySelector<HTMLElement>("#cbtn")!;
-      box.innerHTML = btns.join("");
+      const box = q("cbtn"); box.innerHTML = btns.join("");
       this.closeBtn(p);
       box.querySelectorAll<HTMLButtonElement>("[data-a]").forEach((b) => b.onclick = () => this.cabinAction(b.dataset.a!));
     };
     bind();
-    let lastBtn = "";
-    this.ui.panelOpen && (this.ui as any).panelTick === undefined;
+    let sig0 = "";
     (this.ui as any).panelTick = () => {
-      // refresh the live numbers only (cheap): re-render rows when mode/stage changes
-      const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td);
-      if (sig !== lastBtn) { lastBtn = sig; const keepW = s.wobTarget, keepF = s.flowTarget; p.innerHTML = render(); s.wobTarget = keepW; s.flowTarget = keepF; bind(); }
-      const rows = p.querySelectorAll(".row b");
-      if (rows.length >= 8) {
-        rows[0].textContent = fmt(s.depth) + " ft"; rows[2].textContent = fmt(s.rop) + " ft/hr"; rows[3].textContent = Math.round(s.bit) + "%";
-        rows[4].textContent = fmt(s.spp) + " psi"; rows[5].textContent = s.mw.toFixed(2) + " ppg"; rows[6].textContent = fmt(s.pit) + " bbl"; rows[7].textContent = s.mode.toUpperCase();
-        rows[1].textContent = formationAt(s.depth).name;
-      }
+      const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
+      if (sig !== sig0) { sig0 = sig; this.rerenderCabin(p, render, bind); }
+      const set = (id: string, v: string, cls = "") => { const e = p.querySelector<HTMLElement>("#" + id); if (e) { e.textContent = v; if (cls !== undefined) e.className = cls; } };
+      set("c_depth", fmt(s.depth) + " ft"); set("c_form", formationAt(s.depth).name); set("c_rop", fmt(s.rop) + " ft/hr");
+      set("c_dp", fmt(s.dp) + " psi" + (s.stallT > 0 ? " · STALLED" : ""), s.dp > STALL_DP * 0.9 || s.stallT > 0 ? "bad" : "");
+      set("c_bit", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : ""); set("c_spp", fmt(s.spp) + " psi"); set("c_mw", s.mw.toFixed(2) + " ppg");
+      set("c_pit", fmt(s.pit) + " bbl", s.kick.active ? "bad" : ""); set("c_mode", s.mode.toUpperCase());
+      const lim = p.querySelector<HTMLElement>("#a_lim");
+      if (lim) lim.innerHTML = s.auto.on ? `Holding <b>${s.wobTarget.toFixed(1)}</b> klbs — limited by <b class="${s.auto.limit === "WOB" ? "ok" : "warn"}">${s.auto.limit === "WOB" ? "your WOB set point" : s.auto.limit === "ROP" ? "the ROP limit" : "the diff-pressure limit"}</b>` : "";
     };
+  }
+  private rerenderCabin(p: HTMLElement, render: () => string, bind: () => void) {
+    const ky = p.scrollTop; p.innerHTML = render(); bind(); p.scrollTop = ky;
   }
   cabinAction(a: string) {
     const s = this.sim.s;
@@ -251,37 +323,68 @@ export class Game {
     }
   }
 
+  /** how many ppg the current situation demands (kill weight / Delaware), so the hopper can offer a matching dose */
+  hopperNeed(): number {
+    const s = this.sim.s;
+    if (s.kill.stage === "weightup" && s.kill.kmw > 0) return Math.max(0, s.kill.kmw - s.mwTarget + 0.05);
+    if (s.depth >= 4500 && s.depth < 6200) return Math.max(0, 10.9 - s.mwTarget + 0.05);
+    return 0;
+  }
   openHopper() {
     const s = this.sim.s;
-    const render = () => `<div class="eyebrow">Mud System</div><h2>Mud Hopper</h2>
+    const render = () => {
+      const need = this.hopperNeed(), last = this.flags.lastDose as string | undefined;
+      return `<div class="eyebrow">Mud System</div><h2>Mud Hopper</h2>
       <div class="grid2"><div>
-        ${this.statRow("Mud weight (active)", s.mw.toFixed(2) + " ppg")}
-        ${this.statRow("Target", s.mwTarget.toFixed(1) + " ppg")}
-        ${this.statRow("Effective (w/ ECD)", (this.sim.mwEff).toFixed(2) + " ppg")}
-        ${this.statRow("LCM in system", s.lcm.toFixed(0) + " ppb")}
+        <div class="row"><span>Mud weight (active)</span><b id="h_mw"></b></div>
+        <div class="row"><span>Effective (w/ ECD)</span><b id="h_eff"></b></div>
+        <div class="row"><span>LCM in system</span><b id="h_lcm"></b></div>
+        ${last ? `<div class="row"><span>Last batch</span><b>${last}</b></div>` : ""}
       </div><div>
-        ${this.statRow("Pore pressure here", poreAt(s.depth).toFixed(1) + " ppg")}
-        ${this.statRow("Fracture limit", fracAt(s.depth).toFixed(1) + " ppg")}
+        <div class="row"><span>Pore pressure here</span><b>${poreAt(s.depth).toFixed(1)} ppg</b></div>
+        <div class="row"><span>Fracture limit</span><b>${fracAt(s.depth).toFixed(1)} ppg</b></div>
+        ${need > 0.05 ? `<div class="note">The job needs about <b>+${need.toFixed(2)} ppg</b> more.</div>` : ""}
         <p class="hint">Stay between the two. Under pore = kick. Over frac = losses. Weight-up isn't instant — it circulates in.</p>
       </div></div>
-      <div class="btns">
-        <button class="b" data-a="up">+0.2 ppg barite ($6k)</button>
-        <button class="b alt" data-a="dn">−0.2 ppg dilute ($1k)</button>
-        <button class="b" data-a="lcm">Pump LCM pill (+15 ppb, $20k)</button>
-        <button class="b alt" data-close>Close</button></div>`;
+      <div class="hint" style="margin-top:8px">Feed barite — pick a dose, then hold the button and release on the mark:</div>
+      <div class="btns">${[0.2, 0.5, 1.0, 1.5].map((d) => `<button class="b" data-dose="${d}">+${d} ppg</button>`).join("")}${need > 0.05 ? `<button class="b green" data-dose="${need.toFixed(2)}">Match the job (+${need.toFixed(2)})</button>` : ""}</div>
+      <div class="btns"><button class="b alt" data-a="dn">−0.2 ppg dilute ($1k)</button><button class="b" data-a="lcm">LCM pill (+15 ppb, $20k)</button><button class="b alt" data-close>Close</button></div>`;
+    };
     const p = this.open(render(), { live: true, wide: true });
     const wire = () => {
       this.closeBtn(p);
+      p.querySelectorAll<HTMLButtonElement>("[data-dose]").forEach((b) => b.onclick = () => { this.sfx.click(); this.dose(Number(b.dataset.dose)); });
       p.querySelectorAll<HTMLButtonElement>("[data-a]").forEach((b) => b.onclick = () => {
         const a = b.dataset.a;
-        if (a === "up" && s.mwTarget < 17) { s.mwTarget = Math.round((s.mwTarget + 0.2) * 10) / 10; this.sim.addCost(6000); this.sfx.click(); }
-        if (a === "dn" && s.mwTarget > 8.4) { s.mwTarget = Math.round((s.mwTarget - 0.2) * 10) / 10; this.sim.addCost(1000); this.sfx.click(); }
+        if (a === "dn" && s.mwTarget > 8.4) { s.mwTarget = Math.round((s.mwTarget - 0.2) * 100) / 100; this.sim.addCost(1000); this.sfx.click(); }
         if (a === "lcm") { s.lcmTarget = Math.min(80, s.lcmTarget + 15); s.lcm = Math.min(80, s.lcm + 15); this.sim.addCost(20000); this.sfx.click(); setTimeout(() => (s.lcmTarget = Math.max(0, s.lcmTarget - 15)), 90000); }
-        p.innerHTML = render(); wire();
       });
     };
     wire();
-    (this.ui as any).panelTick = () => { const r = p.querySelectorAll(".row b"); if (r.length >= 6) { r[0].textContent = s.mw.toFixed(2) + " ppg"; r[1].textContent = s.mwTarget.toFixed(1) + " ppg"; r[2].textContent = this.sim.mwEff.toFixed(2) + " ppg"; r[3].textContent = s.lcm.toFixed(0) + " ppb"; r[4].textContent = poreAt(s.depth).toFixed(1) + " ppg"; r[5].textContent = fracAt(s.depth).toFixed(1) + " ppg"; } };
+    (this.ui as any).panelTick = () => {
+      const set = (id: string, v: string) => { const e = p.querySelector<HTMLElement>("#" + id); if (e) e.textContent = v; };
+      set("h_mw", s.mw.toFixed(2) + " ppg"); set("h_eff", this.sim.mwEff.toFixed(2) + " ppg"); set("h_lcm", s.lcm.toFixed(0) + " ppb");
+    };
+  }
+  /** feed barite: a hold-to-fill minigame; the "wing it" guess is off by a hidden amount that only shows up as the mud circulates */
+  dose(d: number) {
+    const s = this.sim.s;
+    this.mini.holdFill({ eyebrow: "Mud Hopper", title: "Barite Feed", intro: `Raise the system by +${d.toFixed(2)} ppg. Hold the feed, release on the mark.`, unit: "ppg", max: d * 2.2, target: d, band: Math.max(0.05, d * 0.12), rate: 0.26, hold: "HOLD TO FEED" }, (r) => {
+      let actual: number;
+      if (r.skipped) {
+        actual = d * (0.62 + Math.random() * 0.85);
+        this.shortcutToast("You eyeballed the barite and dumped sacks.");
+        this.radio("marcus", "Eyeballing it? Okay… we'll see what the mud says in a bit.", 7000);
+        this.flags.lastDose = "~" + d.toFixed(2) + " ppg (guessed)";
+      } else {
+        actual = r.value ?? d;
+        this.flags.lastDose = "+" + actual.toFixed(2) + " ppg";
+        this.radio("marcus", r.score > 0.8 ? "Right on the number." : actual < d ? "A little light." : "A little heavy.", 5000);
+      }
+      s.mwTarget = Math.min(17, Math.round((s.mwTarget + actual) * 100) / 100);
+      this.sim.addCost(30000 * actual);
+      this.openHopper();
+    });
   }
 
   openDesk() {
@@ -475,185 +578,7 @@ export class Game {
   }
 
   // ---------- missions ----------
-  buildMissions() {
-    const S = this.rig.spots, H = this.rig.humans, sim = this.sim, s = this.sim.s;
-    const sy = (sp: Vector3) => () => sp;
-    const gap = (n: number) => () => this.sinceDone() >= n;
-    const M = (m: Mission) => this.queue.push(m);
-
-    M({ id: "ppe", title: "Hard Hat Area", sub: "Check in at the gate shack. Safety first. Then second. Then also third.", trigger: () => true, a: 0.1, m: 0, steps: [
-      { text: "Sign in at the gate", at: sy(S.gate), label: "Sign in & suit up", r: 3.2, act: (done) => {
-        const items = ["Hard hat", "FR coveralls", "Safety glasses", "Gloves", "H2S monitor"];
-        const got = new Set<string>();
-        const p = this.open(`<div class="eyebrow">Gate Shack</div><h2>Sign In</h2><p>Roy slides a clipboard under the glass. "You're the Company Man? Sign here. And here. And here. And your hard hat is on upside down."</p>
-          <div id="ppe" class="btns">${items.map((it) => `<button class="b alt" data-i="${it}">${it}</button>`).join("")}</div><div class="btns"><button class="b" id="go" disabled>Clock in</button></div>`, { });
-        p.querySelectorAll<HTMLButtonElement>("[data-i]").forEach((b) => b.onclick = () => { got.add(b.dataset.i!); b.classList.remove("alt"); b.classList.add("green"); b.disabled = true; this.sfx.click(); if (got.size === items.length) (p.querySelector("#go") as HTMLButtonElement).disabled = false; });
-        p.querySelector<HTMLButtonElement>("#go")!.onclick = () => { this.ui.closePanel(); this.sim.start(); this.radio("earl", "Company Man's on location. Clock's running, boss — and it's about $80,000 a day."); done(); };
-      } },
-    ] });
-
-    M({ id: "meeting", title: "Morning Meeting", sub: "Give the safety talk in the doghouse. Nobody will remember it.", trigger: gap(2), a: 0.15, m: 4, steps: [
-      { text: "Walk to the rig floor and find the doghouse", at: () => v3(-4.3, F + 1.2, -3.0), label: "Hold the safety meeting", r: 3.5, act: (done) => {
-        this.say("earl", "Alright boss, crew's here. Pick a safety topic and let's get the tour started. I've got a cup of coffee and low expectations.", [
-          { label: "Dropped objects", run: () => { this.gain(0.25, 2); this.radio("earl", "Good call. Nobody stands under anything. That includes the mast."); this.geoProg(done); } },
-          { label: "Hand placement", run: () => { this.gain(0.2, 2); this.radio("earl", "Fingers are not replaceable. Unlike Brent."); this.geoProg(done); } },
-          { label: "Whatever's in the coffee", cls: "alt", run: () => { this.gain(0, 6); this.radio("earl", "…I'll allow it. The crew likes you now."); this.geoProg(done); } },
-        ], "Pre-tour meeting");
-      } },
-    ] });
-
-    M({ id: "casing", title: "Order Casing", sub: "Houston wants casing on location before TD. It's a phone call for them, a trailer for you.", trigger: gap(3), a: 0.3, m: 0, steps: [
-      { text: "Order casing at the computer in your trailer", at: sy(S.desk), label: "Order 9⅝″ casing", r: 3, act: () => this.orderCasing(), watch: () => this.casingOrder > 0 },
-      { text: "Wait for the casing truck…", watch: () => this.sim.s.t - this.orderT >= 50, enter: () => {} },
-      { text: "Verify the tally at the casing truck", at: sy(S.casing), label: "Check the casing tally", r: 5, enter: () => { this.rig.setCasingTruck(true); this.radio("brent", "Casing's on location. Please verify the tally. And be nice to the driver, he's been talking about his boat since Pecos."); }, act: (done) => {
-        this.say("cooter", "Driver says he's got 'about the right amount' and a lot of opinions about boats. You want to count every joint, or just trust him?", [
-          { label: "Count every joint", run: () => { this.sim.s.t += 15; this.radio("marcus", "He was one joint over. You counted it. He'll never forgive you."); this.gain(0.3, 0); done(); } },
-          { label: "Sign the ticket", cls: "alt", run: () => { this.radio("earl", "Signed. Whatever's on that truck is now the company's problem. Yours, specifically."); this.gain(0.1, 0); done(); } },
-        ], "Casing tally");
-      } },
-    ] });
-
-    M({ id: "wob", title: "A Little More Weight", sub: "Tell the driller to add weight on bit. This is the most Company Man thing you will do all day.", trigger: gap(3), a: 0.25, m: 0, steps: [
-      { text: "Go up to the driller's cabin and ask for ≥ 26 klbs WOB", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => this.openCabin(), watch: () => s.wobTarget >= 26 },
-    ], end: () => this.radio("dale", "More weight. Got it. 'More weight.' Let me write that down. On the thing.") });
-
-    M({ id: "shakers", title: "Check the Shakers", sub: "Climb the pit roof and look at some rocks. Then say something about them.", trigger: gap(3), a: 0.2, m: 3, steps: [
-      { text: "Climb the tanks and inspect the shale shakers", at: sy(S.shakers), label: "Shale shakers", r: 3.8, act: () => this.openShakers(), watch: () => !!this.flags.shakersLooked && this.flags.screenTorn === false },
-    ], end: () => this.radio("marcus", "You replaced the screens. That's four more tasks than the last Company Man ever did.") });
-
-    M({ id: "interns", title: "Intern Tour", sub: "HR says: keep them alive, keep them off the rig floor, and never say 'figure it out.'", trigger: gap(3), a: 0.35, m: 5,
-      start: () => { this.spawnInterns(); this.radio("brent", "Three summer interns are walking out to you. Please give them 'the full experience.' Please don't."); },
-      steps: [
-        { text: "Tour stop 1: the pipe racks", at: sy(S.tally), label: "Give the tour: pipe racks", r: 5, act: (done) => this.tourStop("tyler", "Stop 1 — Pipe racks", "'Is this where they keep the straws?'", [["Yes. Very big straws.", "Tyler writes that down. He does not realize it is a joke.", 0.05, 4], ["It's drill pipe. 30 feet each, 4 inches around.", "Tyler: 'That's what she said' — and then looks at Madison, who doesn't laugh.", 0.15, 1]], done) },
-        { text: "Tour stop 2: the BOP stack", at: sy(S.bop), label: "Give the tour: the BOP", r: 6, act: (done) => this.tourStop("tyler", "Stop 2 — BOP stack", "'So it's a giant emergency brake?'", [["Basically, yes.", "Madison: 'Cool, so what's the other lever?' There is no other lever.", 0.1, 3], ["It seals the well if it kicks. Don't touch it.", "Brayden touches it.", 0.1, 1]], done) },
-        { text: "Tour stop 3: the rig floor", at: () => v3(2.3, F + 1.0, 2.6), label: "Give the tour: drill floor", r: 4, act: (done) => this.tourStop("tyler", "Stop 3 — Drill floor", "'Can I push the big red button?'", [["No. There's no button. It's a rotary table.", "Brayden: 'So it IS a button.' You let it go.", 0.1, 2], ["Sure. Press it.", "The fire alarm goes off. For three seconds. Everyone looks at you.", -0.15, 6]], done) },
-        { text: "Tour stop 4: the muster point", at: sy(S.muster), label: "Give the tour: muster", r: 5, act: (done) => this.tourStop("tyler", "Stop 4 — Muster point", "'What happens if there's an emergency?'", [["You come here. Calmly. And count heads.", "Tyler: 'And if I'm already here?' 'Then you're early.'", 0.2, 3], ["You run. Not toward me.", "Madison nods. She's the smart one.", 0.05, 4]], done) },
-      ], end: () => this.despawnInterns() });
-
-    M({ id: "porta", title: "Porta John Standoff", sub: "Both floorhands are locked in the porta john. A connection is coming. Somebody has to pull the slips.", trigger: gap(3), a: 0.4, m: 6,
-      start: () => { this.rig.setPortaLocked(true); H.hand1.root.setEnabled(false); H.hand2.root.setEnabled(false); this.radio("dale", "BOSS! Cooter and Dewayne are locked in the porta john and we've got a connection coming! I can't leave the brake — somebody's gotta pull the slips!", 11000); },
-      steps: [
-        { text: "Go to the drill floor and pull the slips", at: () => v3(1.9, F + 1.0, 1.4), label: "Pull the slips", r: 4, act: (done) => this.openSlips(done) },
-        { text: "Free the floorhands from the porta john", at: sy(S.porta), label: "Open the porta john", r: 3, act: (done) => {
-          this.say("cooter", "Boss, thank God. The latch just… jammed. Both of us. At the same time. On the same trip.", [
-            { label: "Open the door", run: () => { this.rig.setPortaLocked(false); H.hand1.root.setEnabled(true); H.hand2.root.setEnabled(true); this.gain(0.2, 8); this.radio("cooter", "Dewayne says nobody saw anything. I say nobody saw anything."); done(); } },
-          ], "Porta john");
-        } },
-      ] });
-
-    M({ id: "weightup", title: "Weight Up Before the Delaware", sub: "Pore pressure jumps at 6,000 ft. Get the mud to at least 10.9 ppg or the well will tell you about it.", trigger: () => s.depth >= 4650, priority: true, a: 0.5, m: 0,
-      start: () => this.radio("marcus", "We're three-quarters of a mile from the Delaware. Pore pressure's 10.8 down there. Get ten-nine in the pits before six thousand.", 11000),
-      steps: [{ text: "Weight up the mud at the hopper (≥ 10.9 ppg)", at: sy(S.hopper), label: "Mud hopper", r: 3.8, act: () => this.openHopper(), watch: () => s.mw >= 10.85 || s.depth >= 6150 }],
-      end: () => { if (s.mw < 10.85) this.radio("marcus", "You didn't make it. We'll find out what the formation thinks."); else { this.gain(0.4, 0); this.radio("marcus", "Mud's 10.9. We're ready for the Delaware. Mostly."); } } });
-
-    M({ id: "kick", title: "Kill the Well", sub: "The well is kicking. Shut it in, read the pressures, calculate the kill weight, weight up and circulate it out through the choke.", trigger: () => s.kick.alarm || s.kill.stage !== "none", priority: true, a: 1.0, m: 10,
-      start: () => { this.sfx.horn(); this.ui.toast("KICK!", "Pit gain — flow check!"); this.radio("dale", "PIT GAIN! She's flowing! BOSS — shut it in!", 10000); },
-      steps: [
-        { text: "Shut in the well at the driller's console", at: sy(S.cabin), label: "Driller's console — SHUT IN", r: 3.5, act: () => this.openCabin(), watch: () => s.kick.shut },
-        { text: "Record SIDPP & SICP at the choke panel", at: sy(S.choke), label: "Choke panel", r: 4, act: () => this.openChoke(), watch: () => s.kill.stage === "calc" || s.kill.stage === "weightup" || s.kill.stage === "circ" },
-        { text: "Calculate the kill mud weight", at: sy(S.choke), label: "Choke panel", r: 4, act: () => this.openChoke(), watch: () => s.kill.stage === "weightup" || s.kill.stage === "circ" },
-        { text: "Weight up to kill weight at the mud hopper", at: sy(S.hopper), label: "Mud hopper", r: 3.8, act: () => this.openHopper(), watch: () => s.mw >= s.kill.kmw - 0.1 && s.kill.kmw > 0 },
-        { text: "Circulate the kick out through the choke", at: sy(S.choke), label: "Choke panel — circulate", r: 4, act: () => this.openChoke(), watch: () => s.kill.stage === "flowcheck" },
-        { text: "Flow-check and open the BOP at the console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => this.openCabin(), watch: () => s.kill.stage === "none" && !s.kick.shut },
-      ], end: () => { this.holdPending = true; } });
-
-    M({ id: "coffee", title: "Coffee Crisis", sub: "Morale on this rig is a direct function of caffeine. The pot is empty.", trigger: gap(10), a: 0.2, m: 8,
-      start: () => { this.flags.coffeeEmpty = true; this.radio("earl", "Pot's empty. Whoever took the last cup didn't refill it. Which means it was one of you.", 9000); },
-      steps: [
-        { text: "Brew a fresh pot in the doghouse", at: sy(S.coffee), label: "Brew coffee", r: 3, act: (done) => {
-          const stepsDone = [false, false, false];
-          const p = this.open(`<div class="eyebrow">Doghouse</div><h2>Coffee Maker</h2><p>The rig runs on diesel. The crew runs on this.</p>
-            <div class="btns"><button class="b" data-i="0">Scoop grounds</button><button class="b" data-i="1">Add water</button><button class="b" data-i="2">Press BREW</button></div><p class="hint" id="cm"></p>`);
-          p.querySelectorAll<HTMLButtonElement>("[data-i]").forEach((b) => b.onclick = () => { stepsDone[Number(b.dataset.i)] = true; b.disabled = true; this.sfx.click(); if (stepsDone.every(Boolean)) { this.ui.closePanel(); this.flags.coffeeEmpty = false; done(); } });
-        } },
-        { text: "Deliver a cup to Earl", at: () => H.pusher.root.position.add(v3(0, 1.2, 0)), label: "Give Earl his coffee", r: 3.5, act: (done) => {
-          this.say("earl", "…This is decaf.", [{ label: "It's the good decaf.", run: () => { this.gain(0.1, 6); done(); } }, { label: "Marcus used the good creamer.", cls: "alt", run: () => { this.gain(0.1, 4); this.radio("marcus", "I did not use the good creamer."); done(); } }], "Coffee");
-        } },
-      ] });
-
-    M({ id: "deer", title: "Deer on Location", sub: "A deer wandered onto the pad. Nobody has the number for wildlife control. It's now a Company Man issue.", trigger: gap(8), a: 0.3, m: 6,
-      start: () => { this.rig.deerNode.setEnabled(true); this.rig.deerNode.position.set(34, 0, -48); this.deer = { target: null, shoo: 0 }; this.radio("marcus", "There's a deer by the tank battery. It's… looking at me. Do deer do that?"); },
-      steps: [{ text: "Shoo the deer off location (3 times)", at: () => this.rig.deerNode.position.add(v3(0, 1.3, 0)), label: "Shoo deer", r: 5, act: () => {
-        const d = this.deer; d.shoo++; const dp = this.rig.deerNode.position, pp = this.player.pos;
-        const away = dp.subtract(pp); away.y = 0; away.normalize();
-        d.target = dp.add(away.scale(14 + d.shoo * 6)); this.sfx.click();
-        const quips = ["You wave your hands. The deer stares.", "You yell 'HYAH!' It takes two steps.", "You throw your hard hat. Not the best idea."];
-        this.ui.toast("SHOO!", quips[Math.min(2, d.shoo - 1)]);
-      }, watch: () => this.deer.shoo >= 3 && !!this.deer.target && this.rig.deerNode.position.subtract(this.deer.target).length() < 1.5 }],
-      end: () => { this.rig.deerNode.setEnabled(false); this.radio("earl", "That deer has more seniority than you at this company, and it still left."); } });
-
-    M({ id: "snake", title: "Rattlesnake in the Doghouse", sub: "It's under the table. The crew is standing on the benches. Someone has to go in there.", trigger: gap(8), a: 0.3, m: 6,
-      start: () => { this.spawnSnake(); this.radio("cooter", "BOSS. There's a snake in the doghouse. It's a rattler. It's rattling.", 9000); },
-      steps: [{ text: "Go to the doghouse and handle it", at: () => v3(-4.3, F + 0.6, -3.2), label: "Handle the snake", r: 3.5, act: (done) => {
-        this.say("earl", "Company Man's call, boss. What's the plan?", [
-          { label: "Broom", run: () => { this.radio("cooter", "You swung. The snake is now on your hard hat. It's very calm about it. You are not."); this.gain(-0.1, 6); this.sim.addCost(500); done(); } },
-          { label: "Call wildlife control", cls: "alt", run: () => { this.radio("brent", "Wildlife control? That's not in the AFE. I'll need a one-pager."); this.gain(0, 2); done(); } },
-          { label: "Send an intern", cls: "alt", run: () => { this.radio("tyler", "Is this a test? This feels like a test."); this.gain(0, 8); this.inc(1); done(); } },
-          { label: "Stop work, write a JSA, wait", cls: "green", run: () => { this.radio("earl", "Stop work authority, JSA, mutual agreement. The snake didn't sign it, but it left."); this.gain(0.5, 4); done(); } },
-        ], "Snake");
-      } }],
-      end: () => this.despawnSnake() });
-
-    M({ id: "reveal", title: "Gender Reveal", sub: "A floorhand has brought a smoke cannon to the pipe deck. Nobody knows who approved it. Nobody did.", trigger: gap(8), a: 0.3, m: 10,
-      steps: [{ text: "Stop the gender reveal on the pipe deck", at: () => H.hand3.root.position.add(v3(0, 1.4, 0)), label: "Talk to Cooter", r: 5, act: (done) => {
-        this.say("cooter", "It's just a little confetti cannon, boss. It's for my sister-in-law. We're fifty-fifty on the color.", [
-          { label: "Stop work. Pyrotechnics on a drilling location?", cls: "green", run: () => { this.gain(0.4, -4); this.radio("earl", "Good stop. The guy still wants the party. Can he just have cake?"); done(); } },
-          { label: "…do it away from the well.", cls: "alt", run: () => { this.ui.toast("IT'S A… PIPE WRENCH?", "Blue smoke everywhere."); this.sfx.horn(); this.radio("marcus", "The H2S monitor just went off. It's confetti. It's fine. It's fine."); this.gain(-0.4, 14); this.inc(1); done(); } },
-        ], "Stop Work Authority");
-      } }] });
-
-    M({ id: "vp", title: "VP Fly-In", sub: "Chadwick from Houston is landing on the pad in a helicopter. In loafers. He wants to 'touch the rig.'", trigger: gap(8), a: 0.5, m: -5,
-      start: () => { this.rig.heliState.node.setEnabled(true); this.rig.heliState.node.position.set(70, 80, 60); this.rig.heliState.phase = "landing"; this.radio("brent", "Chadwick's flying out. Today. He wants a 'quick walk-around.' Please have the rig look like it's going well.", 10000); },
-      steps: [
-        { text: "Meet Chadwick at the helipad", at: sy(S.helipad), label: "Greet the VP", r: 6, enter: () => {}, act: (done) => {
-          H.vp.root.setEnabled(true);
-          this.say("chad", "Great to be out in the field! Love the 'oil'. Where's my hard hat? I don't see a hard hat.", [
-            { label: "Hand him your spare hard hat & vest", cls: "green", run: () => { this.gain(0.3, 0); done(); } },
-            { label: "Send him to the gate for PPE", cls: "alt", run: () => { this.gain(-0.3, 4); this.radio("roy", "Is the VP here for a tour? He didn't sign in."); done(); } },
-          ], "VP of Operations");
-        } },
-        { text: "Take Chadwick to the driller's console", at: sy(S.cabin), label: "Show Chadwick the console", r: 3.5, act: (done) => {
-          this.say("chad", "So this is where the magic happens? I want to optimize it. I'm increasing WOB to eighty for synergy.", [
-            { label: "Let him", cls: "red", run: () => { const prev = s.wobTarget; s.wobTarget = 80; this.sim.addCost(35000); this.radio("dale", "EIGHTY?! BOSS! THE BIT IS CRYING!", 8000); setTimeout(() => { s.wobTarget = prev; }, 9000); this.gain(0.2, -6); done(); } },
-            { label: "Gently redirect him to a cookie", cls: "green", run: () => { this.gain(0.4, 3); this.radio("chad", "Oh these are good cookies. Who makes these? Let's scale this."); done(); } },
-          ], "VP of Operations");
-        } },
-        { text: "Send Chadwick back to the helicopter", at: sy(S.helipad), label: "Walk Chadwick out", r: 6, act: (done) => {
-          this.say("chad", "Fantastic visit. Super impressive. I have no idea what any of it does. Let's circle back.", [{ label: "Wave goodbye", run: () => { this.rig.heliState.phase = "leaving"; H.vp.root.setEnabled(false); done(); } }], "VP of Operations");
-        } },
-      ] });
-
-    M({ id: "houston", title: "Houston Calls", sub: "The office wants 'a quick one-pager' and 'a few bullets' — at 3 a.m., mid-sentence, on a Sunday.", trigger: gap(8), a: 0.4, m: -4,
-      start: () => { this.flags.houstonPending = true; this.sfx.horn(); this.radio("earl", "Your phone in the trailer won't stop ringing. It's Houston. It's always Houston.", 9000); },
-      steps: [{ text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, watch: () => !!this.flags.houstonDone, act: () => {
-        this.say("brent", "Hey! Quick one. Can you put together a one-pager on why drilling takes time? Also, the VP says 'sync'. What does 'sync' mean?", [
-          { label: "Time and money, Brent. Time and money.", run: () => this.houstonRound2(1) },
-          { label: "I'll send a bullet list.", cls: "alt", run: () => this.houstonRound2(2) },
-          { label: "I'm on a drilling rig, Brent.", cls: "alt", run: () => this.houstonRound2(3) },
-        ], "Houston");
-      } }],
-      end: () => { this.flags.houstonPending = false; } });
-
-    M({ id: "armageddon", title: "Armageddon", sub: "Drill to TD, set casing, and then — apparently — save the planet.", trigger: () => this.flags.chainDone === true, a: 1.0, m: 20,
-      start: () => { this.hold = null; sim.hold = null; this.radio("dale", "Released the hold. We're drilling to TD, boss.", 8000); },
-      steps: [
-        { text: "Drill to TD (8,500 ft)", watch: () => s.depth >= WELL.td - 0.5 && s.mode === "idle" },
-        { text: "Run the casing & cement at the console", at: sy(S.cabin), label: "Driller's console — run casing", r: 3.5, act: () => this.openCabin(), watch: () => s.mode === "casing" || s.mode === "done" },
-        { text: "Casing & cement in the hole…", watch: () => s.casing.phase === "done" || s.mode === "done" },
-        { text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, enter: () => { this.sfx.horn(); this.spawnAsteroid(); this.sim.s.paused = true; this.radio("earl", "Phone's ringing in your trailer. Caller ID says… the White House?", 9000); }, act: (done) => {
-          this.say("president", "We are faced with the very gravest of challenges. An asteroid the size of Texas is on a collision course with Earth. NASA's best astronauts can't drill. You're the best Company Man we've got, and you just delivered an 8,500-foot hole under budget-ish.", [
-            { label: "Is this covered under the AFE?", cls: "alt", run: () => { this.radio("brent", "It is not. But I'll allow it."); done(); } },
-            { label: "Where do I sign?", cls: "green", run: () => { this.radio("earl", "Well, boss. It's been a good tour."); done(); } },
-          ], "Incoming call — Priority One");
-        } },
-        { text: "Board the helicopter at the helipad", at: sy(S.helipad), label: "Board the helicopter", r: 7, enter: () => { this.rig.heliState.node.setEnabled(true); this.rig.heliState.node.position.set(70, 80, 60); this.rig.heliState.phase = "landing"; this.radio("president", "A chopper is en route. Godspeed, Company Man.", 8000); },
-          act: (done) => { if (this.rig.heliState.phase !== "landed") { this.ui.toast("HOLD ON", "The helicopter is still landing"); return; } this.callUp(done); } },
-        { text: "Walk to the drill console on the asteroid", at: () => this.arm.console, label: "Take the driller's seat", r: 4, act: () => this.openArm(), watch: () => this.arm.depth > 0 },
-        { text: "Drill 800 feet through the asteroid", watch: () => this.arm.depth >= 800 },
-        { text: "Plant the bomb and detonate", at: () => this.arm.console, label: "Detonate", r: 4, act: () => this.openArm() },
-      ] });
-    this.missionTotal = this.queue.length;
-  }
+  buildMissions() { defineMissions(this); }
 
   geoProg(done: () => void) {
     const p = this.open(`<div class="eyebrow">Geologic Prognosis</div><h2>The Plan</h2>
@@ -912,6 +837,7 @@ export class Game {
         case "lossStart": this.radio("marcus", "We're losing returns! Pits are dropping — you're over frac. Back off the mud weight or pump LCM.", 10000); this.wake("LOSSES"); break;
         case "lossHealed": this.radio("marcus", "Losses healed. Pits are stable.", 6000); break;
         case "bitDead": this.radio("dale", "Bit's done, boss. ROP fell off a cliff. We need to trip.", 10000); this.wake("BIT DEAD"); break;
+        case "stall": this.radio("dale", "MOTOR STALL! Picking up off bottom. Too much weight for this rock — differential pressure spiked.", 9000); this.gain(0, -3); this.sfx.bad(); break;
         case "tripDone": this.radio("dale", "New bit's on bottom. Let's make hole.", 7000); break;
         case "fractured": this.radio("dale", "Casing pressure's too high — we just broke down the shoe!", 9000); this.inc(1, "SHOE BROKE DOWN"); break;
         case "killDone": this.radio("marcus", e.good ? "Kill's complete. Textbook." : "Kill's done, but that was ugly. Houston's going to ask.", 9000); if (!e.good) this.inc(1); this.sfx.good(); break;
@@ -930,6 +856,7 @@ export class Game {
     document.body.classList.toggle("panelopen", this.ui.panelOpen);
     if (this.sleeping && (this.sim.s.t >= this.sleepUntil)) this.wake("Alarm clock");
     this.updateMissions();
+    this.processDebts();
     this.processSimEvents();
     if (this.hold !== null) this.sim.hold = this.hold;
     if (this.sim.s.fuel > 0) this.flags.blackout = false;
@@ -992,7 +919,7 @@ export class Game {
     const k = s.kick;
     const items = [
       { k: "Day " + c.day, v: c.hhmm }, { k: "Depth", v: fmt(s.depth) + " ft" }, { k: "ROP", v: fmt(s.rop) }, { k: "WOB", v: String(Math.round(s.wob)) },
-      { k: "MW ppg", v: s.mw.toFixed(1) }, { k: "SPP psi", v: fmt(s.spp) }, { k: "Pits Δ", v: (s.pit - s.pitBase >= 0 ? "+" : "") + fmt(s.pit - s.pitBase), warn: k.active || s.loss.active },
+      { k: "MW ppg", v: s.mw.toFixed(1) }, { k: "SPP psi", v: fmt(s.spp) }, { k: "Diff psi", v: fmt(s.dp), warn: s.dp > STALL_DP * 0.9 }, { k: "Auto", v: s.auto.on ? "ON" : "OFF" }, { k: "Pits Δ", v: (s.pit - s.pitBase >= 0 ? "+" : "") + fmt(s.pit - s.pitBase), warn: k.active || s.loss.active },
       { k: "Bit", v: Math.round(s.bit) + "%", warn: s.bit < 20 }, { k: "Cost / AFE", v: money(s.cost) + "/" + (WELL.afe / 1e6).toFixed(1) + "M", warn: s.cost > WELL.afe },
     ];
     this.ui.setStrip(items);

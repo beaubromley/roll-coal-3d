@@ -133,6 +133,11 @@ export class Builder {
       const w = alongX ? run : width, d = alongX ? width : run;
       this.box(m, cx, top - 0.03, cz, w, 0.06, d);
       this.blocker(cx - w / 2, 0, cz - d / 2, cx + w / 2, top, cz + d / 2);
+      // handrails on both sides are solid, from the tread up past hip height
+      for (const s of [-1, 1]) {
+        const ox = alongX ? 0 : s * (width / 2 + 0.05), oz = alongX ? s * (width / 2 + 0.05) : 0;
+        this.blocker(cx + ox - (alongX ? w / 2 : 0.06), 0, cz + oz - (alongX ? 0.06 : d / 2), cx + ox + (alongX ? w / 2 : 0.06), top + 1.7, cz + oz + (alongX ? 0.06 : d / 2));
+      }
     }
     const ex = x + dx * n * run, ez = z + dz * n * run;
     const off = width / 2;

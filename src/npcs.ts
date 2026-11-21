@@ -1,4 +1,5 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3, TransformNode, Mesh, Vector3 } from "@babylonjs/core";
+import type { Kit } from "./models";
 
 const matCache = new Map<string, StandardMaterial>();
 function m(scene: Scene, hex: string) {
@@ -18,12 +19,16 @@ export interface HumanOpts {
 
 export class Human {
   root: TransformNode;
-  legL: TransformNode; legR: TransformNode; armL: TransformNode; armR: TransformNode;
+  legL!: TransformNode; legR!: TransformNode; armL!: TransformNode; armR!: TransformNode;
+  /** set by main once the Blender kit has loaded; Humans built afterwards use the jointed model */
+  static kit: Kit | null = null;
+  kneeL: TransformNode | null = null; kneeR: TransformNode | null = null; elbowL: TransformNode | null = null; elbowR: TransformNode | null = null;
   meshes: Mesh[] = [];
   phase = Math.random() * 6;
   walking = false;
   constructor(public scene: Scene, o: HumanOpts) {
     this.root = new TransformNode("human", scene);
+    if (Human.kit) { this.fromKit(Human.kit, o); return; }
     const mk = (mesh: Mesh, hex: string, parent: TransformNode) => {
       mesh.material = m(scene, hex); mesh.parent = parent; this.meshes.push(mesh); return mesh;
     };
@@ -92,14 +97,69 @@ export class Human {
     const bootR = bootL.clone("br"); bootR.parent = this.legR; this.meshes.push(bootR);
     this.root.scaling.setAll(o.scale ?? 1);
   }
+  /** Jointed Blender model: hips, KNEES, ankles, shoulders, ELBOWS, wrists are real pivots. */
+  private fromKit(kit: Kit, o: HumanOpts) {
+    const sc = this.scene, root = this.root;
+    const colors: Record<string, string> = {
+      shirt: o.shirt, pants: o.pants, hat: o.hat ?? "#f4f4f4", skin: o.skin ?? "#d9a77f", vest: "#e8f542", stripe: "#cfd3d6",
+      glove: "#2b2118", boot: "#2a1d12", belt: "#1e1a16", dark: "#101012", steel: "#9aa0a8",
+    };
+    const piv = (name: string, parent: TransformNode, x: number, y: number, z = 0) => { const n = new TransformNode(name, sc); n.parent = parent; n.position.set(x, y, z); return n; };
+    const put = (part: string, parent: TransformNode, flip = false) => {
+      const tpl = kit.templates.get(part); if (!tpl) return;
+      const mat = part.slice(part.lastIndexOf("_") + 1);
+      const c = tpl.clone(part + "_h", parent) as Mesh;
+      c.setEnabled(true); c.isPickable = false; c.material = m(sc, colors[mat] ?? "#808080"); c.receiveShadows = true;
+      if (flip) c.scaling.x = -1;
+      this.meshes.push(c);
+    };
+    for (const p of ["torso_shirt", "pelvis_pants", "belt_belt", "buckle_dark", "neck_skin", "head_skin", "nose_skin", "eyes_dark"]) put(p, root);
+    if (o.vest) { put("vest_vest", root); put("stripe_stripe", root); }
+    if (o.hat) put("hat_hat", root);
+    const leg = (side: number) => {
+      const hip = piv("hip", root, side * 0.12, 0.9);
+      put("thigh_pants", hip);
+      const knee = piv("knee", hip, 0, -0.44);
+      put("shin_pants", knee); put("kneepad_dark", knee);
+      const ankle = piv("ankle", knee, 0, -0.4);
+      put("boot_boot", ankle); put("sole_dark", ankle);
+      return { hip, knee };
+    };
+    const arm = (side: number) => {
+      const sh = piv("shoulder", root, side * 0.31, 1.42);
+      put("upperarm_shirt", sh);
+      const el = piv("elbow", sh, 0, -0.3);
+      put("forearm_shirt", el);
+      const wr = piv("wrist", el, 0, -0.26);
+      put("hand_glove", wr, side < 0);
+      return { sh, el };
+    };
+    const L = leg(-1), R = leg(1), aL = arm(-1), aR = arm(1);
+    this.legL = L.hip; this.legR = R.hip; this.kneeL = L.knee; this.kneeR = R.knee;
+    this.armL = aL.sh; this.armR = aR.sh; this.elbowL = aL.el; this.elbowR = aR.el;
+    this.root.scaling.setAll(o.scale ?? 1);
+  }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
   animate(dt: number, speed: number) {
     if (speed > 0.15) {
       this.phase += dt * (4 + speed * 1.6);
-      const s = Math.sin(this.phase) * Math.min(0.9, 0.3 + speed * 0.1);
+      const amp = Math.min(0.9, 0.3 + speed * 0.1);
+      const s = Math.sin(this.phase) * amp;
       this.legL.rotation.x = s; this.legR.rotation.x = -s;
       this.armL.rotation.x = -s * 0.8; this.armR.rotation.x = s * 0.8;
+      if (this.kneeL && this.kneeR && this.elbowL && this.elbowR) {
+        const c = Math.cos(this.phase), run = Math.min(1, speed / 6);
+        // knee flexes while that leg swings forward to the next step, with a slight bend at heel strike
+        this.kneeL.rotation.x = 0.08 + Math.max(0, -c) * (0.9 + 0.6 * run) * amp * 1.4;
+        this.kneeR.rotation.x = 0.08 + Math.max(0, c) * (0.9 + 0.6 * run) * amp * 1.4;
+        // elbows stay bent and pump with the stride
+        this.elbowL.rotation.x = -(0.25 + 0.5 * run + Math.max(0, s) * 0.5);
+        this.elbowR.rotation.x = -(0.25 + 0.5 * run + Math.max(0, -s) * 0.5);
+      }
     } else {
+      if (this.kneeL && this.kneeR && this.elbowL && this.elbowR) {
+        this.kneeL.rotation.x = 0.05; this.kneeR.rotation.x = 0.05; this.elbowL.rotation.x = -0.12; this.elbowR.rotation.x = -0.12;
+      }
       this.phase += dt * 1.2;
       const s = Math.sin(this.phase) * 0.03;
       this.legL.rotation.x = 0; this.legR.rotation.x = 0;

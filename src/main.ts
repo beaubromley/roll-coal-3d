@@ -10,6 +10,8 @@ import { Game } from "./game";
 import { TitleFx } from "./titlefx";
 import { TouchControls, detectTouch } from "./touch";
 import { Graphics, QUALITY_NAMES } from "./graphics";
+import { Kit } from "./models";
+import { Human } from "./npcs";
 
 const isTouch = detectTouch();
 document.body.classList.toggle("touch", isTouch);
@@ -32,7 +34,10 @@ sun.position = new Vector3(60, 120, 60);
 sun.intensity = 1.1;
 sun.shadowMinZ = 1; sun.shadowMaxZ = 400;
 
-const rig = buildRig(scene, { bump: !isTouch });
+// Blender-authored props and jointed crew (falls back to procedural geometry if the models can't load)
+const kit = await Kit.load(scene);
+Human.kit = kit;
+const rig = buildRig(scene, { bump: !isTouch, kit });
 const player = new Player(scene, canvas, rig.colliders);
 player.touch = isTouch;
 if (isTouch) player.lockFailed = true;      // never show the "mouse capture" hint on a phone
@@ -41,7 +46,7 @@ const sfx = new Sfx();
 const ui = new UI();
 const game = new Game(scene, rig, player, sim, sfx, ui, { hemi, sun });
 game.isTouch = isTouch;
-(window as any).__game = { game, sim, player, rig, scene };
+(window as any).__game = { game, sim, player, rig, scene, kit };
 
 // shadows (cheaper on phones)
 const sg = new ShadowGenerator(isTouch ? 1024 : 2048, sun);
@@ -49,6 +54,7 @@ if (isTouch) sg.usePoissonSampling = true; else sg.usePercentageCloserFiltering 
 sg.bias = 0.0006; sg.normalBias = 0.02;
 sg.transparencyShadow = false;
 rig.merged.forEach((m: Mesh) => sg.addShadowCaster(m));
+kit?.casters.forEach((m) => sg.addShadowCaster(m));
 player.body.setShadow(sg);
 Object.values(rig.humans).forEach((h) => h.setShadow(sg));
 scene.meshes.forEach((m) => { if (m.name === "ground" || m.name === "padmesh" || m.name === "road") m.receiveShadows = true; });

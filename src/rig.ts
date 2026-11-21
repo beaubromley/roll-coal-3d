@@ -4,6 +4,7 @@ import {
 } from "@babylonjs/core";
 import { Builder, AABB, node, pushOutXZ } from "./builder";
 import { Human } from "./npcs";
+import type { Kit } from "./models";
 import { metalPanels, corrugated, woodGrain, DetailTex } from "./textures";
 
 export const F = 7.8; // drill floor height above ground (m) - 25.5 ft standard FlexRig-class floor
@@ -59,7 +60,8 @@ function platTex(scene: Scene) {
   return t;
 }
 
-export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
+export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null } = {}): Rig {
+  const kit = opts.kit ?? null;
   const b = new Builder(scene);
   const spots: Record<string, Vector3> = {};
 
@@ -96,6 +98,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   b.defMat("bopred", "#a8221c"); b.defMat("bopblue", "#244f8f"); b.defMat("accgreen", "#2e7a45");
   b.defMat("asphalt", "#3d3f42"); b.defMat("sack", "#c9c1a8"); b.defMat("lcm", "#a07844"); b.defMat("barite", "#7a7a7a");
   const lampMat = b.getMat("lamp");
+  kit?.useLampMaterial(lampMat);
 
   // ---- surface detail: world-scaled panel/corrugation/wood textures with bump ----
   const mp = metalPanels(scene), co = corrugated(scene), wo = woodGrain(scene);
@@ -121,6 +124,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   b.slab("deck", -FX, F - 0.25, -FZ, FX, F, FZ, true);
   // columns
   for (const x of [-6.0, -2.0, 2.0, 6.0]) for (const z of [-5.4, 0, 5.4]) {
+    if (z === 0 && Math.abs(x) === 2) continue;
     b.slab("navy", x - 0.3, 0, z - 0.3, x + 0.3, F - 0.25, z + 0.3, true);
   }
   for (const y of [3.9, F - 0.7]) {
@@ -141,17 +145,22 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   b.slab("steel", -6.5, 0, -6, -5.7, 0.3, 6); b.slab("steel", 5.7, 0, -6, 6.5, 0.3, 6);
 
   // ---- BOP stack in the cellar zone below the rotary ----
-  b.cyl("steel", 0, 0.5, 0, 1.0, 1.0, { tess: 14 });              // wellhead / casing head
-  b.cyl("black", 0, 1.15, 0, 1.3, 0.3, { tess: 14 });             // flange
-  b.box("bopblue", 0, 2.0, 0, 1.8, 1.3, 1.5, true);               // double ram body
-  b.box("bopred", 0, 2.0, 1.05, 1.0, 0.7, 0.6); b.box("bopred", 0, 2.0, -1.05, 1.0, 0.7, 0.6);
-  b.box("bopred", 1.2, 2.0, 0, 0.6, 0.7, 1.0); b.box("bopred", -1.2, 2.0, 0, 0.6, 0.7, 1.0);
-  b.cyl("black", 0, 2.95, 0, 1.3, 0.3, { tess: 14 });
-  b.box("bopblue", 0, 3.6, 0, 1.6, 0.9, 1.4);
-  b.box("bopred", 1.0, 3.6, 0, 0.5, 0.6, 0.9); b.box("bopred", -1.0, 3.6, 0, 0.5, 0.6, 0.9);
-  b.cyl("black", 0, 4.2, 0, 1.3, 0.3, { tess: 14 });
-  b.cyl("bopred", 0, 5.1, 0, 1.5, 1.4, { tess: 16, dia2: 1.2 });  // annular
-  b.cyl("steel", 0, 6.35, 0, 0.9, 1.4, { tess: 12 });             // bell nipple
+  if (kit) {
+    kit.place("bop", 0, 0, 0);                                      // Blender BOP stack: flanges, bonnets, hydraulics, valves
+    b.blocker(-0.9, 1.35, -0.75, 0.9, 2.65, 0.75);
+  } else {
+    b.cyl("steel", 0, 0.5, 0, 1.0, 1.0, { tess: 14 });              // wellhead / casing head
+    b.cyl("black", 0, 1.15, 0, 1.3, 0.3, { tess: 14 });             // flange
+    b.box("bopblue", 0, 2.0, 0, 1.8, 1.3, 1.5, true);               // double ram body
+    b.box("bopred", 0, 2.0, 1.05, 1.0, 0.7, 0.6); b.box("bopred", 0, 2.0, -1.05, 1.0, 0.7, 0.6);
+    b.box("bopred", 1.2, 2.0, 0, 0.6, 0.7, 1.0); b.box("bopred", -1.2, 2.0, 0, 0.6, 0.7, 1.0);
+    b.cyl("black", 0, 2.95, 0, 1.3, 0.3, { tess: 14 });
+    b.box("bopblue", 0, 3.6, 0, 1.6, 0.9, 1.4);
+    b.box("bopred", 1.0, 3.6, 0, 0.5, 0.6, 0.9); b.box("bopred", -1.0, 3.6, 0, 0.5, 0.6, 0.9);
+    b.cyl("black", 0, 4.2, 0, 1.3, 0.3, { tess: 14 });
+    b.cyl("bopred", 0, 5.1, 0, 1.5, 1.4, { tess: 16, dia2: 1.2 });  // annular
+    b.cyl("steel", 0, 6.35, 0, 0.9, 1.4, { tess: 12 });             // bell nipple
+  }
   // choke / kill lines out of the BOP side outlets
   b.beam("steel", v(0.9, 1.4, 0), v(5.0, 1.4, 0), 0.22); b.beam("steel", v(5.0, 1.4, 0), v(5.0, 0.6, 5.0), 0.22);
   b.beam("steel", v(5.0, 0.6, 5.0), v(11.5, 0.6, 8.0), 0.22);
@@ -178,8 +187,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   R(FX, -FZ, FX, 3.1); R(FX, 4.5, FX, FZ);
   R(-FX, -FZ, -FX, -1.6); R(-FX, -0.2, -FX, FZ);
   // stairs: east (to ground) and west
-  b.stairs("dsteel", "yellow", FX, 3.8, "+x", F, 1.2);
-  b.stairs("dsteel", "yellow", -FX, -0.9, "-x", F, 1.2);
+  b.stairs("dsteel", "yellow", FX, 3.8, "+x", F, 1.5);
+  b.stairs("dsteel", "yellow", -FX, -0.9, "-x", F, 1.5);
   // V-door pipe ramp (z=6 -> 18)
   {
     const n = 30, run = 0.4;
@@ -262,14 +271,19 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   const top = [v(-1.2, MH, -1.6), v(1.2, MH, -1.6), v(1.2, MH, 0.4), v(-1.2, MH, 0.4)];
   const P = (i: number, u: number) => Vector3.Lerp(base[i], top[i], u);
   for (let i = 0; i < 4; i++) b.beam("orange", P(i, 0), P(i, 1), 0.34, 6);
-  const panels = 18;
+  // Sparse lattice: open legs low down so the floor is easy to move around, then single diagonals higher up.
+  const panels = 7;
   for (let k = 0; k < panels; k++) {
     const u0 = k / panels, u1 = (k + 1) / panels;
+    if (k === 0) { // one tie ring just above the floor, no diagonals
+      for (let i = 0; i < 4; i++) b.beam("white", P(i, 0.12), P((i + 1) % 4, 0.12), 0.1, 6);
+      continue;
+    }
     for (let i = 0; i < 4; i++) {
       const j = (i + 1) % 4;
-      b.beam("white", P(i, u0), P(j, u0), 0.1, 4);
-      b.beam("white", P(i, u0), P(j, u1), 0.08, 4);
-      b.beam("white", P(j, u0), P(i, u1), 0.08, 4);
+      b.beam("white", P(i, u0), P(j, u0), 0.1, 6);
+      if ((i + k) % 2 === 0) b.beam("white", P(i, u0), P(j, u1), 0.09, 6);
+      else b.beam("white", P(j, u0), P(i, u1), 0.09, 6);
     }
   }
   // mast legs as collision (you can't walk through the mast)
@@ -318,6 +332,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   joint.material = b.getMat("pipeband");
 
   // ================= PIPE RACKS + CATWALK =================
+  const pipePos: Vector3[] = [];
   for (const sx of [-1, 1]) {
     const rx = sx * 6.5;
     for (const z of [19, 26, 33]) b.slab("rust", rx - 3.3, 0, z - 0.2, rx + 3.3, 0.5, z + 0.2);
@@ -329,14 +344,18 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
       const n = 22 - layer;
       for (let i = 0; i < n; i++) {
         const x = rx - ((22 - 1) * PITCH) / 2 + i * PITCH + layer * (PITCH / 2), y = 0.5 + D / 2 + layer * PITCH * 0.866;
-        b.cyl("pipe", x, y, 26.0, D, 15.2, { axis: "z", tess: 6 });
-        b.cyl("pipeband", x, y, 18.7, D + 0.02, 0.4, { axis: "z", tess: 6 });
-        b.cyl("pipeband", x, y, 33.3, D + 0.02, 0.4, { axis: "z", tess: 6 });
+        if (kit) pipePos.push(v(x, y, 26.0));
+        else {
+          b.cyl("pipe", x, y, 26.0, D, 15.2, { axis: "z", tess: 6 });
+          b.cyl("pipeband", x, y, 18.7, D + 0.02, 0.4, { axis: "z", tess: 6 });
+          b.cyl("pipeband", x, y, 33.3, D + 0.02, 0.4, { axis: "z", tess: 6 });
+        }
       }
     }
     // solid so nobody walks through the stack
     b.blocker(rx - 3.35, 0, 18.3, rx + 3.35, 2.0, 33.7);
   }
+  kit?.instances(["pipe_pipe", "band_band"], pipePos);
   b.slab("dsteel", -0.9, 0, 18, 0.9, 0.9, 34, true);
   b.slab("deck", -0.7, 0.9, 18, 0.7, 0.95, 34);
   b.cyl("pipe", 0, 1.15, 28, 0.24, 9.6, { axis: "z", tess: 6 });
@@ -346,13 +365,16 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   // ================= PUMP ROOM (3 triplex mud pumps) =================
   for (let i = 0; i < 3; i++) {
     const x = -10.5 + i * 3.6;
-    b.slab("dsteel", x - 1.4, 0, -14.5, x + 1.4, 0.35, -9.5, true);
-    b.slab("red", x - 1.2, 0.35, -14.0, x + 1.2, 1.5, -11.6, true);
-    b.slab("steel", x - 1.1, 0.35, -11.6, x + 1.1, 1.2, -10.0, true);
-    b.cyl("black", x, 1.9, -12.6, 0.7, 2.0, { axis: "x", tess: 10 });
+    if (kit) { kit.place("pump", x, 0, -12.0); b.blocker(x - 1.4, 0, -14.5, x + 1.4, 2.4, -9.5); }
+    else {
+      b.slab("dsteel", x - 1.4, 0, -14.5, x + 1.4, 0.35, -9.5, true);
+      b.slab("red", x - 1.2, 0.35, -14.0, x + 1.2, 1.5, -11.6, true);
+      b.slab("steel", x - 1.1, 0.35, -11.6, x + 1.1, 1.2, -10.0, true);
+      b.cyl("black", x, 1.9, -12.6, 0.7, 2.0, { axis: "x", tess: 10 });
+    }
   }
-  b.slab("tan", -12.2, 3.0, -14.8, 0.2, 3.2, -9.2);               // roof
-  for (const [x, z] of [[-12.0, -14.6], [0.0, -14.6], [-12.0, -9.4], [0.0, -9.4]]) b.slab("dsteel", x - 0.1, 0, z - 0.1, x + 0.1, 3.0, z + 0.1);
+  b.slab("tan", -12.2, 3.6, -14.8, 0.2, 3.8, -9.2);               // roof (clears the pulsation dampeners)
+  for (const [x, z] of [[-12.0, -14.6], [0.0, -14.6], [-12.0, -9.4], [0.0, -9.4]]) b.slab("dsteel", x - 0.1, 0, z - 0.1, x + 0.1, 3.6, z + 0.1);
   b.cyl("steel", -13.5, 1.2, -11.5, 1.1, 2.4, { tess: 10, solid: true });
   spots.pumps = v(-6.8, 1.6, -9.2);
   b.label("MUD PUMPS", -5.2, 3.7, -9.15, 3.0, 0.7, Math.PI, "#233a52", "#ffd24a", 70);
@@ -402,11 +424,14 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   // ================= POWER: 4 gensets + VFD house + fuel =================
   for (let i = 0; i < 4; i++) {
     const z = -2 - i * 6.6;
-    b.slab("poly", -33, 0.3, z - 3.0, -26.5, 3.1, z + 3.0, true);
-    b.slab("dsteel", -33, 0, z - 3.0, -26.5, 0.3, z + 3.0);
-    b.cyl("black", -31.6, 5.0, z, 0.4, 3.6, { tess: 8 });
-    b.slab("steel", -26.5, 1.0, z - 1.6, -26.3, 2.6, z + 1.6);
-    b.slab("lamp", -26.3, 2.4, z - 0.2, -26.2, 2.55, z + 0.2);
+    if (kit) { kit.place("genset", -29.75, 0, z); b.blocker(-33, 0, z - 3.0, -26.5, 3.1, z + 3.0); }
+    else {
+      b.slab("poly", -33, 0.3, z - 3.0, -26.5, 3.1, z + 3.0, true);
+      b.slab("dsteel", -33, 0, z - 3.0, -26.5, 0.3, z + 3.0);
+      b.cyl("black", -31.6, 5.0, z, 0.4, 3.6, { tess: 8 });
+      b.slab("steel", -26.5, 1.0, z - 1.6, -26.3, 2.6, z + 1.6);
+      b.slab("lamp", -26.3, 2.4, z - 0.2, -26.2, 2.55, z + 0.2);
+    }
   }
   b.slab("trailer2", -44, 0.5, -17, -36, 3.5, -7, true);
   b.slab("dsteel", -44, 0, -17, -36, 0.5, -7);
@@ -461,7 +486,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   spots.phone = v(30.4, 1.9, 12.2);
   b.label("COMPANY MAN", 29.85, 3.9, 14, 3.4, 0.6, -Math.PI / 2, "#233a52", "#ffd24a", 56);
   // toolpusher trailer (solid)
-  b.slab("trailer", 30, 0.7, 24, 33.6, 3.6, 36, true); b.slab("steel", 29.9, 0, 24, 33.7, 0.7, 36, true);
+  if (kit) { kit.place("trailer", 31.8, 0, 30); b.blocker(29.9, 0, 24, 33.7, 3.6, 36); }
+  else { b.slab("trailer", 30, 0.7, 24, 33.6, 3.6, 36, true); b.slab("steel", 29.9, 0, 24, 33.7, 0.7, 36, true); }
   b.label("TOOLPUSHER", 29.85, 3.9, 30, 3.4, 0.6, -Math.PI / 2, "#233a52", "#ffd24a", 56);
   // mudlogger unit (enterable)
   b.room({ x0: 37, z0: 8, x1: 43, z1: 16, y0: 0.8, h: 2.7, wall: "trailer2", roof: "dsteel", floor: "dsteel",
@@ -514,8 +540,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
 
   // light towers
   for (const [x, z] of [[-28, 32], [28, 46], [-30, -34], [30, -38], [-12, 62]]) {
-    b.cyl("dsteel", x, 4.5, z, 0.22, 9, { tess: 6 });
-    b.slab("lamp", x - 0.9, 9.0, z - 0.15, x + 0.9, 9.35, z + 0.15);
+    if (kit) { kit.place("lighttower", x, 0, z, Math.atan2(-x, -z) + Math.PI / 2); b.blocker(x - 0.5, 0, z - 0.5, x + 0.5, 2.0, z + 0.5); }
+    else { b.cyl("dsteel", x, 4.5, z, 0.22, 9, { tess: 6 }); b.slab("lamp", x - 0.9, 9.0, z - 0.15, x + 0.9, 9.35, z + 0.15); }
   }
   // hand-held "company truck"
   b.slab("white", 21, 0.45, 20, 23, 1.3, 25.6, true); b.slab("white", 21, 1.3, 20, 23, 2.05, 22.6);

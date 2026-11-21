@@ -44,6 +44,12 @@ export function ecdAt(flow: number, depth: number): number {
   return base * df;
 }
 
+/** WOB beyond this stops buying ROP (bit founders) but keeps wearing the bit — what a drill-off test finds. */
+export const woptFor = (f: Formation) => Math.max(16, Math.min(42, 30 / Math.pow(f.hardness, 0.25)));
+/** Mud-motor differential pressure from WOB and rock hardness (original game formula). */
+export const diffPressure = (wob: number, f: Formation) => (wob > 0 ? (wob * 12) / (f.hardness / 1.5) : 0);
+export const STALL_DP = 1650;
+
 export type Mode = "idle" | "drilling" | "connection" | "tripping" | "shutin" | "killing" | "casing" | "done";
 
 export interface SimState {
@@ -70,15 +76,17 @@ export interface SimState {
     inBand: number; total: number; maasp: number; fractured: boolean; scr: number; spm: number; pumping: boolean;
   };
   casing: { progress: number; phase: "none" | "run" | "cement" | "done" };
-  stats: { connections: number; feetDrilled: number; npt: number; kicksKilled: number; trips: number };
+  stats: { connections: number; feetDrilled: number; npt: number; kicksKilled: number; trips: number; stalls: number };
   paused: boolean;
+  dp: number; stallT: number;
+  auto: { on: boolean; wob: number; rop: number; dp: number; limit: "" | "WOB" | "ROP" | "DIFF" };
 }
 
 export type SimEvent =
   | { type: "kickAlarm" } | { type: "autoShutIn" } | { type: "lossStart" } | { type: "lossHealed" }
   | { type: "connection" } | { type: "bitDead" } | { type: "tripDone" } | { type: "formation"; name: string }
   | { type: "td" } | { type: "casingDone" } | { type: "killDone"; good: boolean } | { type: "fractured" }
-  | { type: "blackout" };
+  | { type: "blackout" } | { type: "stall" };
 
 export class Sim {
   s: SimState;
@@ -98,8 +106,10 @@ export class Sim {
       loss: { active: false, rate: 0, healed: 0, total: 0 },
       kill: { stage: "none", kmw: 0, progress: 0, choke: 0.5, dpp: 0, dppTarget: 0, cp: 0, cpIdeal: 0, dist: 0, inBand: 0, total: 0, maasp: 2300, fractured: false, scr: 900, spm: 30, pumping: false },
       casing: { progress: 0, phase: "none" },
-      stats: { connections: 0, feetDrilled: 0, npt: 0, kicksKilled: 0, trips: 0 },
+      stats: { connections: 0, feetDrilled: 0, npt: 0, kicksKilled: 0, trips: 0, stalls: 0 },
       paused: true,
+      dp: 0, stallT: 0,
+      auto: { on: false, wob: 20, rop: 200, dp: 1200, limit: "" },
     };
   }
 
@@ -204,12 +214,32 @@ export class Sim {
     // ---- modes ----
     switch (s.mode) {
       case "drilling": {
-        s.wob += Math.sign(s.wobTarget - s.wob) * Math.min(Math.abs(s.wobTarget - s.wob), 3 * dt);
         const flowF = Math.max(0.5, Math.min(1.6, 1 + ((s.flow - 550) / 550) * 0.6));
         const mudF = 1.1 - s.mw * 0.015;
         const bitF = 0.35 + 0.65 * (s.bit / 100);
-        let rop = s.wob > 0 ? (s.wob * 6) / f.hardness : 0;
-        rop = Math.min(380, rop * flowF * mudF * bitF);
+        const wopt = woptFor(f), fac = flowF * mudF * bitF;
+        // motor stalled: pick up off bottom and wait it out
+        if (s.stallT > 0) {
+          s.stallT -= dt; s.stats.npt += dt / 60; s.wob = Math.max(0, s.wob - 10 * dt); s.rop = 0; s.dp = 0; s.spp = 900;
+          break;
+        }
+        // AUTODRILLER: hold the lowest of the WOB set point, the WOB that would exceed the ROP limit, and the WOB that would exceed the diff limit
+        if (s.auto.on) {
+          const effMax = (s.auto.rop * f.hardness) / (6 * Math.max(0.05, fac));
+          const wRop = effMax <= wopt ? effMax : wopt + (effMax - wopt) / 0.3;
+          const wDp = (s.auto.dp * (f.hardness / 1.5)) / 12;
+          const w = Math.min(s.auto.wob, wRop, wDp);
+          s.auto.limit = w === s.auto.wob ? "WOB" : w === wRop ? "ROP" : "DIFF";
+          s.wobTarget = Math.max(0, Math.round(w * 10) / 10);
+        } else s.auto.limit = "";
+        s.wob += Math.sign(s.wobTarget - s.wob) * Math.min(Math.abs(s.wobTarget - s.wob), 3 * dt);
+        const eff = s.wob <= wopt ? s.wob : wopt + (s.wob - wopt) * 0.3;
+        s.dp = diffPressure(s.wob, f) * (1 + (Math.random() * 0.15 - 0.075));
+        if (s.dp > STALL_DP && Math.random() < 1 - Math.exp(-0.5 * dt)) {
+          s.stallT = 12; s.stats.stalls++; s.cost += 8000; this.events.push({ type: "stall" });
+        }
+        let rop = eff > 0 ? (eff * 6) / f.hardness : 0;
+        rop = Math.min(380, rop * fac);
         if (s.needTrip || s.fuel <= 0) rop = 0;
         s.rop = rop;
         const dd = (rop / 60) * dt;

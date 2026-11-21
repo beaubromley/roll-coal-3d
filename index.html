@@ -229,6 +229,38 @@
     .pbtn { padding: 8px 6px; min-height: 40px; font-size: 11px; }
     .pctrl { margin-top: 10px; grid-template-columns: auto 1fr auto 1fr; }
   }
+
+  /* ---- minigames ---- */
+  .pads { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+  .pad { font-family: var(--display); letter-spacing: 1px; font-size: 20px; text-transform: uppercase; color: #fff; background: #223245; border: 3px solid #3a526b; padding: 22px 8px; cursor: pointer; transition: background .08s, transform .08s; }
+  .pad.lit { background: var(--gold); color: #111; border-color: #fff; transform: scale(1.04); box-shadow: 0 0 22px rgba(244,192,74,.8); }
+  .fillwrap { margin: 14px 0; }
+  .fillbar { position: relative; height: 38px; background: #0b1118; border: 2px solid var(--line); overflow: hidden; }
+  .fillbar.big { height: 46px; margin: 14px 0; }
+  .fillfill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #2e9a55, #7bd35a); }
+  .fillband { position: absolute; top: 0; bottom: 0; background: rgba(244,192,74,.28); border-left: 3px solid var(--gold); border-right: 3px solid var(--gold); z-index: 2; }
+  .fillnum { margin-top: 8px; font-size: 14px; color: var(--dim); } .fillnum b { font-family: var(--display); font-size: 28px; color: #fff; font-weight: normal; }
+  .belt { position: relative; height: 70px; background: repeating-linear-gradient(90deg, #1a2430 0 28px, #162029 28px 56px); border: 2px solid var(--line); overflow: hidden; margin: 12px 0; }
+  .beltzone { position: absolute; left: 62px; width: 56px; top: 0; bottom: 0; background: rgba(244,192,74,.18); border-left: 2px solid var(--gold); border-right: 2px solid var(--gold); }
+  .joint { position: absolute; left: 0; top: 24px; width: 90px; height: 22px; background: linear-gradient(#aeb4bb, #6a7078); border-radius: 11px; border: 2px solid #2a2f35; box-shadow: inset -14px 0 0 -4px #e8b923; }
+  .joint.hit { background: linear-gradient(#7bd35a, #2e9a55); } .joint.miss { opacity: .35; }
+  .react { margin: 14px 0; height: 120px; display: grid; place-items: center; background: #1a2430; border: 3px solid var(--line); font-family: var(--display); font-size: 40px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); cursor: pointer; user-select: none; touch-action: manipulation; }
+  .react.go { background: var(--red); color: #fff; border-color: #fff; animation: usepulse .35s infinite; } .react.ok { background: #1f6a3a; color: #fff; } .react.bad { background: #5a1f1a; color: #fff; }
+  .wires { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+  .wire { height: 110px; border: 0; background: transparent; cursor: pointer; position: relative; font-family: var(--display); letter-spacing: 1px; color: #fff; padding: 0; }
+  .wire::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 12px; margin-left: -6px; background: var(--w); border-radius: 6px; box-shadow: 0 0 10px rgba(0,0,0,.6); }
+  .wire span { position: absolute; bottom: -2px; left: 0; right: 0; font-size: 14px; text-shadow: 0 2px 0 #000; }
+  .wire.cut::before { top: 50%; bottom: 0; opacity: .5; }
+  .typetext { font-family: ui-monospace, Consolas, monospace; font-size: 20px; line-height: 1.5; background: #0b1118; border: 2px solid var(--line); padding: 12px; margin: 10px 0; color: #aab6c3; letter-spacing: .5px; }
+  .typetext .tg { color: #4ee37c; } .typetext .tb { color: #fff; background: var(--red); }
+  .typein { width: 100%; background: #0b1118; color: #fff; border: 2px solid var(--gold); padding: 10px; font-size: 18px; font-family: ui-monospace, Consolas, monospace; }
+  .arena { position: relative; height: 210px; background: radial-gradient(#223245, #121c28); border: 2px solid var(--line); overflow: hidden; margin: 12px 0; touch-action: none; }
+  .tgt { position: absolute; left: 0; top: 0; width: 40px; height: 40px; border-radius: 50%; border: 3px solid #fff; background: var(--gold); color: #111; font-family: var(--display); font-size: 20px; cursor: pointer; padding: 0; }
+  .tgt.dead { background: var(--green); opacity: .35; pointer-events: none; }
+  .dochart { width: 100%; height: auto; display: block; border: 2px solid var(--line); margin: 10px 0 4px; background: #0b1118; }
+  .autobox { background: #121c28; border: 2px solid var(--gold); padding: 10px 12px; }
+  .opt.alt { background: #2b3d50; } .opt { min-width: 46%; text-align: left; font-size: 15px; }
+  #panel .btns .b.green { color: #07140b; }
 </style>
 </head>
 <body>

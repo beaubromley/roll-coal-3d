@@ -15,6 +15,10 @@ export class Player {
   body: Human;
   keys = new Set<string>();
   locked = false;
+  touch = false;                       // touch device: no pointer lock, on-screen controls
+  touchMove = { x: 0, y: 0 };          // analog joystick, x = strafe right, y = forward
+  onLockLost: () => void = () => {};   // pointer lock dropped without us asking (browser Esc)
+  private intentionalUnlock = false;
   dragging = false;
   private lx = 0; private ly = 0;
   lockFailed = false;
@@ -41,7 +45,11 @@ export class Player {
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
     window.addEventListener("blur", () => this.keys.clear());
-    document.addEventListener("pointerlockchange", () => { this.locked = document.pointerLockElement === canvas; });
+    document.addEventListener("pointerlockchange", () => {
+      const was = this.locked;
+      this.locked = document.pointerLockElement === canvas;
+      if (was && !this.locked) { const wanted = this.intentionalUnlock; this.intentionalUnlock = false; if (!wanted) this.onLockLost(); }
+    });
     // Pointer-lock look (normal browsers).
     document.addEventListener("pointerlockerror", () => this.failLock());
     document.addEventListener("mousemove", (e) => {
@@ -51,7 +59,7 @@ export class Player {
     });
     // Fallback for browsers/panes that refuse pointer lock (e.g. embedded previews): click-and-drag to look.
     // Uses Pointer Events because some embedded panes only deliver those.
-    canvas.addEventListener("pointerdown", (e) => { if (e.button === 0 && !this.locked) { this.dragging = true; this.lx = e.clientX; this.ly = e.clientY; } });
+    canvas.addEventListener("pointerdown", (e) => { if (e.button === 0 && !this.locked && !this.touch) { this.dragging = true; this.lx = e.clientX; this.ly = e.clientY; } });
     const endDrag = () => { this.dragging = false; };
     window.addEventListener("pointerup", endDrag); window.addEventListener("pointercancel", endDrag);
     window.addEventListener("pointermove", (e) => {
@@ -64,14 +72,14 @@ export class Player {
 
   private failLock() { if (!this.lockFailed) { this.lockFailed = true; this.onLockFailed(); } }
   lock() {
-    if (this.locked) return;
+    if (this.locked || this.touch) return;
     try {
       const r: any = this.canvas.requestPointerLock?.();
       if (r && typeof r.catch === "function") r.catch(() => this.failLock());
       else if (!this.canvas.requestPointerLock) this.failLock();
     } catch { this.failLock(); }
   }
-  unlock() { if (this.locked) document.exitPointerLock?.(); }
+  unlock() { if (this.locked) { this.intentionalUnlock = true; document.exitPointerLock?.(); } }
 
   teleport(x: number, y: number, z: number, yaw?: number) {
     this.pos.set(x, y, z); this.vel.setAll(0); this.grounded = false; this.fallStart = y;
@@ -125,9 +133,11 @@ export class Player {
       if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) ix += 1;
       if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) ix -= 1;
     }
+    const joy = this.enabled && (this.touchMove.x !== 0 || this.touchMove.y !== 0);
+    if (joy) { ix += this.touchMove.x; iz += this.touchMove.y; }
     const len = Math.hypot(ix, iz);
     const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
-    const speed = sprint ? 6.2 : 3.6;
+    const speed = (sprint ? 6.2 : 3.6) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
     let vx = 0, vz = 0;
     if (len > 0) {
       ix /= len; iz /= len;

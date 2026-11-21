@@ -62,6 +62,51 @@ export class Game {
     this.player.onStep = () => this.sfx.step();
     this.buildAmbient();
     this.buildMissions();
+    this.wirePause();
+  }
+
+  // ---------- pause ----------
+  paused = false;
+  isTouch = false;
+  private controlsHtml() {
+    const rows: [string, string][] = this.isTouch
+      ? [["STICK", "MOVE"], ["DRAG", "LOOK"], ["USE", "INTERACT"], ["JUMP", "JUMP"], ["RUN", "SPRINT"], ["CAM", "1ST / 3RD"], ["||", "PAUSE"]]
+      : [["WASD", "MOVE"], ["SHIFT", "SPRINT"], ["MOUSE", "LOOK"], ["SPACE", "JUMP"], ["E", "INTERACT"], ["V", "1ST / 3RD"], ["ESC / P", "PAUSE"], ["M", "MUTE"]];
+    return rows.map((r) => `<span>${r[0]}</span><em>${r[1]}</em>`).join("");
+  }
+  private wirePause() {
+    $("pResume").addEventListener("click", () => this.togglePause(false));
+    $("pCtrl").addEventListener("click", () => {
+      const b = $("pctrlbox"); b.innerHTML = this.controlsHtml();
+      b.style.display = b.style.display === "none" ? "grid" : "none";
+    });
+    $("pSound").addEventListener("click", () => { this.sfx.init(); this.sfx.setMuted(!this.sfx.muted); this.refreshPause(); });
+    $("pQuit").addEventListener("click", () => location.reload());
+  }
+  private refreshPause() {
+    const s = this.sim.s, c = clockString(s.t);
+    $("pstat").innerHTML = `DAY ${c.day} · ${c.hhmm}<br/>${fmt(s.depth)} FT · ${money(s.cost)} / ${money(WELL.afe)}`;
+    const a = this.active, st = a ? a.m.steps[a.i] : null;
+    $("pjob").innerHTML = a ? `${a.m.title.toUpperCase()}<br/>&gt; ${st?.text ?? ""}` : "NO ACTIVE JOB";
+    $("pSound").textContent = this.sfx.muted ? "SOUND: OFF" : "SOUND: ON";
+  }
+  /** Pause / resume. Ignored while a panel is open unless forced (tab hidden). */
+  togglePause(force?: boolean, opts: { allowPanel?: boolean } = {}) {
+    if (!this.started) return;
+    const want = force ?? !this.paused;
+    if (want === this.paused) return;
+    if (want && this.ui.panelOpen && !opts.allowPanel) return;
+    this.paused = want;
+    document.body.classList.toggle("paused", want);
+    if (want) {
+      this.refreshPause(); $("pctrlbox").style.display = "none"; $("pause").style.display = "grid";
+      this.player.enabled = false; this.player.unlock();
+      try { this.sfx.ctx?.suspend(); } catch { /* ignore */ }
+    } else {
+      $("pause").style.display = "none";
+      this.player.enabled = !this.ui.panelOpen; this.player.lock();
+      try { this.sfx.ctx?.resume(); } catch { /* ignore */ }
+    }
   }
 
   // ---------- helpers ----------
@@ -850,7 +895,7 @@ export class Game {
   // ---------- per-frame ----------
   timeScale(): number {
     const s = this.sim.s;
-    if (!this.started) return 0;
+    if (!this.started || this.paused) return 0;
     if (this.ui.panelOpen && !this.live) return 0;
     if (this.sleeping) return 60;
     if (s.kick.alarm || s.mode === "shutin" || s.mode === "killing") return 0.7;
@@ -879,8 +924,10 @@ export class Game {
   }
 
   update(dt: number, realDt: number) {
-    this.realT += realDt;
+    if (!this.paused) this.realT += realDt;
     this.trailT += realDt;
+    document.body.classList.toggle("playing", this.started);
+    document.body.classList.toggle("panelopen", this.ui.panelOpen);
     if (this.sleeping && (this.sim.s.t >= this.sleepUntil)) this.wake("Alarm clock");
     this.updateMissions();
     this.processSimEvents();
@@ -980,7 +1027,7 @@ export class Game {
     }
     for (const it of this.interacts) consider(it);
     cand.sort((a, b) => a.score - b.score);
-    this.nearest = this.ui.panelOpen || !this.started ? null : cand[0]?.it ?? null;
+    this.nearest = this.ui.panelOpen || !this.started || this.paused ? null : cand[0]?.it ?? null;
     this.ui.setPrompt(this.nearest ? this.nearest.label() : null);
 
     // task arrows: one per open task (the active job plus any jobs it interrupted)
@@ -998,7 +1045,7 @@ export class Game {
     const scale = eng.getRenderWidth() / W;
     const vp = new Viewport(0, 0, eng.getRenderWidth(), eng.getRenderHeight());
     const fwdRay = cam.getForwardRay().direction;
-    const show = this.started && !this.ui.panelOpen;
+    const show = this.started && !this.ui.panelOpen && !this.paused;
     const pins = markers.map((m) => {
       const wp = m.pos.add(v3(0, 1.4, 0));
       const sc = Vector3.Project(wp, Matrix.Identity(), this.scene.getTransformMatrix(), vp);
@@ -1066,7 +1113,7 @@ export class Game {
   }
 
   interact() {
-    if (!this.started || this.ui.panelOpen || !this.nearest) return;
+    if (!this.started || this.paused || this.ui.panelOpen || !this.nearest) return;
     this.sfx.click(); this.nearest.act();
   }
 }

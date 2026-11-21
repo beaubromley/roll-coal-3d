@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#07040b" />
 <title>Roll Coal, Make Hole 2: Company Man</title>
 <meta name="description" content="Open rig. Narrow wellbore. A first-person-ish satire of life as the Company Man on a land drilling rig." />
 <style>
@@ -113,7 +116,6 @@
   #intro .tag { font-size: 20px; margin: 14px 0 22px; color: #dbe6f0; } #intro .tag i { color: var(--gold); }
   #intro .keys { display: inline-grid; grid-template-columns: auto auto; gap: 6px 18px; text-align: left; font-size: 14px; color: #c3d0dc; margin: 0 auto 24px; }
   #intro .keys kbd, kbd { background: #fff; color: #111; border-radius: 4px; padding: 1px 7px; font-weight: 800; font-size: 13px; }
-  #intro button { font-size: 26px; padding: 14px 34px; }
   #intro small { display: block; margin-top: 18px; color: var(--dim); max-width: 560px; margin-inline: auto; line-height: 1.5; }
   #loading { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: #070b10; font-family: var(--display); font-size: 28px; letter-spacing: 3px; color: var(--gold); }
   #endstats { display: inline-block; text-align: left; margin: 20px 0; font-size: 16px; min-width: 320px; }
@@ -129,7 +131,7 @@
   #ver { position: absolute; top: 2.2%; left: 50%; transform: translateX(-50%); font-size: max(7px, 1.05cqw); color: #76ff03; text-shadow: 2px 2px #000, 0 0 10px #76ff03; white-space: nowrap; }
   #sub2 { position: absolute; top: 33%; left: 50%; transform: translateX(-50%); font-size: max(7px, .95cqw); color: #ffd24a; text-shadow: 2px 2px #000, 0 0 8px rgba(255,160,40,.8); white-space: nowrap; letter-spacing: .06cqw; }
   #btnrow { position: absolute; left: 28.8%; width: 40.9%; top: 81.8%; height: 10.2%; display: flex; }
-  .tbtn { flex: 1; font-family: inherit; font-size: max(9px, 1.15cqw); white-space: nowrap; background: transparent; color: #0b1a05; border: 0; cursor: pointer; text-shadow: 1px 1px rgba(255,255,255,.25); transition: transform .15s, color .15s; letter-spacing: .04cqw; padding: 0; }
+  .tbtn { flex: 1; font-family: inherit; font-size: max(11px, 1.15cqw); white-space: nowrap; background: transparent; color: #0b1a05; border: 0; cursor: pointer; text-shadow: 1px 1px rgba(255,255,255,.25); transition: transform .15s, color .15s; letter-spacing: .04cqw; padding: 0; }
   .tbtn:hover, .tbtn:focus-visible { transform: scale(1.06); color: #fff; text-shadow: 0 0 10px #fff, 2px 2px #000; outline: none; }
   #startBtn { animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .78; } }
@@ -150,6 +152,83 @@
   @keyframes neon { 0%, 100% { opacity: 1; } 12% { opacity: .55; } 14% { opacity: 1; } 61% { opacity: .75; } 63% { opacity: 1; } 87% { opacity: .5; } 89% { opacity: 1; } }
   #stage.shake { animation: shake .35s steps(2); }
   @keyframes shake { 0% { transform: translate(0, 0); } 25% { transform: translate(-.35%, .25%); } 50% { transform: translate(.3%, -.2%); } 75% { transform: translate(-.2%, .15%); } 100% { transform: translate(0, 0); } }
+
+  /* ---- Pause screen (matches the retro title) ---- */
+  #pause { position: fixed; inset: 0; z-index: 25; display: none; place-items: center; background: rgba(4,2,8,.78); backdrop-filter: blur(3px); font-family: 'Press Start 2P', ui-monospace, Consolas, monospace; }
+  .pbox { width: min(92vw, 560px); max-height: 92vh; overflow: auto; text-align: center; background: rgba(8,6,16,.96); border: 4px solid #76ff03; box-shadow: 0 0 28px rgba(118,255,3,.35), inset 0 0 14px rgba(0,0,0,.8); padding: 26px 22px 22px; }
+  .ptitle2 { font-size: clamp(22px, 5vw, 34px); color: #76ff03; text-shadow: 3px 3px #000, 0 0 14px #76ff03; margin-bottom: 14px; }
+  .pstat { font-size: 10px; color: #ffd24a; line-height: 1.8; margin-bottom: 6px; }
+  .pjob { font-size: 9px; color: #cfd8e3; line-height: 1.8; margin-bottom: 16px; }
+  .pbtns { display: grid; gap: 10px; }
+  .pbtn { font-family: inherit; font-size: 13px; color: #0b1a05; background: #7bc02c; border: 3px solid #0b1a05; box-shadow: 0 4px 0 #3f7a10; padding: 14px 10px; cursor: pointer; min-height: 48px; }
+  .pbtn:hover, .pbtn:focus-visible { background: #9be34a; outline: none; }
+  .pbtn:active { transform: translateY(2px); box-shadow: 0 2px 0 #3f7a10; }
+  .pbtn.red { background: #d9503a; box-shadow: 0 4px 0 #7a2418; color: #fff; }
+  .pctrl { margin-top: 16px; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; text-align: left; font-size: 9px; align-items: center; }
+  .pctrl span { color: #0b1a05; background: #9be34a; padding: 5px 7px; border: 2px solid #0b1a05; text-align: center; white-space: nowrap; }
+  .pctrl em { font-style: normal; color: #e9eef3; }
+
+  /* ---- Mobile / touch ---- */
+  #touch { position: fixed; inset: 0; z-index: 6; display: none; pointer-events: none; touch-action: none; }
+  body.touch.playing #touch { display: block; }
+  body.touch.panelopen #touch, body.touch.paused #touch { display: none; }
+  #lookzone { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
+  #joyzone { position: absolute; left: 0; bottom: 0; width: 46%; height: 64%; pointer-events: auto; touch-action: none; }
+  #joybase { position: absolute; width: 124px; height: 124px; margin: -62px 0 0 -62px; border-radius: 50%; border: 3px solid rgba(255,255,255,.55); background: rgba(10,16,24,.35); display: none; }
+  #joyknob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(255,255,255,.7); box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+  .tb { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 3px solid rgba(255,255,255,.8); background: rgba(10,16,24,.55); color: #fff; font-family: var(--display); letter-spacing: 1px; font-size: 14px; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; padding: 0; }
+  .tb:active, .tb.on { background: rgba(244,192,74,.85); color: #111; }
+  #tb-use { right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); width: 86px; height: 86px; font-size: 22px; border-color: var(--gold); }
+  #tb-use.hot { background: var(--gold); color: #111; animation: usepulse 1s infinite; }
+  @keyframes usepulse { 50% { transform: scale(1.08); } }
+  #tb-jump { right: calc(max(18px, env(safe-area-inset-right)) + 100px); bottom: max(30px, env(safe-area-inset-bottom)); width: 64px; height: 64px; }
+  #tb-run { right: calc(max(18px, env(safe-area-inset-right)) + 12px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 100px); width: 60px; height: 60px; }
+  #tb-cam { right: calc(max(18px, env(safe-area-inset-right)) + 82px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 84px); width: 52px; height: 52px; font-size: 11px; }
+  #tb-pause { position: absolute; pointer-events: auto; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); width: 44px; height: 44px; border-radius: 10px; border: 2px solid rgba(255,255,255,.7); background: rgba(10,16,24,.6); color: #fff; font-size: 16px; font-weight: 900; letter-spacing: -1px; touch-action: none; padding: 0; }
+  #tbhint { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 170px); max-width: 44vw; text-align: right; font-family: var(--display); font-size: 15px; color: #fff; text-shadow: 0 2px 0 #000, 0 0 10px #000; display: none; pointer-events: none; }
+  #rotate { position: fixed; inset: 0; z-index: 40; display: none; place-items: center; text-align: center; background: #07040b; color: #fff; font-family: 'Press Start 2P', ui-monospace, monospace; font-size: 14px; line-height: 2; padding: 20px; }
+  #rotate .rbig { font-size: 64px; color: #76ff03; text-shadow: 0 0 14px #76ff03; animation: rot 2.4s infinite ease-in-out; }
+  @keyframes rot { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-90deg); } }
+  #rotate .rsmall { font-size: 9px; color: #93a4b5; margin-bottom: 18px; }
+  @media (orientation: portrait) { body.touch:not(.no-rotate) #rotate { display: grid; } }
+
+  body.touch { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  body.touch #mission { left: max(12px, env(safe-area-inset-left)); top: 8px; max-width: 40vw; }
+  body.touch #mission .title { font-size: clamp(18px, 4.6vw, 30px); }
+  body.touch #mission .sub { font-size: 11px; max-width: 38vw; margin-top: 4px; }
+  body.touch #mission .count { font-size: 9px; }
+  body.touch #status { right: 64px; top: 8px; width: 176px; }
+  body.touch #stars { font-size: 20px; }
+  body.touch .bar { margin-top: 3px; } body.touch .bar .lbl { font-size: 8px; width: 70px; } body.touch .bar .track { width: 56px; height: 7px; } body.touch .bar .val { font-size: 14px; width: 36px; }
+  body.touch #status .lbl { font-size: 9px; }
+  body.touch #strip { bottom: 6px; max-width: 44vw; }
+  body.touch #strip div { padding: 2px 6px; min-width: 44px; } body.touch #strip span { font-size: 12px; } body.touch #strip small { font-size: 7px; }
+  body.touch #mapwrap { left: 50%; transform: translateX(-50%); top: 8px; bottom: auto; width: 88px; height: 88px; border-width: 3px; }
+  body.touch #map { width: 100%; height: 100%; }
+  body.touch #district { display: none; }
+  body.touch #radio { left: max(12px, env(safe-area-inset-left)); top: 112px; bottom: auto; width: 40vw; max-width: 330px; }
+  body.touch #radio .rmsg:nth-last-child(n+3) { display: none; }
+  body.touch .rmsg img { width: 30px; height: 30px; } body.touch .rmsg .txt { font-size: 11px; } body.touch .rmsg .who { font-size: 9px; }
+  body.touch #prompt { bottom: 70px; left: 50%; } body.touch #prompt .key { display: none; } body.touch #prompt .lab { font-size: 18px; }
+  body.touch #alert { top: 104px; font-size: 16px; padding: 5px 12px; }
+  body.touch #toast { top: 18%; }
+  body.touch #crosshair { display: none !important; }
+  body.touch #panel { padding: 14px 14px 12px; max-height: 92vh; }
+  body.touch #panel h2 { font-size: 26px; }
+  body.touch button.b { min-height: 46px; font-size: 16px; }
+  body.touch .row { font-size: 13px; }
+  body.touch .gauge .g-v { font-size: 32px; }
+  body.touch #ver, body.touch #pressstart { display: none; }
+  body.touch input[type=range] { height: 34px; }
+
+  @media (max-height: 480px) {
+    .pbox { padding: 12px 14px; width: min(94vw, 640px); }
+    .ptitle2 { font-size: 20px; margin-bottom: 6px; }
+    .pstat, .pjob { margin-bottom: 6px; line-height: 1.5; }
+    .pbtns { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .pbtn { padding: 8px 6px; min-height: 40px; font-size: 11px; }
+    .pctrl { margin-top: 10px; grid-template-columns: auto 1fr auto 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -173,6 +252,34 @@
   <div id="pins"></div>
   <div id="toast" class="shadowtext"></div>
 </div>
+
+<div id="touch">
+  <div id="lookzone"></div>
+  <div id="joyzone"><div id="joybase"><div id="joyknob"></div></div></div>
+  <div id="tbhint"></div>
+  <button class="tb" id="tb-use">USE</button>
+  <button class="tb" id="tb-jump">JUMP</button>
+  <button class="tb" id="tb-run">RUN</button>
+  <button class="tb" id="tb-cam">CAM</button>
+  <button id="tb-pause" aria-label="Pause">||</button>
+</div>
+
+<div id="pause" style="display:none">
+  <div class="pbox">
+    <div class="ptitle2">PAUSED</div>
+    <div class="pstat" id="pstat"></div>
+    <div class="pjob" id="pjob"></div>
+    <div class="pbtns">
+      <button class="pbtn" id="pResume">RESUME</button>
+      <button class="pbtn" id="pCtrl">CONTROLS</button>
+      <button class="pbtn" id="pSound">SOUND: ON</button>
+      <button class="pbtn red" id="pQuit">QUIT TO TITLE</button>
+    </div>
+    <div class="pctrl" id="pctrlbox" style="display:none"></div>
+  </div>
+</div>
+
+<div id="rotate"><div><div class="rbig">&#8635;</div><div>ROTATE YOUR PHONE</div><div class="rsmall">This game plays in landscape.</div><button class="pbtn" id="rotateOk">PLAY ANYWAY</button></div></div>
 
 <div id="panelwrap"><div id="panel"></div></div>
 <div id="fade"></div>

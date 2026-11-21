@@ -75,8 +75,10 @@ export class UI {
     return p;
   }
   tickPanel() { if (this.panelOpen && this.panelTick) this.panelTick(); }
+  closedAt = 0;
   closePanel() {
     if (!this.panelOpen) return;
+    this.closedAt = performance.now();
     $("panelwrap").style.display = "none"; this.panelOpen = false; this.panelTick = null;
     this.onPanelClose();
   }

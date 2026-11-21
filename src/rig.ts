@@ -141,7 +141,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     brace(v(x[0], 0.2, -5.4), v(x[1], 3.9, -5.4)); brace(v(x[1], 0.2, -5.4), v(x[0], 3.9, -5.4));
     brace(v(x[0], 3.9, -5.4), v(x[1], F - 0.7, -5.4)); brace(v(x[1], 3.9, -5.4), v(x[0], F - 0.7, -5.4));
   }
-  b.label("RIG 107", 0, 3.0, 5.7, 3.2, 0.9, Math.PI, "#233a52", "#ffd24a", 100);
+  b.label("AL DRILLING\nRIG 107", 0, 3.0, 5.7, 3.2, 1.2, Math.PI, "#233a52", "#ffd24a", 64);
   b.slab("steel", -6.5, 0, -6, -5.7, 0.3, 6); b.slab("steel", 5.7, 0, -6, 6.5, 0.3, 6);
 
   // ---- BOP stack in the cellar zone below the rotary ----
@@ -530,7 +530,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     door: { side: "-x", c: 96, w: 1.1 } });
   b.slab("wood", 6.5, 0, 96.8, 8.2, 1.0, 97.8, true);
   b.label("PPE REQUIRED\nHARD HAT • FRC\nGLASSES • GLOVES", 3.0, 2.2, 96, 2.2, 1.5, -Math.PI / 2, "#7a1a14", "#ffffff", 40);
-  b.label("RIG 107\nAUTHORIZED PERSONNEL", -3.2, 3.4, 96, 3.2, 1.0, Math.PI / 2, "#233a52", "#ffd24a", 40);
+  b.label("AL DRILLING • RIG 107\nAUTHORIZED PERSONNEL", -3.2, 3.4, 96, 3.2, 1.0, Math.PI / 2, "#233a52", "#ffd24a", 40);
   b.cyl("dsteel", -4.2, 1.6, 96, 0.18, 3.2, { tess: 6 });
   spots.gate = v(6.9, 1.4, 96.4);
   // pad edge fence posts

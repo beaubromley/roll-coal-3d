@@ -10,7 +10,8 @@ import { F } from "./rig";
  *   F250 (lifted)  W/S gas+brake, A/D steer, Space handbrake, Shift boost
  *   Forklift       W/S, A/D, R/F raise / lower forks
  *   Manlift        W/S, A/D, R/F raise / lower the basket (can reach the drill floor)
- *   Driller's chair  W/S weight on bit, A/D pump rate, T autodriller
+ *   Driller's chair  W/S weight on bit, A/D pump rate, SPACE brake, T autodriller
+ *   DD / MWD seats  A/D toolface, W slide (steer), S rotate (straighten)
  * Camera: V switches chase / first person, mouse looks around.
  */
 
@@ -50,8 +51,15 @@ export class Vehicles {
   private world: AABB[];
   private hud: HTMLElement;
   private wasThird = true;
-  private chair = { on: false, hidden: false };
-  private chairPos: Vector3;
+  private chair = { on: false, hidden: false, idx: 0 };
+  /** 0 = driller's chair, 1 / 2 = the directional drillers' seats */
+  private seats = [
+    { name: "Driller's chair", pos: new Vector3(4.75, F + 0.5, -3.25), yaw: -0.97, npc: "driller", off: new Vector3(4.3, F, -1.7) },
+    { name: "Directional driller's seat", pos: new Vector3(4.8, F + 0.5, -4.62), yaw: Math.PI, npc: "dd1", off: new Vector3(4.8, F, -3.4) },
+    { name: "MWD seat", pos: new Vector3(5.6, F + 0.5, -4.62), yaw: Math.PI, npc: "dd2", off: new Vector3(5.6, F, -3.4) },
+  ];
+  /** steering the well from the DD seat */
+  private dd = { inc: 2.1, azi: 270, tf: 0, sliding: false, warned: 0 };
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0;
@@ -59,11 +67,10 @@ export class Vehicles {
 
   constructor(private scene: Scene, private colliders: AABB[], private player: Player, private game: Game) {
     this.world = colliders.slice();            // static world only (vehicles don't collide with their own boxes)
-    this.chairPos = new Vector3(4.75, F + 0.5, -3.25);
     this.hud = document.createElement("div");
     this.hud.style.cssText = "position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:30;display:none;padding:8px 16px;background:rgba(10,16,24,.78);border:2px solid #f4c04a;color:#fff;font:700 13px/1.45 system-ui,sans-serif;letter-spacing:.5px;text-align:center;pointer-events:none;text-transform:none;white-space:pre;max-width:96vw";
     document.body.appendChild(this.hud);
-    const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "KeyT" && this.chair.on && !e.repeat) this.toggleAuto(); };
+    const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "KeyT" && this.chair.on && this.chair.idx === 0 && !e.repeat) this.toggleAuto(); };
     const up = (e: KeyboardEvent) => this.pressed.delete(e.code);
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", () => this.pressed.clear());
     this.build();
@@ -232,7 +239,7 @@ export class Vehicles {
   interacts() {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding });
-    out.push({ pos: () => new Vector3(4.75, F + 1.0, -3.25), label: () => "Sit in the driller's chair", r: 2.2, act: () => this.sit(), ok: () => !this.riding });
+    this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : i === 1 ? "Sit in the directional driller's seat" : "Sit in the MWD seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
     out.push({ pos: () => new Vector3(-3.2, F + 1.2, -0.3), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
     out.push({ pos: () => new Vector3(-3.2, FB + 1.2, 0.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
@@ -285,21 +292,23 @@ export class Vehicles {
     this.game.sfx.click();
   }
 
-  private sit() {
+  private sit(i = 0) {
     if (this.riding) return;
-    const drv = this.game.rig.humans.driller;
-    this.chair.on = true; this.chair.hidden = drv.root.isEnabled(); drv.root.setEnabled(false);
+    const st = this.seats[i], npc = this.game.rig.humans[st.npc];
+    this.chair.on = true; this.chair.idx = i; this.chair.hidden = npc.root.isEnabled(); npc.root.setEnabled(false);
     this.wasThird = this.player.third; this.player.third = false; this.player.ride = true;
-    this.player.yaw = -0.97; this.player.pitch = 0.12;
-    this.player.pos.set(this.chairPos.x, this.chairPos.y, this.chairPos.z);
+    this.player.yaw = st.yaw; this.player.pitch = 0.12;
+    this.player.pos.set(st.pos.x, st.pos.y, st.pos.z);
     this.hud.style.display = "block";
-    this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000);
+    if (i === 0) this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000);
+    else this.game.radio("tex", i === 1 ? "That's the steering seat. Small corrections, boss. Toolface is not a suggestion." : "That's Priya's seat. She's going to want it back.", 7000);
   }
   private stand() {
+    const st = this.seats[this.chair.idx];
     this.chair.on = false;
-    if (this.chair.hidden) this.game.rig.humans.driller.root.setEnabled(true);
+    if (this.chair.hidden) this.game.rig.humans[st.npc].root.setEnabled(true);
     this.player.ride = false; this.player.third = this.wasThird;
-    this.player.teleport(4.3, F, -1.7, Math.PI);
+    this.player.teleport(st.off.x, st.off.y, st.off.z, Math.PI);
     this.hud.style.display = "none";
   }
   private toggleAuto() {
@@ -453,17 +462,36 @@ export class Vehicles {
   }
 
   private updateChair(dt: number) {
-    const s = this.game.sim.s, p = this.player;
-    p.pos.set(this.chairPos.x, this.chairPos.y, this.chairPos.z); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(4.75, F + 1.45, -3.25);
+    const s = this.game.sim.s, p = this.player, st = this.seats[this.chair.idx];
+    p.pos.set(st.pos.x, st.pos.y, st.pos.z); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(st.pos.x, F + 1.45, st.pos.z);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
-    const busy = s.mode === "tripping" || s.mode === "casing";
     const up = (this.k("KeyW", "ArrowUp") ? 1 : 0) - (this.k("KeyS", "ArrowDown") ? 1 : 0);
-    const fl = (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0);
-    if (up && !s.auto.on && !busy) s.wobTarget = Math.max(0, Math.min(60, s.wobTarget + up * 8 * dt));
-    if (fl) s.flowTarget = Math.max(400, Math.min(1000, s.flowTarget + fl * 150 * dt));
-    this.hud.textContent = `DRILLER'S CHAIR — ${s.mode.toUpperCase()}   DEPTH ${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr\n`
-      + `WOB ${s.wob.toFixed(1)} → ${s.wobTarget.toFixed(0)} klbs   PUMP ${Math.round(s.flowTarget)} gpm   SPP ${Math.round(s.spp)} psi   AUTO ${s.auto.on ? "ON" : "OFF"}\n`
-      + `W/S weight on bit  ·  A/D pump rate  ·  T autodriller  ·  E stand up`;
+    const side = (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0);
+    if (this.chair.idx === 0) {
+      const busy = s.mode === "tripping" || s.mode === "casing";
+      if (this.k("Space")) { s.wobTarget = Math.max(0, s.wobTarget - 30 * dt); if (s.auto.on) s.auto.on = false; }   // set the brake: weight comes right off
+      else if (up && !s.auto.on && !busy) s.wobTarget = Math.max(0, Math.min(60, s.wobTarget + up * 8 * dt));
+      if (side) s.flowTarget = Math.max(400, Math.min(1000, s.flowTarget + side * 150 * dt));
+      this.hud.textContent = `DRILLER'S CHAIR — ${s.mode.toUpperCase()}   DEPTH ${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr\n`
+        + `WOB ${s.wob.toFixed(1)} → ${s.wobTarget.toFixed(0)} klbs   PUMP ${Math.round(s.flowTarget)} gpm   SPP ${Math.round(s.spp)} psi   AUTO ${s.auto.on ? "ON" : "OFF"}\n`
+        + `W/S weight on bit  ·  A/D pump rate  ·  SPACE brake  ·  T autodriller  ·  E stand up`;
+      return;
+    }
+    // directional driller / MWD seat: pick a toolface and slide to steer; rotating straightens the hole back up
+    const d = this.dd, drilling = s.mode === "drilling" && s.rop > 0;
+    d.tf = (d.tf + side * 90 * dt + 360) % 360;
+    d.sliding = up > 0;
+    if (d.sliding && drilling) {
+      const rate = s.rop / 3600 * 3.0;                             // deg per foot drilled, scaled by ROP
+      d.inc = Math.max(0, Math.min(90, d.inc + Math.cos(d.tf * Math.PI / 180) * rate * dt * 12));
+      d.azi = (d.azi + Math.sin(d.tf * Math.PI / 180) * rate * dt * 12 / Math.max(2, Math.sin(Math.max(2, d.inc) * Math.PI / 180) * 20) + 360) % 360;
+    } else if (up < 0 && drilling) d.inc = Math.max(0, d.inc - 0.4 * dt);
+    d.warned -= dt;
+    const off = Math.abs(((d.azi - 270 + 540) % 360) - 180);
+    if ((d.inc > 6 || off > 15) && d.warned <= 0) { d.warned = 40; this.game.radio("tex", d.inc > 6 ? "We're building angle, boss. That's a lot of curve for a vertical section." : "Azimuth is wandering off the plan. The lease line is that way.", 6500); }
+    this.hud.textContent = `${st.name.toUpperCase()} — ${d.sliding && drilling ? "SLIDING" : "ROTATING"}   INC ${d.inc.toFixed(1)}°   AZI ${d.azi.toFixed(0)}° (plan 270°)   TOOLFACE ${d.tf.toFixed(0)}°\n`
+      + `DEPTH ${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr   ${drilling ? "" : "(drill to see the well respond)"}\n`
+      + `A/D set toolface  ·  W hold to slide / steer  ·  S rotate (straighten up)  ·  E stand up`;
   }
 }

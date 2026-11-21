@@ -339,18 +339,19 @@ export function buildRig(scene: Scene): Rig {
   // ================= MUD TANKS + SHAKERS + HOPPER =================
   const tanks = [[-18, -9], [-9, 0], [0, 9], [9, 18]];
   tanks.forEach(([x0, x1], i) => {
-    b.slab("tank", x0 + 0.05, 0.4, -26, x1 - 0.05, 2.7, -19.6);
+    b.slab("tank", x0 + 0.05, 0.4, -26, x1 - 0.05, 2.7, -19.6, true);          // solid tank body (walkable roof is the deck below)
     b.slab("dsteel", x0 + 0.05, 2.7, -26, x1 - 0.05, 2.78, -19.6, true);
     b.slab("steel", x0 + 0.05, 0, -26, x1 - 0.05, 0.4, -19.6);
     b.rail("yellow", x0 + 0.05, -19.7, x1 - 0.05, -19.7, 2.78, 1.1);
     b.rail("yellow", x0 + 0.05, -25.9, x1 - 0.05, -25.9, 2.78, 1.1);
     b.cyl("steel", (x0 + x1) / 2, 3.5, -22.8, 0.2, 1.4, { tess: 6 });          // agitator shaft
     b.box("bopblue", (x0 + x1) / 2, 4.3, -22.8, 0.7, 0.5, 0.5);
+    b.blocker((x0 + x1) / 2 - 0.4, 2.78, -23.2, (x0 + x1) / 2 + 0.4, 4.6, -22.4);   // agitator only, not the whole roof
     void i;
   });
-  b.blocker(-18, 2.78, -26.1, 18, 4.5, -19.5);
   // tank-roof stairs at east end
   b.stairs("dsteel", "yellow", 18.0, -22.8, "+x", 2.78, 1.1, 0.25, 0.3);
+  b.rail("yellow", -17.95, -25.9, -17.95, -19.7, 2.78, 1.1);   // west end of the pit roof
   b.label("ACTIVE PITS", 0, 1.8, -19.5, 3.0, 0.7, Math.PI, "#233a52", "#ffd24a", 70);
   // shale shakers on tank 1
   for (let i = 0; i < 3; i++) {

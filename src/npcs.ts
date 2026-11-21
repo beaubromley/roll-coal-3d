@@ -32,6 +32,8 @@ export class Human {
   ppe: Mesh[] = [];
   phase = Math.random() * 6;
   walking = false;
+  /** sitting pose (thighs forward, knees bent, hands on the controls) */
+  seated = false;
   constructor(public scene: Scene, o: HumanOpts) {
     this.root = new TransformNode("human", scene);
     if (Human.kit) { this.fromKit(Human.kit, o); return; }
@@ -208,6 +210,15 @@ export class Human {
   }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
   animate(dt: number, speed: number) {
+    if (this.seated) {
+      this.phase += dt * 1.2;
+      this.legL.rotation.x = this.legR.rotation.x = -1.5;
+      if (this.kneeL && this.kneeR && this.elbowL && this.elbowR) {
+        this.kneeL.rotation.x = this.kneeR.rotation.x = 1.5; this.elbowL.rotation.x = this.elbowR.rotation.x = -0.7;
+      }
+      this.armL.rotation.x = this.armR.rotation.x = -0.75 + Math.sin(this.phase) * 0.04;
+      return;
+    }
     if (speed > 0.15) {
       this.phase += dt * (4 + speed * 1.6);
       const amp = Math.min(0.9, 0.3 + speed * 0.1);

@@ -183,7 +183,7 @@ export class Game {
   /** people a vehicle can run over */
   peopleAt(): { name: string; x: number; y: number; z: number }[] {
     const out: { name: string; x: number; y: number; z: number }[] = [];
-    const names: Record<string, string> = { hand1: "A floorhand", hand2: "A floorhand", hand3: "Jimbo", derrickman: "The derrickman", mudeng: "Marcus", pusher: "Earl", guard: "Roy", vp: "The VP", driller: "Dale" };
+    const names: Record<string, string> = { hand1: "A floorhand", hand2: "A floorhand", hand3: "Jimbo", derrickman: "The derrickman", mudeng: "Marcus", pusher: "Earl", guard: "Roy", vp: "The VP", driller: "Dale", dd1: "Tex", dd2: "Priya" };
     for (const [k, h] of Object.entries(this.rig.humans)) if (h.root.isEnabled()) out.push({ name: names[k] ?? "Someone", x: h.root.position.x, y: h.root.position.y, z: h.root.position.z });
     for (const h of this.interns) out.push({ name: "The intern", x: h.root.position.x, y: h.root.position.y, z: h.root.position.z });
     return out;
@@ -205,6 +205,18 @@ export class Game {
     btn.onclick = () => { if (btn.disabled) return; window.clearInterval(t); this.closeMini(); reset(); this.radio("earl", "Alright. Everybody back to work. Be careful out there, Company Man.", 6000); };
   }
 
+  /** derrick hand on the monkey board: latch each stand as it swings into the fingers */
+  workBoard() {
+    if (this.realT - ((this.flags.boardT as number | undefined) ?? -999) < 20) { this.radio("earl", "Board's full for now. Take a breath up there.", 5000); return; }
+    this.flags.boardT = this.realT;
+    this.mini.reaction({ eyebrow: "Monkey Board", title: "Rack the Stand", intro: "You're the derrick hand now, ninety feet up. A 93-foot stand swings in from the elevators. Hit LATCH the instant it reaches the finger.", rounds: 5, goText: "LATCH" }, (r) => {
+      if (r.skipped) { this.shortcutToast("You waved at the stand."); this.radio("earl", "That stand is still swinging. Get off my board.", 6000); return; }
+      if (r.score >= 0.7) { this.gain(0.15, 4); this.sfx.good(); this.radio("earl", "Clean racking. You'd make a decent derrick hand. Don't tell the derrickman.", 7000); }
+      else if (r.score >= 0.4) { this.gain(0.03, 1); this.radio("earl", "It's racked. It's crooked. It's racked.", 6000); }
+      else { this.inc(1, "DROPPED OBJECT"); this.sim.addCost(18000); this.radio("earl", "DROPPED OBJECT! Everybody clear the floor! …Who was on the board?", 8000); }
+    });
+  }
+
   // ---------- ambient interactables ----------
   buildAmbient() {
     const S = this.rig.spots, H = this.rig.humans;
@@ -212,6 +224,7 @@ export class Game {
     for (const it of this.veh.interacts()) this.interacts.push(it);
     const add = (pos: () => Vector3, label: string | (() => string), r: number, act: () => void, ok?: () => boolean) =>
       this.interacts.push({ pos, label: typeof label === "string" ? () => label : label, r, act, ok });
+    add(() => S.board, "Work the board — rack a stand", 3.2, () => this.workBoard(), () => this.player.pos.y > 20);
     add(() => S.cabin, "Driller's console", 3.2, () => this.openCabin());
     add(() => S.hopper, "Mud hopper", 3.4, () => this.openHopper());
     add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
@@ -227,13 +240,15 @@ export class Game {
     add(() => S.mudlog, "Mud logging unit", 2.8, () => this.openMudlog());
     add(() => S.bop, "BOP stack", 3.6, () => this.openBop());
     add(() => S.coffee, "Coffee", 2.2, () => { if (this.flags.coffeeEmpty) this.radio("earl", "Pot's empty. Somebody's going to have to make coffee."); else { this.gain(0, 3); this.ui.toast("+3 MORALE", "Tastes like diesel."); } });
-    const talk = (key: "driller" | "pusher" | "mudeng" | "hand3", who: Who, lines: string[]) => {
+    const talk = (key: "driller" | "pusher" | "mudeng" | "hand3" | "dd1" | "dd2", who: Who, lines: string[]) => {
       let i = 0;
       add(() => H[key].root.position.add(v3(0, 1.1, 0)), "Talk", 2.4, () => { this.radio(who, lines[i++ % lines.length], 6500); }, () => H[key].root.isEnabled());
     };
     talk("driller", "dale", ["Everything's green, boss. I'm just watching the numbers.", "You want more weight? Say it in the console, I can't read minds.", "I've drilled wells since before you had a hard hat. Just so you know."]);
     talk("pusher", "earl", ["If it's not on the JSA, we don't do it.", "Your trailer's got the good chair. Don't tell the others.", "Walk the location. Then walk it again."]);
     talk("mudeng", "marcus", ["Mud's looking good. The mud is always looking good until it isn't.", "Delaware's coming up. You'll want ten-nine in the pits before six thousand.", "That's not 'sticky.' That's 'rheology.'"]);
+    talk("dd1", "tex", ["We're sliding, boss. Build rate's fine. Don't touch my toolface.", "Inclination is 2 degrees. That is, in this business, a vertical well.", "I steer a drill bit a mile down with a joystick. And you want me to fill out a JSA about the coffee."]);
+    talk("dd2", "priya", ["Gamma's flat. Boring. I love it.", "I get the survey every ninety feet. The driller gets the credit.", "If the numbers move, I'll tell you. If you move my chair, I'll also tell you."]);
     talk("hand3", "jimbo", ["Pipe's pipe, boss.", "I do not get paid enough for the forklift.", "Is it break time? It feels like break time."]);
   }
 
@@ -997,7 +1012,7 @@ export class Game {
     for (const it of this.interacts) consider(it);
     cand.sort((a, b) => a.score - b.score);
     this.nearest = this.ui.panelOpen || !this.started || this.paused || this.veh.riding ? null : cand[0]?.it ?? null;
-    this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused ? (this.veh.active ? "Get out" : "Stand up") : this.nearest ? this.nearest.label() : null);
+    this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused ? this.veh.promptLabel() : this.nearest ? this.nearest.label() : null);
 
     // task arrows: one per open task (the active job plus any jobs it interrupted)
     const PAL = ["#f4c04a", "#4aa3e8", "#e5483b", "#3dbb6a", "#c77dff"];

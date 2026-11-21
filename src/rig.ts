@@ -92,6 +92,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.defMat("wood", "#7a5a38"); b.defMat("rust", "#8a4b2b"); b.defMat("tank", "#6b747c"); b.defMat("tankgreen", "#4d6a52");
   b.defMat("glass", "#9ccbe8", { alpha: 0.28, spec: 0.5 });
   b.defMat("screen", "#2a6a4a", { emissive: "#1f9a60" });
+  b.defMat("screenb", "#1f4a8a", { emissive: "#2a7cff" }); b.defMat("screena", "#8a5a1f", { emissive: "#ffb02a" }); b.defMat("screenr", "#8a2a1f", { emissive: "#ff4a2a" });
   b.defMat("lamp", "#fff2c0", { emissive: "#ffe8a0" });
   b.defMat("beacon", "#ff2a1a", { emissive: "#ff2a1a" });
   b.defMat("cabinwall", "#cbd0d4"); b.defMat("poly", "#1d6fb5"); b.defMat("flaregray", "#5e6368");
@@ -197,16 +198,49 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.label("V-DOOR", 0, F + 2.4, 5.9, 2.0, 0.6, Math.PI, "#7a1a14", "#ffffff", 64);
   }
 
-  // ---- driller's cabin (glass, enterable) ----
-  b.room({ x0: 2.6, z0: -5.4, x1: 5.9, z1: -2.2, y0: F, h: 2.7, wall: "cabinwall", roof: "dsteel", floor: "dsteel", glass: "glass",
-    door: { side: "+z", c: 4.9, w: 1.1 } });
-  b.slab("dsteel", 2.85, F, -4.9, 3.5, F + 0.95, -2.9, true);               // console desk
-  b.slab("black", 2.9, F + 0.95, -4.8, 3.3, F + 1.5, -3.0);                   // monitors
-  b.slab("screen", 2.88, F + 1.0, -4.7, 2.92, F + 1.45, -3.1);
-  b.slab("black", 4.6, F, -4.6, 5.2, F + 0.5, -4.0);                           // driller chair base
-  b.slab("dsteel", 4.65, F + 0.5, -4.55, 5.15, F + 1.05, -4.35);
-  spots.cabin = v(3.4, F + 1.3, -3.9);
-  b.label("DRILLER", 4.9, F + 2.35, -2.12, 1.6, 0.4, Math.PI, "#233a52", "#ffd24a", 60);
+  // ---- driller's cabin (glass, enterable): driller's console on the west glass, directional drillers' desk on the north wall ----
+  b.room({ x0: 3.0, z0: -5.9, x1: 6.3, z1: -0.8, y0: F, h: 2.8, wall: "cabinwall", roof: "dsteel", floor: "dsteel", glass: "glass",
+    door: { side: "+z", c: 4.65, w: 1.2 } });
+  const SCR = ["screen", "screenb", "screena", "screenr"];
+  // monitor: bezel + glowing screen. face = direction the screen looks
+  const monitor = (face: "+x" | "-x" | "+z", cx: number, cy: number, cz: number, w: number, h: number, mat: string) => {
+    if (face === "+z") { b.slab("black", cx - w / 2, cy - h / 2, cz - 0.04, cx + w / 2, cy + h / 2, cz + 0.04); b.slab(mat, cx - w / 2 + 0.03, cy - h / 2 + 0.03, cz + 0.04, cx + w / 2 - 0.03, cy + h / 2 - 0.03, cz + 0.05); }
+    else { const d = face === "+x" ? 1 : -1; b.slab("black", cx - 0.04, cy - h / 2, cz - w / 2, cx + 0.04, cy + h / 2, cz + w / 2); b.slab(mat, d > 0 ? cx + 0.04 : cx - 0.05, cy - h / 2 + 0.03, cz - w / 2 + 0.03, d > 0 ? cx + 0.05 : cx - 0.04, cy + h / 2 - 0.03, cz + w / 2 - 0.03); }
+  };
+  // driller's desk along the west glass, with a monitor bank low enough to see the mast over, plus an overhead row
+  b.slab("dsteel", 3.1, F, -4.9, 3.95, F + 0.95, -1.7, true);
+  b.slab("steel", 3.1, F + 0.95, -4.9, 3.95, F + 0.99, -1.7);
+  for (let i = 0; i < 5; i++) monitor("+x", 3.55, F + 1.2, -4.55 + i * 0.6, 0.5, 0.32, SCR[(i * 3) % 4]);
+  for (let i = 0; i < 4; i++) monitor("+x", 3.2, F + 2.25, -4.4 + i * 0.75, 0.62, 0.38, SCR[(i + 1) % 4]);
+  b.slab("black", 3.9, F + 0.99, -3.6, 4.2, F + 1.03, -2.9);                  // keyboard / panel
+  // driller's chair (faces the rotary through the glass)
+  b.cyl("black", 4.75, F + 0.25, -3.25, 0.14, 0.5, { tess: 8 });
+  b.slab("black", 4.35, F, -3.65, 5.15, F + 0.07, -2.85);                       // base star
+  b.slab("black", 4.45, F + 0.5, -3.55, 5.05, F + 0.6, -2.95);                  // seat
+  b.slab("black", 5.0, F + 0.6, -3.55, 5.1, F + 1.35, -2.95);                   // back
+  b.slab("dsteel", 4.4, F + 0.75, -3.75, 4.9, F + 0.82, -3.6); b.slab("dsteel", 4.4, F + 0.75, -2.9, 4.9, F + 0.82, -2.75);   // arm rests
+  b.cyl("steel", 4.55, F + 0.95, -3.68, 0.04, 0.25, { tess: 6 }); b.cyl("red", 4.55, F + 1.1, -3.68, 0.07, 0.07, { tess: 8 });   // brake / throttle
+  b.cyl("steel", 4.55, F + 0.95, -2.82, 0.04, 0.25, { tess: 6 });
+  spots.cabin = v(3.7, F + 1.3, -3.25);
+  // directional drillers' desk on the north wall: two seats, two rows of screens
+  b.slab("dsteel", 4.2, F, -5.85, 6.2, F + 0.95, -5.15, true);
+  b.slab("steel", 4.2, F + 0.95, -5.85, 6.2, F + 0.99, -5.15);
+  for (let i = 0; i < 4; i++) monitor("+z", 4.45 + i * 0.52, F + 1.25, -5.55, 0.46, 0.34, SCR[(i * 2 + 1) % 4]);
+  for (let i = 0; i < 4; i++) monitor("+z", 4.45 + i * 0.52, F + 1.68, -5.55, 0.46, 0.3, SCR[(i + 2) % 4]);
+  monitor("+z", 5.2, F + 2.15, -5.78, 1.7, 0.32, "screenb");                    // overhead survey / gamma strip
+  for (const cx of [4.8, 5.6]) {
+    b.cyl("black", cx, F + 0.25, -4.7, 0.12, 0.5, { tess: 8 });
+    b.slab("black", cx - 0.4, F, -5.1, cx + 0.4, F + 0.07, -4.3);                // star base
+    b.slab("black", cx - 0.28, F + 0.5, -4.98, cx + 0.28, F + 0.58, -4.42);      // seat
+    b.slab("black", cx - 0.28, F + 0.58, -4.5, cx + 0.28, F + 1.3, -4.42);       // back (they face the desk, -z)
+  }
+  // wall displays on the east side: gas, ROP, pit levels
+  for (let i = 0; i < 3; i++) monitor("-x", 6.22, F + 1.5, -4.6 + i * 1.05, 0.9, 0.55, SCR[(i * 2) % 4]);
+  // ceiling light, AC unit, small fridge
+  b.slab("lamp", 4.0, F + 2.74, -3.9, 5.6, F + 2.8, -3.5); b.slab("lamp", 4.0, F + 2.74, -2.3, 5.6, F + 2.8, -1.9);
+  b.slab("steel", 4.0, F + 2.92, -4.6, 5.4, F + 3.3, -3.4);
+  b.slab("white", 5.8, F, -1.3, 6.2, F + 0.9, -0.9, true);
+  b.label("DRILLER", 4.65, F + 2.45, -0.72, 1.6, 0.4, Math.PI, "#233a52", "#ffd24a", 60);
 
   // ---- doghouse (enterable) ----
   b.room({ x0: -6.0, z0: -5.8, x1: -2.6, z1: -2.4, y0: F, h: 2.6, wall: "tan", roof: "dsteel", floor: "dsteel",
@@ -235,6 +269,22 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("steel", -5.8, FB, 1.0, -2.2, FB + 0.12, 5.8);                        // fingerboard
   for (let i = 0; i < 12; i++) b.slab("dsteel", -5.8, FB + 0.12, 1.2 + i * 0.38, -2.2, FB + 0.5, 1.26 + i * 0.38);
   b.rail("yellow", -5.8, 5.8, -2.2, 5.8, FB, 1.1); b.rail("yellow", -5.8, 1.0, -5.8, 5.8, FB, 1.1);
+  // the board is walkable: solid deck, full rails, a landing at the top of the ladder
+  b.blocker(-5.8, FB - 0.15, 1.0, -2.2, FB + 0.12, 5.8);
+  b.rail("yellow", -2.2, 1.45, -2.2, 5.8, FB, 1.1);
+  b.rail("yellow", -5.8, 1.0, -3.8, 1.0, FB, 1.1); b.rail("yellow", -2.6, 1.0, -2.2, 1.0, FB, 1.1);
+  b.slab("steel", -3.8, FB, -0.3, -2.6, FB + 0.12, 1.0);                       // landing
+  b.blocker(-3.8, FB - 0.15, -0.3, -2.6, FB + 0.12, 1.0);
+  b.rail("yellow", -3.8, -0.3, -3.8, 1.0, FB, 1.1); b.rail("yellow", -2.6, -0.3, -2.6, 1.0, FB, 1.1);
+  b.rail("yellow", -3.8, -0.3, -3.5, -0.3, FB, 1.1); b.rail("yellow", -2.9, -0.3, -2.6, -0.3, FB, 1.1);
+  // ladder from the drill floor to the board (x=-3.2, z=0.05): rails, rungs, struts back to the mast leg
+  b.beam("steel", v(-3.45, F, 0.05), v(-3.45, FB + 1.2, 0.05), 0.07); b.beam("steel", v(-2.95, F, 0.05), v(-2.95, FB + 1.2, 0.05), 0.07);
+  for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", -3.2, y, 0.05, 0.5, 0.035, 0.035);
+  for (let y = F + 4; y < FB; y += 4.2) {
+    const u = (y - F) / (46 - F);
+    b.beam("steel", v(-3.2, y, 0.15), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), u), 0.06);
+  }
+  spots.board = v(-3.8, FB + 1.0, 3.0);
   spots.floorSetback = v(-4.0, F + 1.0, 3.5);
 
   // stands (thin instances so we can show a count)
@@ -632,7 +682,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const addH = (key: string, x: number, y: number, z: number, rotY: number, o: ConstructorParameters<typeof Human>[1]) => {
     const h = new Human(scene, o); h.root.position.set(x, y, z); h.root.rotation.y = rotY; humans[key] = h; return h;
   };
-  addH("driller", 4.9, F + 0.15, -4.35, Math.PI / 2 + 0.6, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" });
+  addH("driller", 4.7, F - 0.22, -3.25, -0.97, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" }).seated = true;
+  addH("dd1", 4.8, F - 0.22, -4.62, Math.PI, { shirt: "#2b4a66", pants: "#3a3a3a", hat: null, skin: "#8a5a3a" }).seated = true;
+  addH("dd2", 5.6, F - 0.22, -4.62, Math.PI, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
   addH("hand1", -0.9, F, 2.4, 0.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f", vest: true });
   addH("hand2", 1.9, F, 3.6, -2.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a", vest: true });
   addH("derrickman", -4.2, FB + 0.12, 3.0, 2.2, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f", vest: true });

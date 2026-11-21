@@ -14,6 +14,7 @@ import { F } from "./rig";
  * Camera: V switches chase / first person, mouse looks around.
  */
 
+const FB = F + 25;
 const mats = new Map<string, StandardMaterial>();
 function mat(scene: Scene, hex: string, o: { emissive?: number; alpha?: number; spec?: number } = {}) {
   const key = hex + (o.emissive ?? "") + (o.alpha ?? "");
@@ -54,10 +55,11 @@ export class Vehicles {
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0;
+  private climb = { on: false, y: 0 };
 
   constructor(private scene: Scene, private colliders: AABB[], private player: Player, private game: Game) {
     this.world = colliders.slice();            // static world only (vehicles don't collide with their own boxes)
-    this.chairPos = new Vector3(4.9, F + 0.5, -4.3);
+    this.chairPos = new Vector3(4.75, F + 0.5, -3.25);
     this.hud = document.createElement("div");
     this.hud.style.cssText = "position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:30;display:none;padding:8px 16px;background:rgba(10,16,24,.78);border:2px solid #f4c04a;color:#fff;font:700 13px/1.45 system-ui,sans-serif;letter-spacing:.5px;text-align:center;pointer-events:none;text-transform:none;white-space:pre;max-width:96vw";
     document.body.appendChild(this.hud);
@@ -67,7 +69,7 @@ export class Vehicles {
     this.build();
   }
 
-  get riding() { return !!this.active || this.chair.on; }
+  get riding() { return !!this.active || this.chair.on || this.climb.on; }
   private k(...codes: string[]) { return codes.some((c) => this.pressed.has(c)); }
 
   setShadow(sg: ShadowGenerator) { for (const v of this.list) v.casters.forEach((m) => sg.addShadowCaster(m)); }
@@ -230,7 +232,9 @@ export class Vehicles {
   interacts() {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding });
-    out.push({ pos: () => new Vector3(4.9, F + 1.0, -4.3), label: () => "Sit in the driller's chair", r: 2.2, act: () => this.sit(), ok: () => !this.riding });
+    out.push({ pos: () => new Vector3(4.75, F + 1.0, -3.25), label: () => "Sit in the driller's chair", r: 2.2, act: () => this.sit(), ok: () => !this.riding });
+    out.push({ pos: () => new Vector3(-3.2, F + 1.2, -0.3), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
+    out.push({ pos: () => new Vector3(-3.2, FB + 1.2, 0.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
   }
 
@@ -286,7 +290,7 @@ export class Vehicles {
     const drv = this.game.rig.humans.driller;
     this.chair.on = true; this.chair.hidden = drv.root.isEnabled(); drv.root.setEnabled(false);
     this.wasThird = this.player.third; this.player.third = false; this.player.ride = true;
-    this.player.yaw = 0; this.player.pitch = 0.2;
+    this.player.yaw = -0.97; this.player.pitch = 0.12;
     this.player.pos.set(this.chairPos.x, this.chairPos.y, this.chairPos.z);
     this.hud.style.display = "block";
     this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000);
@@ -295,7 +299,7 @@ export class Vehicles {
     this.chair.on = false;
     if (this.chair.hidden) this.game.rig.humans.driller.root.setEnabled(true);
     this.player.ride = false; this.player.third = this.wasThird;
-    this.player.teleport(4.2, F, -3.0, Math.PI);
+    this.player.teleport(4.3, F, -1.7, Math.PI);
     this.hud.style.display = "none";
   }
   private toggleAuto() {
@@ -311,13 +315,55 @@ export class Vehicles {
     this.player.teleport(v.x, 0, v.z, v.yaw);
   }
 
+  // ---- ladder to the monkey board ----
+  private startClimb(y: number) {
+    if (this.riding) return;
+    this.climb.on = true; this.climb.y = y;
+    this.wasThird = this.player.third; this.player.third = false; this.player.ride = true;
+    this.player.yaw = 0; this.player.pitch = 0;
+    this.hud.style.display = "block";
+    this.game.sfx.click();
+  }
+  private finishClimb(top: boolean) {
+    this.climb.on = false; this.hud.style.display = "none";
+    this.player.ride = false; this.player.third = this.wasThird;
+    if (top) this.player.teleport(-3.2, FB + 0.12, 0.55, 0); else this.player.teleport(-3.2, F, -0.75, Math.PI);
+  }
+  private updateClimb(dt: number) {
+    const p = this.player, c = this.climb, joy = p.touchMove;
+    const dir = (this.k("KeyW", "ArrowUp") ? 1 : 0) - (this.k("KeyS", "ArrowDown") ? 1 : 0) + (joy.y || 0);
+    c.y += Math.max(-1, Math.min(1, dir)) * dt * (this.k("ShiftLeft", "ShiftRight") ? 4.6 : 2.3);
+    if (c.y >= FB - 0.01 && dir > 0.2) { this.finishClimb(true); return; }
+    if (c.y <= F + 0.01 && dir < -0.2) { this.finishClimb(false); return; }
+    c.y = Math.max(F, Math.min(FB, c.y));
+    p.pos.set(-3.2, c.y, -0.4); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(-3.2, c.y + 1.5, -0.42);
+    p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
+    this.hud.textContent = `CLIMBING   ${Math.round(c.y * 3.281)} FT\nW/S climb  ·  SHIFT climb faster  ·  keep going to the top or bottom`;
+  }
+
+  /** text for the E prompt while riding (null = none) */
+  promptLabel(): string | null {
+    if (this.climb.on) return this.climb.y > FB - 0.4 ? "Step onto the board" : this.climb.y < F + 0.4 ? "Step off the ladder" : null;
+    return this.active ? "Get out" : "Stand up";
+  }
+
   /** E while riding */
-  leave() { if (this.chair.on) this.stand(); else this.exit(); }
+  leave() {
+    if (this.climb.on) {
+      if (this.climb.y > FB - 0.4) this.finishClimb(true);
+      else if (this.climb.y < F + 0.4) this.finishClimb(false);
+      else this.game.ui.toast("KEEP YOUR HANDS ON THE LADDER", "Climb to the top or back down. W / S.");
+      return;
+    }
+    if (this.chair.on) this.stand(); else this.exit();
+  }
 
   // ---------------------------------------------------------------------------------------------- simulation
   update(dt: number) {
     dt = Math.min(dt, 0.05);
     // idle vehicles keep their boxes / wheels honest
+    if (this.climb.on) { this.updateClimb(dt); return; }
     if (this.chair.on) { this.updateChair(dt); return; }
     const v = this.active;
     if (!v) return;
@@ -409,7 +455,7 @@ export class Vehicles {
   private updateChair(dt: number) {
     const s = this.game.sim.s, p = this.player;
     p.pos.set(this.chairPos.x, this.chairPos.y, this.chairPos.z); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(4.9, F + 1.45, -4.3);
+    const eye = new Vector3(4.75, F + 1.45, -3.25);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     const busy = s.mode === "tripping" || s.mode === "casing";
     const up = (this.k("KeyW", "ArrowUp") ? 1 : 0) - (this.k("KeyS", "ArrowDown") ? 1 : 0);

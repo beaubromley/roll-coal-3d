@@ -5,6 +5,8 @@ export const CAST = {
   dale: { name: "Big Dale — Driller", img: "driller" },
   earl: { name: "Earl — Toolpusher", img: "pusher" },
   marcus: { name: "Marcus — Mud Engineer", img: "mud" },
+  tex: { name: "Tex — Directional Driller", img: "driller" },
+  priya: { name: "Priya — MWD Hand", img: "geo" },
   jimbo: { name: "Jimbo — Floorhand", img: "hand" },
   brent: { name: "Brent — Houston Office", img: "office" },
   chad: { name: "Chadwick — VP of Ops", img: "vp" },

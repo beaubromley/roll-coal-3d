@@ -287,25 +287,50 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("dsteel", -5.9, F, 0.7, -2.3, F + 0.1, 5.7);                          // setback pad
   b.blocker(-5.95, F, 0.65, -2.25, F + 2.2, 5.75);                           // racked stands: not walkable
   const FB = F + 25;
-  b.slab("steel", -5.8, FB, 1.0, -2.2, FB + 0.12, 5.8);                        // fingerboard
-  for (let i = 0; i < 12; i++) b.slab("dsteel", -5.8, FB + 0.12, 1.2 + i * 0.38, -2.2, FB + 0.5, 1.26 + i * 0.38);
-  b.rail("yellow", -5.8, 5.8, -2.2, 5.8, FB, 1.1); b.rail("yellow", -5.8, 1.0, -5.8, 5.8, FB, 1.1);
-  // the board is walkable: solid deck, full rails, a landing at the top of the ladder
-  b.blocker(-5.8, FB - 0.15, 1.0, -2.2, FB + 0.12, 5.8);
-  b.rail("yellow", -2.2, 1.45, -2.2, 5.8, FB, 1.1);
-  b.rail("yellow", -5.8, 1.0, -3.8, 1.0, FB, 1.1); b.rail("yellow", -2.6, 1.0, -2.2, 1.0, FB, 1.1);
-  b.slab("steel", -3.8, FB, -0.3, -2.6, FB + 0.12, 1.0);                       // landing
-  b.blocker(-3.8, FB - 0.15, -0.3, -2.6, FB + 0.12, 1.0);
-  b.rail("yellow", -3.8, -0.3, -3.8, 1.0, FB, 1.1); b.rail("yellow", -2.6, -0.3, -2.6, 1.0, FB, 1.1);
-  b.rail("yellow", -3.8, -0.3, -3.5, -0.3, FB, 1.1); b.rail("yellow", -2.9, -0.3, -2.6, -0.3, FB, 1.1);
-  // ladder from the drill floor to the board (x=-3.2, z=0.05): rails, rungs, struts back to the mast leg
-  b.beam("steel", v(-3.45, F, 0.05), v(-3.45, FB + 1.2, 0.05), 0.07); b.beam("steel", v(-2.95, F, 0.05), v(-2.95, FB + 1.2, 0.05), 0.07);
-  for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", -3.2, y, 0.05, 0.5, 0.035, 0.035);
+  // ---- monkey board: a centre walkway (x -4.5..-3.5) with a row of fingers on each side, rails around, a landing at the ladder,
+  //      and a catwalk across to the top drive's stabbing board
+  const WX0 = -4.5, WX1 = -3.5;
+  b.slab("steel", WX0, FB, 1.0, WX1, FB + 0.12, 5.8);                          // centre walkway
+  b.slab("steel", -5.8, FB, 1.0, WX0, FB + 0.08, 5.8); b.slab("steel", WX1, FB, 1.0, -2.2, FB + 0.08, 5.8);   // finger decks either side
+  for (const [fx0, fx1] of [[-5.8, WX0], [WX1, -2.2]] as [number, number][]) {
+    for (let i = 0; i < 12; i++) b.slab("dsteel", fx0, FB + 0.08, 1.15 + i * 0.4, fx1, FB + 0.5, 1.2 + i * 0.4);    // finger dividers (pipe slots)
+    b.rail("yellow", fx0, 1.0, fx1, 1.0, FB, 1.1); b.rail("yellow", fx0, 5.8, fx1, 5.8, FB, 1.1);               // pipe latches front and back
+    b.blocker(fx0, FB - 0.15, 1.0, fx1, FB + 1.8, 5.8);                                                          // racked pipe: the derrickman works from the walkway
+  }
+  b.blocker(WX0, FB - 0.15, 1.0, WX1, FB + 0.12, 5.8);
+  b.rail("yellow", -5.8, 1.0, -5.8, 5.8, FB, 1.1); b.rail("yellow", -2.2, 1.0, -2.2, 5.8, FB, 1.1);             // outer rails
+  b.rail("yellow", WX0, 5.8, WX1, 5.8, FB, 1.1);                                                                // end of the walkway
+  // landing at the top of the ladder (x -4.6..-3.4), with the catwalk leaving east toward the mast
+  b.slab("steel", -4.6, FB, -0.35, -3.4, FB + 0.12, 1.0);
+  b.blocker(-4.6, FB - 0.15, -0.35, -3.4, FB + 0.12, 1.0);
+  b.rail("yellow", -4.6, -0.35, -4.6, 1.0, FB, 1.1);
+  b.rail("yellow", -4.6, -0.35, -4.3, -0.35, FB, 1.1); b.rail("yellow", -3.7, -0.35, -3.4, -0.35, FB, 1.1);       // gap for the ladder
+  b.rail("yellow", -3.4, 0.4, -3.4, 1.0, FB, 1.1);
+  // catwalk to the top drive: -3.4 -> -0.95 at z -0.35..0.4, rails both sides, gate at the end
+  b.slab("steel", -3.4, FB, -0.35, -0.95, FB + 0.1, 0.4); b.blocker(-3.4, FB - 0.15, -0.35, -0.95, FB + 0.1, 0.4);
+  b.rail("yellow", -3.4, -0.35, -0.95, -0.35, FB, 1.1); b.rail("yellow", -3.4, 0.4, -0.95, 0.4, FB, 1.1); b.rail("yellow", -0.95, -0.35, -0.95, 0.4, FB, 1.1);
+  for (let x = -3.2; x < -1.0; x += 0.8) b.beam("dsteel", v(x, FB - 0.05, -0.1), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), 0.7), 0.05);   // support struts back to the mast
+  b.label("STABBING BOARD", -2.15, FB + 0.62, 0.43, 1.5, 0.3, Math.PI, "#233a52", "#ffd24a", 38);
+  // ladder from the drill floor to the board (x=-4.0, z=0.05): rails, rungs, struts back to the mast leg
+  b.beam("steel", v(-4.25, F, 0.05), v(-4.25, FB + 1.2, 0.05), 0.07); b.beam("steel", v(-3.75, F, 0.05), v(-3.75, FB + 1.2, 0.05), 0.07);
+  for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", -4.0, y, 0.05, 0.5, 0.035, 0.035);
   for (let y = F + 4; y < FB; y += 4.2) {
     const u = (y - F) / (46 - F);
-    b.beam("steel", v(-3.2, y, 0.15), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), u), 0.06);
+    b.beam("steel", v(-4.0, y, 0.15), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), u), 0.06);
   }
-  spots.board = v(-3.8, FB + 1.0, 3.0);
+  // Geronimo line: the derrickman's escape cable, anchored at the corner post and run down to a ground anchor with a landing pad
+  const GA = v(-5.0, FB + 2.6, 5.5), GB = v(-5.0, 0.55, 46);
+  b.beam("steel", v(-5.0, FB, 5.5), GA, 0.1); b.beam("steel", v(-5.0, FB + 1.3, 5.5), v(-5.6, FB + 0.4, 5.5), 0.05);    // anchor post + brace
+  b.beam("black", GA, GB, 0.035, 5);                                                                                    // the line
+  b.slab("steel", -5.8, FB + 2.4, 5.35, -4.2, FB + 2.5, 5.65);                                                          // anchor beam
+  b.box("yellow", -5.0, FB + 2.38, 5.5, 0.4, 0.16, 0.26);                                                                // trolley
+  b.box("red", -5.0, FB + 1.9, 5.5, 0.04, 0.9, 0.04); b.box("black", -5.0, FB + 1.4, 5.5, 0.5, 0.1, 0.3);                // lanyard and harness seat
+  b.cyl("dsteel", -5.0, 0.3, 46, 0.5, 0.6, { tess: 8 }); b.cyl("steel", -5.0, 1.2, 46, 0.14, 1.8, { tess: 6 });          // ground anchor
+  b.slab("blue", -6.6, 0.0, 41.5, -3.4, 0.35, 45); b.slab("yellow", -6.7, 0.0, 41.4, -3.3, 0.06, 45.1);                  // landing pad
+  b.label("GERONIMO LINE\nESCAPE ONLY", -5.0, 2.7, 46.5, 2.4, 0.9, Math.PI, "#7a1a14", "#ffffff", 44);
+  b.blocker(-5.3, 0, 45.75, -4.7, 2.0, 46.25);
+  spots.board = v(-4.0, FB + 1.0, 2.6);
+  spots.geronimo = v(-4.9, FB + 1.0, 5.2);
   spots.floorSetback = v(-4.0, F + 1.0, 3.5);
 
   // stands (thin instances so we can show a count)
@@ -313,7 +338,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   standBase.material = b.getMat("pipe");
   standBase.isVisible = true;
   const standSlots: Vector3[] = [];
-  for (let xi = 0; xi < 7; xi++) for (let zi = 0; zi < 8; zi++) standSlots.push(v(-5.6 + xi * 0.5, F + 0.1, 1.1 + zi * 0.6));
+  for (let zi = 0; zi < 10; zi++) for (const x of [-5.6, -3.3, -5.15, -2.85, -4.7, -2.4]) standSlots.push(v(x, F + 0.1, 1.2 + zi * 0.5));
   const standMats = standSlots.map(() => Matrix.Identity());
   standSlots.forEach((p, i) => { standBase.thinInstanceAdd(Matrix.Identity()); void p; void i; });
   let shownStands = -1;
@@ -738,7 +763,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   addH("dd2", 5.6, F - 0.17, -4.62, Math.PI, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
   addH("hand1", -0.9, F, 2.4, 0.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
   addH("hand2", 1.9, F, 3.6, -2.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a" });
-  addH("derrickman", -4.2, FB + 0.12, 3.0, 2.2, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
+  addH("derrickman", -4.0, FB + 0.12, 3.2, Math.PI, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
   addH("mudeng", -6, 2.78, -22.8, 1.2, { shirt: "#1d6fb5", pants: "#3a3a3a", hat: "#f2f2f2", skin: "#e0b48f" });
   addH("pusher", 27.5, 0, 30, -1.6, { shirt: "#3a5a3a", pants: "#4a3a2a", hat: "#d9d9d9", skin: "#b9805a" });
   addH("hand3", 2.1, 0, 20, 0, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });

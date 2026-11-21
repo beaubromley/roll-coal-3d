@@ -81,7 +81,6 @@ if (isTouch) {
   touch = new TouchControls(player, game);
   document.addEventListener("touchmove", (e) => { if (!(e.target as HTMLElement).closest("#panel, .pbox, #controls")) e.preventDefault(); }, { passive: false });
   window.addEventListener("contextmenu", (e) => e.preventDefault());
-  $("rotateOk").addEventListener("click", () => document.body.classList.add("no-rotate"));
   $("pressstart").textContent = "TAP CLOCK IN";
   const cl = document.querySelector("#controls .clist");
   if (cl) cl.innerHTML = "<span>STICK</span><em>MOVE</em><span>DRAG</span><em>LOOK</em><span>USE</span><em>INTERACT</em><span>JUMP</span><em>JUMP</em><span>RUN</span><em>SPRINT</em><span>CAM</span><em>1ST / 3RD</em>";

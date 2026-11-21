@@ -31,7 +31,7 @@ function mat(scene: Scene, hex: string, o: { emissive?: number; alpha?: number; 
   return m;
 }
 
-type Kind = "car" | "forklift" | "lift";
+type Kind = "car" | "forklift" | "lift" | "drone";
 
 interface Veh {
   id: string; name: string; kind: Kind; root: TransformNode;
@@ -45,6 +45,8 @@ interface Veh {
   boomPivot?: TransformNode; boomIn?: TransformNode; tiltNode?: TransformNode; forkMark?: TransformNode;
   liftNode?: TransformNode; scissor?: { a: TransformNode[]; b: TransformNode[]; L: number; platform: TransformNode };
   casters: Mesh[]; controls: string; platformY: number;
+  /** drone: altitude, vertical speed, rotor discs, dock pose, flying home */
+  alt: number; vy: number; rotors: TransformNode[]; dock?: { x: number; z: number; yaw: number }; returning: boolean;
 }
 
 export class Vehicles {
@@ -70,6 +72,7 @@ export class Vehicles {
   private gas = 0; private brk = 0; private revArm = true; private spaceWas = false;
   private pallet!: TransformNode; private palletHeld = false; private palletVy = 0; private palletV!: Veh;
   private climb = { on: false, y: 0 };
+  private zip = { on: false, t: 0 };
 
   constructor(private scene: Scene, private colliders: AABB[], private player: Player, private game: Game) {
     this.world = colliders.slice();            // static world only (vehicles don't collide with their own boxes)
@@ -82,7 +85,7 @@ export class Vehicles {
     this.build();
   }
 
-  get riding() { return !!this.active || this.chair.on || this.climb.on; }
+  get riding() { return !!this.active || this.chair.on || this.climb.on || this.zip.on; }
   private k(...codes: string[]) { return codes.some((c) => this.pressed.has(c)); }
 
   setShadow(sg: ShadowGenerator) { for (const v of [...this.list, this.palletV]) v.casters.forEach((m) => sg.addShadowCaster(m)); }
@@ -114,7 +117,7 @@ export class Vehicles {
     const root = new TransformNode(id, this.scene); root.position.set(x, 0, z); root.rotation.y = yaw;
     return { id, name, kind, root, x, z, yaw, speed: 0, steer: 0, wheelbase: 3, maxFwd: 10, maxRev: 4, accel: 5, radius: 1, pts: [0],
       eye: { x: 0, y: 1.6, z: 0 }, camDist: 7, camHeight: 2.6, steerNodes: [], steerSign: [], spinNodes: [], wheelR: [], boxes: [], boxH: 2.5, solid: true,
-      lift: 0, ext: 0, tilt: 0, casters: [], controls: "", platformY: 0 };
+      lift: 0, ext: 0, tilt: 0, casters: [], controls: "", platformY: 0, alt: 0, vy: 0, rotors: [], returning: false };
   }
 
   private build() {
@@ -122,6 +125,7 @@ export class Vehicles {
     this.list.push(this.buildForklift(14, 44, -0.6));
     this.list.push(this.buildManlift(-7, 13, 0.4));
     this.buildPallet(9.2, 51.5, -0.6);
+    this.list.push(this.buildDrone(26.6, 10.2, Math.PI / 2));
     for (const v of this.list) {
       for (let i = 0; i < v.pts.length; i++) { const b: AABB = { x0: 0, x1: 0, y0: 0, y1: v.boxH, z0: 0, z1: 0 }; v.boxes.push(b); this.colliders.push(b); }
       this.place(v);
@@ -165,6 +169,39 @@ export class Vehicles {
     this.box(v, r, "#14171c", 0.5, 0.25, 0.04, 0, 1.65, -3.4);
     const W = 1.35;
     for (const s of [-1, 1]) { this.wheel(v, r, s * 1.12, W / 2, 2.0, W, 0.55, 1); this.wheel(v, r, s * 1.12, W / 2, -2.0, W, 0.55, null); }
+    return v;
+  }
+
+  /** Quadcopter on its dock beside the company man trailer. */
+  private buildDrone(x: number, z: number, yaw: number): Veh {
+    const v = this.blank("drone", "Survey Drone", "drone", x, z, yaw), r = v.root;
+    Object.assign(v, { radius: 0.6, pts: [0], boxH: 0.5, camDist: 7, camHeight: 1.2, eye: { x: 0, y: 0, z: 0.35 }, maxFwd: 17, maxRev: 8, accel: 8, alt: 0.14, dock: { x, z, yaw },
+      controls: "W fly forward · S brake / back up · A/D turn · R/F up / down · V camera (drone cam) · E redock" });
+    // dock: a round pad with an H and a controller box
+    const pad = new TransformNode("dockpad", this.scene); pad.position.set(x, 0, z);
+    const pv = this.blank("dock", "dock", "car", x, z, 0);
+    this.cyl(pv, pad, "#2a2f36", 2.6, 0.08, 0, 0.04, 0, "y", 24);
+    this.cyl(pv, pad, "#f0b400", 2.3, 0.02, 0, 0.09, 0, "y", 24);
+    this.cyl(pv, pad, "#2a2f36", 2.1, 0.02, 0, 0.1, 0, "y", 24);
+    this.box(pv, pad, "#f0b400", 0.12, 0.02, 0.9, -0.4, 0.115, 0); this.box(pv, pad, "#f0b400", 0.12, 0.02, 0.9, 0.4, 0.115, 0); this.box(pv, pad, "#f0b400", 0.8, 0.02, 0.12, 0, 0.115, 0);
+    this.box(pv, pad, "#15171a", 0.4, 0.5, 0.3, 1.6, 0.25, 0); this.box(pv, pad, "#2a7cff", 0.3, 0.02, 0.2, 1.6, 0.51, 0, { emissive: 0.9 });
+    // body
+    const D = "#1b1e23", G = "#7a828c";
+    this.box(v, r, D, 0.55, 0.16, 0.7, 0, 0.18, 0);
+    this.box(v, r, G, 0.46, 0.08, 0.6, 0, 0.3, -0.03);
+    this.box(v, r, "#2a7cff", 0.2, 0.03, 0.05, 0, 0.35, 0.28, { emissive: 0.9 });
+    this.box(v, r, "#ff2a1a", 0.06, 0.04, 0.06, -0.2, 0.2, -0.35, { emissive: 0.9 }); this.box(v, r, "#2aff5a", 0.06, 0.04, 0.06, 0.2, 0.2, -0.35, { emissive: 0.9 });
+    // gimbal camera under the nose
+    this.sphere(v, r, "#0e1013", 0.2, 0, 0.1, 0.36, 0); this.sphere(v, r, "#2a7cff", 0.07, 0, 0.1, 0.45, 0.6);
+    // arms, motors, rotors, landing legs
+    for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+      const arm = this.box(v, r, D, 0.08, 0.06, 0.78, 0, 0.2, 0); arm.position.set(sx * 0.33, 0.2, sz * 0.33); arm.rotation.y = sx * sz * Math.PI / 4 * -1 + Math.PI / 2 * 0;
+      this.cyl(v, r, "#444a52", 0.16, 0.12, sx * 0.62, 0.26, sz * 0.62, "y", 10);
+      const rot = new TransformNode("rotor", this.scene); rot.parent = r; rot.position.set(sx * 0.62, 0.35, sz * 0.62); v.rotors.push(rot);
+      this.box(v, rot, "#d8dce0", 0.9, 0.012, 0.07, 0, 0, 0); this.box(v, rot, "#d8dce0", 0.07, 0.012, 0.9, 0, 0, 0).rotation.y = 0;
+      this.cyl(v, rot, "#9fd3e8", 0.92, 0.008, 0, 0.0, 0, "y", 20, { alpha: 0.18 });
+      this.box(v, r, D, 0.04, 0.2, 0.04, sx * 0.3, 0.06, sz * 0.3);
+    }
     return v;
   }
 
@@ -301,15 +338,16 @@ export class Vehicles {
   // ---------------------------------------------------------------------------------------------- interaction
   interacts() {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
-    for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding });
+    for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning });
+    out.push({ pos: () => new Vector3(-5.0, FB + 1.0, 5.1), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : i === 1 ? "Sit in the directional driller's seat" : "Sit in the MWD seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
-    out.push({ pos: () => new Vector3(-3.2, F + 1.2, -0.3), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
-    out.push({ pos: () => new Vector3(-3.2, FB + 1.2, 0.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
+    out.push({ pos: () => new Vector3(-4.0, F + 1.2, -0.3), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
+    out.push({ pos: () => new Vector3(-4.0, FB + 1.2, 0.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
   }
 
   private place(v: Veh) {
-    v.root.position.set(v.x, 0, v.z); v.root.rotation.y = v.yaw;
+    v.root.position.set(v.x, v.kind === "drone" ? v.alt : 0, v.z); v.root.rotation.y = v.yaw;
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw);
     v.pts.forEach((o, i) => {
       const b = v.boxes[i], cx = v.x + fx * o, cz = v.z + fz * o, h = v.radius * 0.85;
@@ -326,11 +364,36 @@ export class Vehicles {
     this.player.body.root.setEnabled(false);
     this.hud.style.display = "block";
     this.game.sfx.click();
-    this.game.ui.toast(v.name.toUpperCase(), v.kind === "lift" ? "R / F raise and lower the basket. It reaches the drill floor." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
+    this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W forward, A/D turn, R/F up and down. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. It reaches the drill floor." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
+  }
+
+  /** the drone flies itself home; the pilot stands at the dock */
+  private dockDrone(v: Veh) {
+    this.active = null; v.returning = true; v.speed = 0; v.vy = 0; this.setSolid(v, false);
+    this.player.ride = false; this.player.third = this.wasThird; this.hud.style.display = "none";
+    const d = v.dock!; this.player.teleport(d.x + 1.9, 0, d.z + 1.1, -Math.PI / 2 - 0.4);
+    this.game.sfx.click(); this.game.ui.toast("DRONE RETURNING", "Redocking at the company man trailer.");
+  }
+  private flyHome(v: Veh, dt: number) {
+    const d = v.dock!, dx = d.x - v.x, dz = d.z - v.z, dist = Math.hypot(dx, dz);
+    let tilt = 0;
+    if (dist > 0.7) {
+      const cruise = Math.max(v.alt, 22);                                // climb clear of everything first, then fly home
+      if (v.alt < cruise - 0.5 && dist > 3) v.alt = Math.min(cruise, v.alt + 8 * dt);
+      else { const sp = Math.min(16, 3 + dist * 1.2) * dt; v.x += (dx / dist) * Math.min(dist, sp); v.z += (dz / dist) * Math.min(dist, sp); tilt = 0.18; }
+    } else {
+      v.x = d.x; v.z = d.z;
+      let dy = d.yaw - v.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2; v.yaw += dy * Math.min(1, dt * 3);
+      v.alt = Math.max(0.14, v.alt - 3.5 * dt);
+      if (v.alt <= 0.14) { v.returning = false; this.setSolid(v, true); v.alt = 0.14; this.game.ui.toast("DOCKED", "Drone is back on the pad."); }
+    }
+    v.root.rotation.x = tilt; v.rotors.forEach((n, i) => { n.rotation.y += (i % 2 ? 1 : -1) * 70 * dt; });
+    this.place(v);
   }
 
   exit() {
     const v = this.active; if (!v) return;
+    if (v.kind === "drone") { this.dockDrone(v); return; }
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw), rx = Math.cos(v.yaw), rz = -Math.sin(v.yaw);
     const high = v.kind === "lift" && v.platformY > 1.2, base = high ? v.platformY : 0, off = v.kind === "lift" ? 1.9 : 2.4;
     // candidate exits as world offsets: sides first for cars, front / back / sides for the basket
@@ -387,6 +450,31 @@ export class Vehicles {
     this.player.teleport(v.x, 0, v.z, v.yaw);
   }
 
+  // ---- Geronimo line: ride the escape cable from the board down to the landing pad ----
+  private startZip() {
+    if (this.riding) return;
+    this.zip.on = true; this.zip.t = 0;
+    this.wasThird = this.player.third; this.player.third = false; this.player.ride = true;
+    this.player.yaw = 0; this.player.pitch = 0.12;
+    this.hud.style.display = "block"; this.game.sfx.click();
+    this.game.radio("earl", "GERONIMO! Hold on, boss. Knees together, and don't let go of the lanyard.", 6000);
+  }
+  private updateZip(dt: number) {
+    const z = this.zip, p = this.player; z.t = Math.min(1, z.t + dt / 9);
+    const e = Math.pow(z.t, 1.35), zz = 5.5 + (46 - 5.5) * e, lineY = (FB + 2.6) + (0.55 - (FB + 2.6)) * ((zz - 5.5) / (46 - 5.5));
+    const y = Math.max(0.4, lineY - 1.7);
+    p.pos.set(-5.0, y, zz); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(-5.0, y + 1.45, zz);
+    p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
+    this.hud.textContent = `GERONIMO LINE   ${Math.max(0, Math.round((y) * 3.281))} FT   HOLD ON\nlook around with the mouse / drag`;
+    if (z.t >= 1) {
+      z.on = false; this.hud.style.display = "none"; p.ride = false; p.third = this.wasThird;
+      p.teleport(-5.0, 0.4, 43.4, Math.PI);
+      this.game.ui.toast("TOUCHDOWN", "The Geronimo line works. Now walk back up the ladder.");
+      this.game.gain(0.05, 2);
+    }
+  }
+
   // ---- ladder to the monkey board ----
   private startClimb(y: number) {
     if (this.riding) return;
@@ -399,7 +487,7 @@ export class Vehicles {
   private finishClimb(top: boolean) {
     this.climb.on = false; this.hud.style.display = "none";
     this.player.ride = false; this.player.third = this.wasThird;
-    if (top) this.player.teleport(-3.2, FB + 0.12, 0.55, 0); else this.player.teleport(-3.2, F, -0.75, Math.PI);
+    if (top) this.player.teleport(-4.0, FB + 0.12, 0.55, 0); else this.player.teleport(-4.0, F, -0.75, Math.PI);
   }
   private updateClimb(dt: number) {
     const p = this.player, c = this.climb, joy = p.touchMove;
@@ -408,20 +496,22 @@ export class Vehicles {
     if (c.y >= FB - 0.01 && dir > 0.2) { this.finishClimb(true); return; }
     if (c.y <= F + 0.01 && dir < -0.2) { this.finishClimb(false); return; }
     c.y = Math.max(F, Math.min(FB, c.y));
-    p.pos.set(-3.2, c.y, -0.4); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(-3.2, c.y + 1.5, -0.42);
+    p.pos.set(-4.0, c.y, -0.4); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(-4.0, c.y + 1.5, -0.42);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     this.hud.textContent = `CLIMBING   ${Math.round(c.y * 3.281)} FT\nW/S climb  ·  SHIFT climb faster  ·  keep going to the top or bottom`;
   }
 
   /** text for the E prompt while riding (null = none) */
   promptLabel(): string | null {
+    if (this.zip.on) return null;
     if (this.climb.on) return this.climb.y > FB - 0.4 ? "Step onto the board" : this.climb.y < F + 0.4 ? "Step off the ladder" : null;
     return this.active ? "Get out" : "Stand up";
   }
 
   /** E while riding */
   leave() {
+    if (this.zip.on) { this.game.ui.toast("HOLD ON", "You are on the Geronimo line."); return; }
     if (this.climb.on) {
       if (this.climb.y > FB - 0.4) this.finishClimb(true);
       else if (this.climb.y < F + 0.4) this.finishClimb(false);
@@ -435,9 +525,14 @@ export class Vehicles {
   update(dt: number) {
     dt = Math.min(dt, 0.05);
     this.updatePallet(dt);
+    for (const d of this.list) if (d.kind === "drone" && d.returning) this.flyHome(d, dt);
     const kind = this.active?.kind ?? "";
-    if (kind !== this.uiKind) { this.uiKind = kind; document.body.classList.toggle("driving", !!kind); if (kind) document.body.dataset.veh = kind; else delete document.body.dataset.veh; }
+    if (kind !== this.uiKind) {
+      const bt = document.querySelectorAll<HTMLButtonElement>("#tlift .td");
+      if (bt.length >= 2) { bt[0].innerHTML = kind === "drone" ? "UP &#9650;" : "BOOM &#9650;"; bt[1].innerHTML = kind === "drone" ? "DOWN &#9660;" : "BOOM &#9660;"; }
+      this.uiKind = kind; document.body.classList.toggle("driving", !!kind); if (kind) document.body.dataset.veh = kind; else delete document.body.dataset.veh; }
     // idle vehicles keep their boxes / wheels honest
+    if (this.zip.on) { this.updateZip(dt); return; }
     if (this.climb.on) { this.updateClimb(dt); return; }
     if (this.chair.on) { this.updateChair(dt); return; }
     const v = this.active;
@@ -460,6 +555,7 @@ export class Vehicles {
     if (gasIn === 0 && brkIn === 0) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), (1.6 + Math.abs(v.speed) * 0.12) * dt);
     v.speed = Math.max(-maxR, Math.min(maxF, v.speed));
     const thr = gasIn - brkIn;
+    if (v.kind === "drone") this.flyDrone(v, dt, str); else {
     // steering (speed-sensitive)
     const lock = v.kind === "car" ? 0.62 : 0.75, tgt = -str * lock / (1 + Math.abs(v.speed) * (v.kind === "car" ? 0.07 : 0.05));
     v.steer += (tgt - v.steer) * Math.min(1, dt * 7);
@@ -509,8 +605,9 @@ export class Vehicles {
     // chassis roll / pitch for the big truck
     if (v.kind === "car") { v.root.rotation.z = -v.steer * v.speed * 0.006; v.root.rotation.x = -thr * 0.012 * Math.min(1, Math.abs(v.speed) / 8); }
 
+    }
     // the player rides along (everything else in the game keys off player.pos)
-    const y = v.kind === "lift" ? v.platformY : 0;
+    const y = v.kind === "lift" ? v.platformY : v.kind === "drone" ? v.alt : 0;
     p.pos.set(v.x, y, v.z); p.vel.setAll(0); p.grounded = true;
     // camera
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw);
@@ -537,10 +634,39 @@ export class Vehicles {
       cam.position.copyFrom(eye); cam.setTarget(eye.add(p.lookDir()));
     }
     const mph = Math.round(Math.abs(v.speed) * 2.237);
-    const extra = v.kind === "forklift" ? `   FORKS ${(this.forkPos(v).y * 3.281).toFixed(0)} ft   REACH ${(v.ext * 3.4 * 3.281).toFixed(0)} ft${this.palletHeld ? "   LOAD ON" : ""}` : v.kind === "lift" ? `   BASKET ${(v.platformY * 3.281).toFixed(0)} ft` : "";
+    const extra = v.kind === "drone" ? "" : v.kind === "forklift" ? `   FORKS ${(this.forkPos(v).y * 3.281).toFixed(0)} ft   REACH ${(v.ext * 3.4 * 3.281).toFixed(0)} ft${this.palletHeld ? "   LOAD ON" : ""}` : v.kind === "lift" ? `   BASKET ${(v.platformY * 3.281).toFixed(0)} ft` : "";
     const bar = (t: number) => "■".repeat(Math.round(t * 5)) + "□".repeat(5 - Math.round(t * 5));
+    if (v.kind === "drone") { this.hud.textContent = this.dronePrompt + `   GAS ${bar(this.gas)}  BRAKE ${bar(this.brk)}` + (document.body.classList.contains("touch") ? "" : "\n" + v.controls); return; }
     this.hud.textContent = `${v.name.toUpperCase()}   ${mph} MPH${extra}   GAS ${bar(this.gas)}  BRAKE ${bar(this.brk)}${document.body.classList.contains("touch") ? "" : "\n" + v.controls}`;
   }
+
+  /** quadcopter flight: W/S speed, A/D yaw, R/F climb and descend */
+  private flyDrone(v: Veh, dt: number, str: number) {
+    v.yaw += str * 1.7 * dt;
+    const up = (this.k("KeyR", "Space") ? 1 : 0) - (this.k("KeyF", "ShiftLeft") ? 1 : 0);
+    v.vy += (up * 5 - v.vy) * Math.min(1, dt * 4);
+    v.alt = Math.max(0.14, Math.min(90, v.alt + v.vy * dt)); if (v.alt <= 0.14 && v.vy < 0) v.vy = 0;
+    v.x += Math.sin(v.yaw) * v.speed * dt; v.z += Math.cos(v.yaw) * v.speed * dt;
+    // collisions: anything solid in the band around the drone's altitude
+    let hit = false;
+    const q = { x: v.x, z: v.z }, ox = q.x, oz = q.z;
+    if (pushOutXZ(this.world, q, v.alt - 0.4, v.radius, 0, 0.8)) { v.x += q.x - ox; v.z += q.z - oz; hit = true; }
+    this.dmgCd -= dt;
+    const impact = Math.abs(v.speed);
+    if (hit && impact > 4 && this.dmgCd <= 0) { this.dmgCd = 2.5; this.game.propertyDamage(impact * 0.6); }
+    if (hit && impact > 1.5) v.speed *= -0.25; else if (hit) v.speed *= 0.5;
+    // low flying hits people
+    if (v.alt < 2.2 && impact > 2) for (const h of this.game.peopleAt()) {
+      if (h.y > 2.5) continue;
+      if (Math.hypot(h.x - v.x, h.z - v.z) < v.radius + 0.4) { this.game.personStruck(h.name); return; }
+    }
+    v.root.rotation.x = Math.max(-0.35, Math.min(0.35, v.speed * 0.025)); v.root.rotation.z = -str * 0.18;
+    v.rotors.forEach((n, i) => { n.rotation.y += (i % 2 ? 1 : -1) * (v.alt > 0.2 ? 90 : 25) * dt; });
+    this.place(v);
+    const mph = Math.round(impact * 2.237);
+    this.dronePrompt = `${v.name.toUpperCase()}   ALT ${Math.round(v.alt * 3.281)} FT   ${mph} MPH`;
+  }
+  private dronePrompt = "";
 
   private updateChair(dt: number) {
     const s = this.game.sim.s, p = this.player, st = this.seats[this.chair.idx];

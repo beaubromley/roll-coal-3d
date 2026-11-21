@@ -7,6 +7,7 @@ import { UI, Who, Choice, $ } from "./ui";
 import { Human } from "./npcs";
 import { pushOutXZ } from "./builder";
 import { Mini } from "./minigames";
+import { Vehicles } from "./vehicles";
 import { defineMissions } from "./tasks";
 
 export interface Step {
@@ -69,6 +70,7 @@ export class Game {
 
   // ---------- minigames + shortcut debts ----------
   mini = new Mini(this);
+  veh!: Vehicles;
   miniTick: ((dt: number) => void) | null = null;
   /** Consequences of taking the "wing it" shortcut: they come due later (sim minutes or depth), with a chance. */
   debts: { id: string; dueT?: number; dueDepth?: number; chance: number; run: () => void }[] = [];
@@ -168,6 +170,8 @@ export class Game {
   // ---------- ambient interactables ----------
   buildAmbient() {
     const S = this.rig.spots, H = this.rig.humans;
+    this.veh = new Vehicles(this.scene, this.rig.colliders, this.player, this);
+    for (const it of this.veh.interacts()) this.interacts.push(it);
     const add = (pos: () => Vector3, label: string | (() => string), r: number, act: () => void, ok?: () => boolean) =>
       this.interacts.push({ pos, label: typeof label === "string" ? () => label : label, r, act, ok });
     add(() => S.cabin, "Driller's console", 3.2, () => this.openCabin());
@@ -954,8 +958,8 @@ export class Game {
     }
     for (const it of this.interacts) consider(it);
     cand.sort((a, b) => a.score - b.score);
-    this.nearest = this.ui.panelOpen || !this.started || this.paused ? null : cand[0]?.it ?? null;
-    this.ui.setPrompt(this.nearest ? this.nearest.label() : null);
+    this.nearest = this.ui.panelOpen || !this.started || this.paused || this.veh.riding ? null : cand[0]?.it ?? null;
+    this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused ? (this.veh.active ? "Get out" : "Stand up") : this.nearest ? this.nearest.label() : null);
 
     // task arrows: one per open task (the active job plus any jobs it interrupted)
     const PAL = ["#f4c04a", "#4aa3e8", "#e5483b", "#3dbb6a", "#c77dff"];
@@ -1040,6 +1044,7 @@ export class Game {
   }
 
   interact() {
+    if (this.started && !this.paused && !this.ui.panelOpen && this.veh.riding) { this.veh.leave(); return; }
     if (!this.started || this.paused || this.ui.panelOpen || !this.nearest) return;
     this.sfx.click(); this.nearest.act();
   }

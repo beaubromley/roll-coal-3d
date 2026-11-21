@@ -161,15 +161,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.cyl("bopred", 0, 5.1, 0, 1.5, 1.4, { tess: 16, dia2: 1.2 });  // annular
     b.cyl("steel", 0, 6.35, 0, 0.9, 1.4, { tess: 12 });             // bell nipple
   }
-  // choke / kill lines out of the BOP side outlets
-  b.beam("steel", v(0.9, 1.4, 0), v(5.0, 1.4, 0), 0.22); b.beam("steel", v(5.0, 1.4, 0), v(5.0, 0.6, 5.0), 0.22);
-  b.beam("steel", v(5.0, 0.6, 5.0), v(11.5, 0.6, 8.0), 0.22);
-  b.beam("steel", v(-0.9, 1.0, 0), v(-5.0, 1.0, 0), 0.18); b.beam("steel", v(-5.0, 1.0, 0), v(-5.0, 0.4, 5.0), 0.18);
   // flowline to shakers
   b.beam("steel", v(0, 6.0, 0), v(0, 6.0, -8), 0.5); b.beam("steel", v(0, 6.0, -8), v(0, 3.4, -19), 0.5);
   b.beam("steel", v(0, 3.4, -19), v(-13.5, 3.3, -19.5), 0.5);
-  // closing-unit hoses to accumulator (green)
-  b.beam("accgreen", v(0.9, 3.6, 0.8), v(4.0, 0.4, 7.0), 0.07); b.beam("accgreen", v(4.0, 0.4, 7.0), v(-13.0, 0.4, 11.0), 0.07);
 
   // ---- rotary table ----
   b.cyl("dsteel", 0, F + 0.18, 0, 1.7, 0.36, { tess: 16, solid: false });
@@ -298,8 +292,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   }
   // standpipe up the right back leg + mud line from pumps
   b.beam("steel", v(2.7, 0.0, -3.2), v(2.7, F + 31, -3.2), 0.22);
-  b.beam("steel", v(2.7, 0.9, -3.2), v(2.7, 0.9, -12.0), 0.22);
-  b.beam("steel", v(2.7, 0.9, -12.0), v(-2.0, 0.9, -12.5), 0.22);
   // drawworks housing under the doghouse side + cable reels (visual)
   b.cyl("dsteel", -0.2, F + 0.9, -4.8, 1.8, 1.4, { axis: "x", tess: 14 });
   b.cyl("steel", -0.2, F + 0.9, -4.8, 1.2, 1.5, { axis: "x", tess: 10 });
@@ -407,7 +399,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   spots.pits = v(4.5, 3.7, -20.2);
   // degasser (poor boy) + vent to flare
   b.cyl("tankgreen", 24, 2.5, -12, 1.6, 5, { tess: 12, solid: true });
-  b.beam("steel", v(24, 5, -12), v(24, 6.5, -60), 0.2);
   spots.gasbuster = v(24, 1.5, -10);
   // mud hopper + pallets
   b.slab("dsteel", 22.5, 0, -24, 24.5, 1.1, -22, true);
@@ -461,7 +452,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.cyl("steel", 11 + i * 1.2, 1.75 + i * 0.25, 8 + i * 0.5, 0.1, 0.7, { tess: 6 });
   }
   b.box("blue", 12, 1.3, 10.6, 0.7, 1.2, 0.7);                        // hydraulic choke
-  b.beam("steel", v(14.8, 0.9, 9.5), v(18, 0.9, 9.5), 0.2); b.beam("steel", v(18, 0.9, 9.5), v(24, 1.0, -9), 0.2);
   b.slab("dsteel", 14.2, 0.35, 10.2, 15.4, 1.9, 11.4, true);          // remote choke console
   b.slab("screen", 14.3, 1.1, 10.15, 15.3, 1.8, 10.2);
   spots.choke = v(14.8, 1.5, 9.6);
@@ -543,10 +533,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     if (kit) { kit.place("lighttower", x, 0, z, Math.atan2(-x, -z) + Math.PI / 2); b.blocker(x - 0.5, 0, z - 0.5, x + 0.5, 2.0, z + 0.5); }
     else { b.cyl("dsteel", x, 4.5, z, 0.22, 9, { tess: 6 }); b.slab("lamp", x - 0.9, 9.0, z - 0.15, x + 0.9, 9.35, z + 0.15); }
   }
-  // hand-held "company truck"
-  b.slab("white", 21, 0.45, 20, 23, 1.3, 25.6, true); b.slab("white", 21, 1.3, 20, 23, 2.05, 22.6);
-  b.slab("glass", 21.02, 1.35, 20.05, 22.98, 2.0, 22.55);
-  for (const [x, z] of [[21, 20.9], [23, 20.9], [21, 24.7], [23, 24.7]]) b.cyl("black", x, 0.42, z, 0.85, 0.3, { axis: "x", tess: 10 });
 
   // casing truck (hidden until you order casing)
   const casingTruck = node("casingtruck", scene, -17, 0, 40);

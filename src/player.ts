@@ -24,6 +24,8 @@ export class Player {
   lockFailed = false;
   onLockFailed: () => void = () => {};
   enabled = true;
+  /** true while a vehicle (or the driller chair) owns position and camera */
+  ride = false;
   gScale = 1;
   private camY: number | null = null;
   moved = 0;
@@ -95,7 +97,7 @@ export class Player {
     return new Vector3(Math.sin(this.yaw) * cp, -Math.sin(this.pitch), Math.cos(this.yaw) * cp);
   }
 
-  private support(x: number, z: number, feet: number): number {
+  support(x: number, z: number, feet: number): number {
     let best = 0;
     for (const c of this.colliders) {
       if (c.y1 > feet + STEP + 0.001 || c.y1 <= best) continue;
@@ -128,6 +130,7 @@ export class Player {
 
   update(dt: number) {
     dt = Math.min(dt, 0.05);
+    if (this.ride) { this.body.root.setEnabled(false); return; }
     let ix = 0, iz = 0;
     if (this.enabled) {
       if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) iz += 1;

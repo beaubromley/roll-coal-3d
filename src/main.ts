@@ -56,6 +56,7 @@ sg.transparencyShadow = false;
 rig.merged.forEach((m: Mesh) => sg.addShadowCaster(m));
 kit?.casters.forEach((m) => sg.addShadowCaster(m));
 player.body.setShadow(sg);
+game.veh.setShadow(sg);
 Object.values(rig.humans).forEach((h) => h.setShadow(sg));
 scene.meshes.forEach((m) => { if (m.name === "ground" || m.name === "padmesh" || m.name === "road") m.receiveShadows = true; });
 
@@ -134,6 +135,7 @@ engine.runRenderLoop(() => {
   const dt = Math.min(0.05, engine.getDeltaTime() / 1000);
   clock += dt;
   player.update(dt);
+  game.veh.update(dt);
   const ts = game.timeScale();
   let left = dt * ts;
   while (left > 0) { const step = Math.min(1, left); sim.step(step); left -= step; }

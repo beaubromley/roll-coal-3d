@@ -9,6 +9,7 @@ import { UI, $ } from "./ui";
 import { Game } from "./game";
 import { TitleFx } from "./titlefx";
 import { TouchControls, detectTouch } from "./touch";
+import { Graphics, QUALITY_NAMES } from "./graphics";
 
 const isTouch = detectTouch();
 document.body.classList.toggle("touch", isTouch);
@@ -31,7 +32,7 @@ sun.position = new Vector3(60, 120, 60);
 sun.intensity = 1.1;
 sun.shadowMinZ = 1; sun.shadowMaxZ = 400;
 
-const rig = buildRig(scene);
+const rig = buildRig(scene, { bump: !isTouch });
 const player = new Player(scene, canvas, rig.colliders);
 player.touch = isTouch;
 if (isTouch) player.lockFailed = true;      // never show the "mouse capture" hint on a phone
@@ -52,10 +53,15 @@ player.body.setShadow(sg);
 Object.values(rig.humans).forEach((h) => h.setShadow(sg));
 scene.meshes.forEach((m) => { if (m.name === "ground" || m.name === "padmesh" || m.name === "road") m.receiveShadows = true; });
 
-if (!isTouch) {
-  const glow = new GlowLayer("glow", scene, { mainTextureFixedSize: 512, blurKernelSize: 24 });
-  glow.intensity = 0.45;
-}
+const glow = new GlowLayer("glow", scene, { mainTextureFixedSize: 512, blurKernelSize: 24 });
+glow.intensity = 0.45;
+
+// post-processing / detail level (LOW on phones by default; change it from the pause menu)
+const gfx = new Graphics(scene, player.cam, glow, rig);
+const gfxLabel = () => { $("pGfx").textContent = "GRAPHICS: " + QUALITY_NAMES[gfx.level]; };
+gfx.set(Graphics.saved(isTouch, String((engine.getGlInfo?.() ?? {}).renderer ?? ""))); gfxLabel();
+$("pGfx").addEventListener("click", () => { gfx.cycle(); gfxLabel(); });
+(window as any).__gfx = gfx;
 
 // spawn at the lease-road gate looking at the rig
 player.teleport(0, 0.5, 112, Math.PI);

@@ -1,6 +1,6 @@
 import {
   Scene, Mesh, MeshBuilder, StandardMaterial, Color3, Vector3, Quaternion,
-  DynamicTexture, TransformNode,
+  DynamicTexture, TransformNode, VertexBuffer,
 } from "@babylonjs/core";
 
 export interface AABB { x0: number; x1: number; y0: number; y1: number; z0: number; z1: number }
@@ -15,6 +15,9 @@ export class Builder {
   colliders: AABB[] = [];
   merged: Mesh[] = [];
   private groups = new Map<string, Mesh[]>();
+  private tiles = new Map<string, number>();
+  /** world-space texture tile size (m) for a material: merged geometry gets box-projected UVs so texel density is uniform */
+  setTile(key: string, metres: number) { this.tiles.set(key, metres); }
   private mats = new Map<string, StandardMaterial>();
 
   constructor(public scene: Scene) {}
@@ -69,7 +72,7 @@ export class Builder {
   cyl(m: string, cx: number, cy: number, cz: number, dia: number, h: number,
       o: { axis?: "x" | "y" | "z"; tess?: number; solid?: boolean; dia2?: number } = {}) {
     const mesh = MeshBuilder.CreateCylinder("c", {
-      diameterTop: o.dia2 ?? dia, diameterBottom: dia, height: h, tessellation: o.tess ?? 10,
+      diameterTop: o.dia2 ?? dia, diameterBottom: dia, height: h, tessellation: Math.max(o.tess ?? 10, dia > 0.5 ? 20 : 12),
     }, this.scene);
     mesh.position.set(cx, cy, cz);
     if (o.axis === "x") mesh.rotation.z = Math.PI / 2;
@@ -82,7 +85,7 @@ export class Builder {
     }
   }
 
-  sphere(m: string, cx: number, cy: number, cz: number, dia: number, seg = 8) {
+  sphere(m: string, cx: number, cy: number, cz: number, dia: number, seg = 14) {
     const mesh = MeshBuilder.CreateSphere("s", { diameter: dia, segments: seg }, this.scene);
     mesh.position.set(cx, cy, cz);
     this.push(m, mesh);
@@ -93,7 +96,7 @@ export class Builder {
     const dir = b.subtract(a);
     const len = dir.length();
     if (len < 1e-4) return;
-    const mesh = MeshBuilder.CreateCylinder("beam", { diameter: t, height: len, tessellation: tess }, this.scene);
+    const mesh = MeshBuilder.CreateCylinder("beam", { diameter: t, height: len, tessellation: Math.max(tess, 8) }, this.scene);
     mesh.position.copyFrom(a.add(b).scale(0.5));
     const q = new Quaternion();
     Quaternion.FromUnitVectorsToRef(Vector3.Up(), dir.scale(1 / len), q);
@@ -215,6 +218,7 @@ export class Builder {
         const mm = Mesh.MergeMeshes(part, true, true, undefined, false, false);
         if (mm) {
           mm.material = this.getMat(key);
+          const tile = this.tiles.get(key); if (tile) applyWorldUV(mm, tile);
           mm.receiveShadows = true;
           mm.freezeWorldMatrix();
           this.merged.push(mm);
@@ -250,4 +254,19 @@ export function node(name: string, scene: Scene, x = 0, y = 0, z = 0) {
   const n = new TransformNode(name, scene);
   n.position.set(x, y, z);
   return n;
+}
+
+/** Box-project UVs from world position + dominant normal axis (merged meshes have baked world-space vertices). */
+export function applyWorldUV(mesh: Mesh, tile: number) {
+  const pos = mesh.getVerticesData(VertexBuffer.PositionKind), nor = mesh.getVerticesData(VertexBuffer.NormalKind);
+  if (!pos || !nor) return;
+  const n = pos.length / 3, uv = new Float32Array(n * 2), inv = 1 / tile;
+  for (let i = 0; i < n; i++) {
+    const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    const ax = Math.abs(nor[i * 3]), ay = Math.abs(nor[i * 3 + 1]), az = Math.abs(nor[i * 3 + 2]);
+    let u: number, v: number;
+    if (ay >= ax && ay >= az) { u = x; v = z; } else if (ax >= az) { u = z; v = y; } else { u = x; v = y; }
+    uv[i * 2] = u * inv; uv[i * 2 + 1] = v * inv;
+  }
+  mesh.setVerticesData(VertexBuffer.UVKind, uv, false);
 }

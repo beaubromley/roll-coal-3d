@@ -4,6 +4,7 @@ import {
 } from "@babylonjs/core";
 import { Builder, AABB, node, pushOutXZ } from "./builder";
 import { Human } from "./npcs";
+import { metalPanels, corrugated, woodGrain, DetailTex } from "./textures";
 
 export const F = 7.8; // drill floor height above ground (m) - 25.5 ft standard FlexRig-class floor
 export const STAND_M = 28.35; // 93 ft stand
@@ -20,6 +21,7 @@ export interface Rig {
   humans: Record<string, Human>;
   update(dt: number, f: RigFrame): void;
   setPortaLocked(locked: boolean): void;
+  setBump(on: boolean): void;
   setCasingTruck(on: boolean): void;
   heliState: { phase: "hidden" | "landing" | "landed" | "leaving"; node: TransformNode };
   deerNode: TransformNode;
@@ -53,11 +55,11 @@ function platTex(scene: Scene) {
     if (((x + y) / 16) % 2) { c.moveTo(x + 3, y + 3); c.lineTo(x + 11, y + 11); } else { c.moveTo(x + 11, y + 3); c.lineTo(x + 3, y + 11); }
     c.stroke();
   }
-  t.update(); t.uScale = 6; t.vScale = 6;
+  t.update(); t.uScale = 1; t.vScale = 1;
   return t;
 }
 
-export function buildRig(scene: Scene): Rig {
+export function buildRig(scene: Scene, opts: { bump?: boolean } = {}): Rig {
   const b = new Builder(scene);
   const spots: Record<string, Vector3> = {};
 
@@ -94,6 +96,25 @@ export function buildRig(scene: Scene): Rig {
   b.defMat("bopred", "#a8221c"); b.defMat("bopblue", "#244f8f"); b.defMat("accgreen", "#2e7a45");
   b.defMat("asphalt", "#3d3f42"); b.defMat("sack", "#c9c1a8"); b.defMat("lcm", "#a07844"); b.defMat("barite", "#7a7a7a");
   const lampMat = b.getMat("lamp");
+
+  // ---- surface detail: world-scaled panel/corrugation/wood textures with bump ----
+  const mp = metalPanels(scene), co = corrugated(scene), wo = woodGrain(scene);
+  const dressed: { mat: StandardMaterial; bump: DetailTex["bump"] }[] = [];
+  const dress = (keys: string[], tex: DetailTex, tile: number, level: number, bump = true) => {
+    for (const k of keys) {
+      const m = b.getMat(k); m.diffuseTexture = tex.diffuse; b.setTile(k, tile);
+      if (bump) {
+        if (opts.bump !== false) { m.bumpTexture = tex.bump; tex.bump.level = level; }
+        dressed.push({ mat: m, bump: tex.bump });
+      }
+    }
+  };
+  dress(["steel", "dsteel", "orange", "white", "blue", "navy", "red", "yellow", "bopred", "bopblue", "accgreen", "poly", "cabinwall", "flaregray", "tan", "trailer2", "black", "rust"], mp, 2.4, 0.55);
+  dress(["pipe", "pipeband"], mp, 0.9, 0, false);          // round stock: diffuse grime only, bump looks noisy on cylinders
+  dress(["tank", "tankgreen", "trailer"], co, 1.4, 0.9);
+  dress(["wood", "lcm"], wo, 1.2, 0.6);
+  b.setTile("deck", 1.0);
+  for (const k of ["deck", "asphalt"]) { const m = b.getMat(k); if (opts.bump !== false && k === "deck") { m.bumpTexture = mp.bump; mp.bump.level = 0.35; dressed.push({ mat: m, bump: mp.bump }); } }
 
   // ================= SUBSTRUCTURE (box-on-box) + DRILL FLOOR =================
   const FX = 6.5, FZ = 6.0;
@@ -695,7 +716,7 @@ export function buildRig(scene: Scene): Rig {
 
   return {
     spots, colliders: b.colliders, merged, humans, update,
-    setPortaLocked, setCasingTruck: (on) => casingTruck.setEnabled(on),
+    setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => casingTruck.setEnabled(on),
     heliState, deerNode, windsock,
   };
 }

@@ -65,6 +65,7 @@ export class Vehicles {
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0;
+  private uiKind = "";
   /** pedals: travel 0..1; reverse only engages after the brake has been released at a stop */
   private gas = 0; private brk = 0; private revArm = true; private spaceWas = false;
   private pallet!: TransformNode; private palletHeld = false; private palletVy = 0; private palletV!: Veh;
@@ -434,6 +435,8 @@ export class Vehicles {
   update(dt: number) {
     dt = Math.min(dt, 0.05);
     this.updatePallet(dt);
+    const kind = this.active?.kind ?? "";
+    if (kind !== this.uiKind) { this.uiKind = kind; document.body.classList.toggle("driving", !!kind); if (kind) document.body.dataset.veh = kind; else delete document.body.dataset.veh; }
     // idle vehicles keep their boxes / wheels honest
     if (this.climb.on) { this.updateClimb(dt); return; }
     if (this.chair.on) { this.updateChair(dt); return; }
@@ -535,8 +538,8 @@ export class Vehicles {
     }
     const mph = Math.round(Math.abs(v.speed) * 2.237);
     const extra = v.kind === "forklift" ? `   FORKS ${(this.forkPos(v).y * 3.281).toFixed(0)} ft   REACH ${(v.ext * 3.4 * 3.281).toFixed(0)} ft${this.palletHeld ? "   LOAD ON" : ""}` : v.kind === "lift" ? `   BASKET ${(v.platformY * 3.281).toFixed(0)} ft` : "";
-    const bar = (t: number) => "▮".repeat(Math.round(t * 5)) + "▯".repeat(5 - Math.round(t * 5));
-    this.hud.textContent = `${v.name.toUpperCase()}   ${mph} MPH${extra}   GAS ${bar(this.gas)}  BRAKE ${bar(this.brk)}\n${v.controls}`;
+    const bar = (t: number) => "■".repeat(Math.round(t * 5)) + "□".repeat(5 - Math.round(t * 5));
+    this.hud.textContent = `${v.name.toUpperCase()}   ${mph} MPH${extra}   GAS ${bar(this.gas)}  BRAKE ${bar(this.brk)}${document.body.classList.contains("touch") ? "" : "\n" + v.controls}`;
   }
 
   private updateChair(dt: number) {
@@ -544,8 +547,9 @@ export class Vehicles {
     p.pos.set(st.pos.x, st.pos.y, st.pos.z); p.vel.setAll(0); p.grounded = true;
     const eye = new Vector3(st.pos.x, F + 1.45, st.pos.z);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
-    const up = (this.k("KeyW", "ArrowUp") ? 1 : 0) - (this.k("KeyS", "ArrowDown") ? 1 : 0);
-    const side = (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0);
+    const jy = p.touchMove.y || 0, jx = p.touchMove.x || 0;
+    const up = Math.max(-1, Math.min(1, (this.k("KeyW", "ArrowUp") ? 1 : 0) - (this.k("KeyS", "ArrowDown") ? 1 : 0) + jy));
+    const side = Math.max(-1, Math.min(1, (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0) + jx));
     if (this.chair.idx === 0) {
       const busy = s.mode === "tripping" || s.mode === "casing";
       if (this.k("Space")) { s.wobTarget = Math.max(0, s.wobTarget - 30 * dt); if (s.auto.on) s.auto.on = false; }   // set the brake: weight comes right off

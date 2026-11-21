@@ -19,6 +19,7 @@ export class TouchControls {
   private joyId = -1; private lookId = -1;
   private jx = 0; private jy = 0; private lx = 0; private ly = 0;
   private run = false;
+  private held = new Set<string>();
   private hot = false; private lastLabel = "";
   private readonly RADIUS = 56;
   private readonly LOOK = 0.0052;
@@ -86,10 +87,21 @@ export class TouchControls {
     });
     press($("tb-cam"), () => { this.player.third = !this.player.third; });
     press($("tb-pause"), () => this.game.togglePause(true));
+    // driving: each pedal / steer / boom button holds a key (the vehicle reads keys), released on lift-off
+    document.querySelectorAll<HTMLButtonElement>("#drive .td").forEach((el) => {
+      const code = el.dataset.key!;
+      press(el, () => { this.held.add(code); el.classList.add("on"); window.dispatchEvent(new KeyboardEvent("keydown", { code })); },
+        () => { this.held.delete(code); el.classList.remove("on"); window.dispatchEvent(new KeyboardEvent("keyup", { code })); });
+    });
   }
 
   /** Called every frame: the USE button lights up and shows a label when something is in reach. */
   update() {
+    // got out of the vehicle (or it was taken away) while a button was down: let go of everything
+    if (this.held.size && !document.body.classList.contains("driving")) {
+      for (const code of this.held) window.dispatchEvent(new KeyboardEvent("keyup", { code }));
+      this.held.clear(); document.querySelectorAll("#drive .td.on").forEach((e) => e.classList.remove("on"));
+    }
     const near = this.game.nearest;
     const use = document.getElementById("tb-use")!, hint = document.getElementById("tbhint")!;
     const hot = !!near;

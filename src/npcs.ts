@@ -19,11 +19,12 @@ export interface HumanOpts {
   shirt: string; pants: string; hat: string | null; skin?: string; vest?: boolean; scale?: number;
   /** extra face / clothing detail (the player's own body) */
   detail?: boolean;
+  /** hair colour, headband colour (false = none), height multiplier: all random per person unless given */
+  hair?: string; band?: string | false; height?: number;
   /** hat / vest / glasses start hidden until setPPE(true) */
   ppeOff?: boolean;
 }
 
-const SIT_HIP = -Math.PI / 2;
 
 export class Human {
   root: TransformNode;
@@ -125,12 +126,24 @@ export class Human {
     // bone names differ between rigs (Mixamo vs Quaternius): look each role up under both
     const alias: Record<string, string[]> = {
       Head: ["Head_end", "HeadTop_End", "Head"], Spine2: ["Chest", "Spine2", "Torso"],
+      LeftArm: ["UpperArm.L", "LeftArm"], RightArm: ["UpperArm.R", "RightArm"], LeftForeArm: ["LowerArm.L", "LeftForeArm"], RightForeArm: ["LowerArm.R", "RightForeArm"],
+      LeftHand: ["Wrist.L", "LeftHand"], RightHand: ["Wrist.R", "RightHand"], LeftFoot: ["Foot.L", "LeftFoot"], RightFoot: ["Foot.R", "RightFoot"],
       LeftUpLeg: ["UpperLeg.L", "LeftUpLeg"], RightUpLeg: ["UpperLeg.R", "RightUpLeg"], LeftLeg: ["LowerLeg.L", "LeftLeg"], RightLeg: ["LowerLeg.R", "RightLeg"],
     };
     for (const [k, names] of Object.entries(alias)) this.bones[k] = names.map((n) => c.bone(n)).find(Boolean) ?? null;
     // flat-colour models (Quaternius): tint clothes per person, and drop any bundled hat so the hard hat reads
     const tint = (re: RegExp, hex: string | undefined) => { if (hex) for (const mt of c.materials) if (re.test(mt.name)) mt.set(hex); };
-    tint(/^Beige/, o.shirt); tint(/^LightBlue/, o.pants); tint(/^Skin/, o.skin);
+    // the model's materials: Brown = shirt (and gloves), LightBlue = overalls, Beige = cuffs, Skin, Eyebrows = hair, Red = headband, Brown2 = boots
+    const seed = ++Human.count, rnd = (n: number) => { const x = Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
+    const pick = <T,>(a: T[], n: number) => a[Math.floor(rnd(n) * a.length) % a.length];
+    const hair = o.hair ?? pick(["#1c130c", "#3b2616", "#6a4a2a", "#a07a3a", "#d2b06a", "#7a2e14", "#8d8d8d", "#0b0b0b"], 1);
+    const band = o.band !== undefined ? o.band : rnd(2) < 0.3 ? pick(["#b3231c", "#1d6fb5", "#2f7d3e", "#e8b923"], 3) : false;
+    const boots = pick(["#2a1d12", "#3a2a1c", "#1a1a1a", "#4a3a2a"], 4);
+    tint(/^Brown2/, boots); tint(/^Brown(?!2)/, o.shirt); tint(/^Beige/, o.shirt); tint(/^LightBlue/, o.pants); tint(/^Skin/, o.skin); tint(/^Eyebrows/, hair);
+    if (band) tint(/^Red/, band);
+    else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
+    const sy = o.height ?? 0.95 + rnd(5) * 0.11, sx = 0.95 + rnd(6) * 0.14;
+    this.chBuild = new Vector3(sx, sy, sx);
     for (const mesh of c.meshes) if (/head/i.test(mesh.name) && /^Beige/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
     const mk = (mesh: Mesh, hex: string) => { mesh.material = m(sc, hex); mesh.parent = this.root; this.meshes.push(mesh); this.ppe.push(mesh); return mesh; };
     const parts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
@@ -152,10 +165,28 @@ export class Human {
     }
     this.chParts = parts;
     this.ppeLocal = new Vector3();
-    this.root.scaling.setAll(o.scale ?? 1);
+    const sc0 = o.scale ?? 1;
+    this.root.scaling.set(this.chBuild.x * sc0, this.chBuild.y * sc0, this.chBuild.z * sc0);
   }
+  static count = 0;
+  private chBuild = new Vector3(1, 1, 1);
   private chParts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
   private ppeLocal!: Vector3;
+
+  /** rotate `bone` so the segment from it to `child` points along `dir` (world space) */
+  private aim(bone: TransformNode | null | undefined, child: TransformNode | null | undefined, dir: Vector3) {
+    if (!bone || !child || !bone.parent) return;
+    const par = bone.parent as TransformNode;
+    par.computeWorldMatrix(true); bone.computeWorldMatrix(true); child.computeWorldMatrix(true);
+    const now = child.getAbsolutePosition().subtract(bone.getAbsolutePosition());
+    if (now.lengthSquared() < 1e-8) return;
+    now.normalize();
+    const dw = new Quaternion(); Quaternion.FromUnitVectorsToRef(now, dir, dw);
+    const pr = new Quaternion(); par.getWorldMatrix().decompose(undefined, pr, undefined);
+    const local = bone.rotationQuaternion ?? Quaternion.FromEulerVector(bone.rotation);
+    bone.rotationQuaternion = Quaternion.Inverse(pr).multiply(dw).multiply(pr).multiply(local);
+    bone.computeWorldMatrix(true);
+  }
 
   private animateChar(dt: number, speed: number) {
     const c = this.ch!;
@@ -171,9 +202,17 @@ export class Human {
     if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.5, speed / 2.0);
     if (next === "run" && grp.run) grp.run.speedRatio = Math.max(0.6, speed / 5);
     if (next === "sit" && !this.chSat) {
-      // freeze the idle pose, then fold hips and knees; arms stay relaxed
-      const q = (n: string, ang: number) => { const b = this.bones[n]; if (!b) return; const r = b.rotationQuaternion ?? Quaternion.FromEulerVector(b.rotation); b.rotationQuaternion = r.multiply(Quaternion.RotationAxis(Vector3.Right(), ang)); };
-      q("LeftUpLeg", SIT_HIP); q("RightUpLeg", SIT_HIP); q("LeftLeg", -SIT_HIP); q("RightLeg", -SIT_HIP);
+      // freeze the idle pose, then aim each limb segment in world space (bone axes differ between rigs, so no hard-coded axes):
+      // thighs point forward, shins straight down, upper arms forward-down, forearms forward
+      this.root.computeWorldMatrix(true);
+      const fwd = this.root.getDirection(Vector3.Forward()); fwd.y = 0; fwd.normalize();
+      const down = new Vector3(0, -1, 0);
+      for (const side of ["Left", "Right"]) {
+        this.aim(this.bones[side + "UpLeg"], this.bones[side + "Leg"], fwd);
+        this.aim(this.bones[side + "Leg"], this.bones[side + "Foot"], down);
+        this.aim(this.bones[side + "Arm"], this.bones[side + "ForeArm"], fwd.scale(0.55).add(down.scale(0.85)).normalize());
+        this.aim(this.bones[side + "ForeArm"], this.bones[side + "Hand"], fwd.scale(0.95).add(down.scale(0.3)).normalize());
+      }
       this.chSat = true;
     }
     // PPE follows the bones (positions taken in this person's local space)

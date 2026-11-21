@@ -545,7 +545,7 @@ export class Vehicles {
   private updateChair(dt: number) {
     const s = this.game.sim.s, p = this.player, st = this.seats[this.chair.idx];
     p.pos.set(st.pos.x, st.pos.y, st.pos.z); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(st.pos.x, F + 1.45, st.pos.z);
+    const eye = new Vector3(st.pos.x, F + 1.38, st.pos.z);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     const jy = p.touchMove.y || 0, jx = p.touchMove.x || 0;
     const up = Math.max(-1, Math.min(1, (this.k("KeyW", "ArrowUp") ? 1 : 0) - (this.k("KeyS", "ArrowDown") ? 1 : 0) + jy));

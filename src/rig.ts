@@ -682,9 +682,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const addH = (key: string, x: number, y: number, z: number, rotY: number, o: ConstructorParameters<typeof Human>[1]) => {
     const h = new Human(scene, o); h.root.position.set(x, y, z); h.root.rotation.y = rotY; humans[key] = h; return h;
   };
-  addH("driller", 4.7, F - 0.22, -3.25, -0.97, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" }).seated = true;
-  addH("dd1", 4.8, F - 0.22, -4.62, Math.PI, { shirt: "#2b4a66", pants: "#3a3a3a", hat: null, skin: "#8a5a3a" }).seated = true;
-  addH("dd2", 5.6, F - 0.22, -4.62, Math.PI, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
+  addH("driller", 4.7, F - 0.17, -3.25, -0.97, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" }).seated = true;
+  addH("dd1", 4.8, F - 0.17, -4.62, Math.PI, { shirt: "#2b4a66", pants: "#3a3a3a", hat: null, skin: "#8a5a3a" }).seated = true;
+  addH("dd2", 5.6, F - 0.17, -4.62, Math.PI, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
   addH("hand1", -0.9, F, 2.4, 0.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
   addH("hand2", 1.9, F, 3.6, -2.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a" });
   addH("derrickman", -4.2, FB + 0.12, 3.0, 2.2, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
@@ -755,7 +755,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     windsock.rotation.y = Math.sin(f.t * 0.1) * 0.5 + 2.2;
     windsock.rotation.z = Math.sin(f.t * 2.0) * 0.06;
     // NPC idle & walkers
-    for (const k in humans) humans[k].animate(dt, 0);
+    for (const k in humans) if (!walkers.some((w) => w.h === humans[k])) humans[k].animate(dt, 0);   // walkers animate below (idle every frame would restart their clip)
     for (const w of walkers) {
       const tgt = w.pts[w.i], p = w.h.root.position;
       const dx = tgt.x - p.x, dz = tgt.z - p.z, d = Math.hypot(dx, dz);

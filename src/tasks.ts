@@ -44,7 +44,7 @@ export function defineMissions(g: Game) {
         if (r.skipped) {
           g.shortcutToast("You told the crew to \"be careful\" and called it a JSA.");
           g.radio("earl", "'Be careful.' That's the whole JSA? …Alright. It's your name on it.");
-          g.addDebt({ id: "pinch", afterMin: 240, chance: 0.5, run: () => { g.radio("cooter", "Boss, Dewayne pinched his hand in the tongs. He's fine. He says it's fine.", 9000); g.inc(1, "FIRST AID CASE"); g.gain(0, -5); } });
+          g.addDebt({ id: "pinch", afterMin: 240, chance: 0.5, run: () => { g.radio("jimbo", "Boss, Dewayne pinched his hand in the tongs. He's fine. He says it's fine.", 9000); g.inc(1, "FIRST AID CASE"); g.gain(0, -5); } });
         } else if (good(r)) { g.gain(0.3, 3); g.radio("earl", "Good JSA. That's the first one I've seen with the right hazards on it."); }
         else { g.gain(0.05, 0); g.radio("earl", "Half right. The other half is a cry for help."); }
         g.geoProg(done);
@@ -138,7 +138,7 @@ export function defineMissions(g: Game) {
 
   // ================================================================ 7. porta john — slips + stuck latch
   M({ id: "porta", title: "Porta John Standoff", sub: "Both floorhands are locked in the porta john. A connection is coming. Somebody has to pull the slips.", trigger: gap(3), a: 0.4, m: 6,
-    start: () => { g.rig.setPortaLocked(true); H.hand1.root.setEnabled(false); H.hand2.root.setEnabled(false); g.radio("dale", "BOSS! Cooter and Dewayne are locked in the porta john and we've got a connection coming! I can't leave the brake — somebody's gotta pull the slips!", 11000); },
+    start: () => { g.rig.setPortaLocked(true); H.hand1.root.setEnabled(false); H.hand2.root.setEnabled(false); g.radio("dale", "BOSS! Jimbo and Dewayne are locked in the porta john and we've got a connection coming! I can't leave the brake — somebody's gotta pull the slips!", 11000); },
     steps: [
       { text: "Go to the drill floor and pull the slips", at: () => v3(1.9, F + 1.0, 1.4), label: "Pull the slips", r: 4, act: (done) => g.mini.slips((r) => {
         if (r.skipped) {
@@ -149,9 +149,9 @@ export function defineMissions(g: Game) {
         done(); }) },
       { text: "Free the floorhands from the porta john", at: sy(S.porta), label: "Open the porta john", r: 3, act: (done) => g.mini.mash({ eyebrow: "Porta John", title: "Jammed Latch", intro: "\"The latch just… jammed. Both of us. At the same time. On the same trip.\" Rattle it loose.", seconds: 9, label: "the latch is stuck hard." }, (r) => {
         const free = () => { g.rig.setPortaLocked(false); H.hand1.root.setEnabled(true); H.hand2.root.setEnabled(true); };
-        if (r.skipped) { free(); g.shortcutToast("You kicked the door in."); g.radio("cooter", "You KICKED it? That's a $2,000 door, boss. Dewayne is crying a little."); sim.addCost(2000); g.gain(-0.1, -6); }
-        else if (r.score > 0.3) { free(); g.gain(0.2, 8); g.radio("cooter", "Dewayne says nobody saw anything. I say nobody saw anything."); }
-        else { free(); g.radio("cooter", "Took you the whole break, boss. We were gonna just wait."); g.gain(0, 2); }
+        if (r.skipped) { free(); g.shortcutToast("You kicked the door in."); g.radio("jimbo", "You KICKED it? That's a $2,000 door, boss. Dewayne is crying a little."); sim.addCost(2000); g.gain(-0.1, -6); }
+        else if (r.score > 0.3) { free(); g.gain(0.2, 8); g.radio("jimbo", "Dewayne says nobody saw anything. I say nobody saw anything."); }
+        else { free(); g.radio("jimbo", "Took you the whole break, boss. We were gonna just wait."); g.gain(0, 2); }
         done(); }) },
     ] });
 
@@ -202,22 +202,22 @@ export function defineMissions(g: Game) {
 
   // ================================================================ 12. snake — reaction test
   M({ id: "snake", title: "Rattlesnake in the Doghouse", sub: "It's under the table. The crew is standing on the benches. Someone has to go in there.", trigger: gap(8), a: 0.3, m: 6,
-    start: () => { g.spawnSnake(); g.radio("cooter", "BOSS. There's a snake in the doghouse. It's a rattler. It's rattling.", 9000); },
+    start: () => { g.spawnSnake(); g.radio("jimbo", "BOSS. There's a snake in the doghouse. It's a rattler. It's rattling.", 9000); },
     steps: [{ text: "Go to the doghouse and deal with the snake", at: () => v3(-4.3, F + 0.6, -3.2), label: "Handle the snake", r: 3.5, act: (done) => g.mini.reaction({ eyebrow: "Doghouse", title: "Snake Dance", intro: "It's coiled, and it's watching you. Wait for the strike, then jump back. Don't flinch early.", rounds: 3, goText: "STRIKE!" }, (r) => {
-      const bite = (why: string) => { g.radio("cooter", why, 8000); g.inc(1, "SNAKEBITE — FIRST AID"); sim.addCost(12000); g.gain(0, -4); };
+      const bite = (why: string) => { g.radio("jimbo", why, 8000); g.inc(1, "SNAKEBITE — FIRST AID"); sim.addCost(12000); g.gain(0, -4); };
       if (r.skipped) { g.shortcutToast("You decided to just walk past it."); g.radio("earl", "Walking past a rattlesnake. Bold."); g.addDebt({ id: "bite", afterMin: 15, chance: 0.5, run: () => bite("It got you in the boot, boss. The BOOT. Count your blessings.") }); }
       else if (good(r)) { g.gain(0.4, 4); g.radio("earl", "Dodged it. Sent it out with a broom. The crew's cheering."); }
       else if (bad(r)) bite("It got your ankle. You're fine. The boot is not.");
-      else { g.gain(0.1, 2); g.radio("cooter", "You got it out, but it took two tries and a lot of yelling."); }
+      else { g.gain(0.1, 2); g.radio("jimbo", "You got it out, but it took two tries and a lot of yelling."); }
       done(); }) }],
     end: () => g.despawnSnake() });
 
   // ================================================================ 13. gender reveal — cut the wire
   M({ id: "reveal", title: "Gender Reveal", sub: "A floorhand has brought a smoke cannon to the pipe deck. Nobody knows who approved it. Nobody did.", trigger: gap(8), a: 0.3, m: 10,
-    steps: [{ text: "Defuse the gender reveal on the pipe deck", at: () => H.hand3.root.position.add(v3(0, 1.4, 0)), label: "Talk to Cooter", r: 5, act: (done) => g.mini.wires({ eyebrow: "Stop Work Authority", title: "Cut the Wire", intro: "Cooter's smoke cannon has a timer on it. He taped the instructions to the side.", fixed: true,
+    steps: [{ text: "Defuse the gender reveal on the pipe deck", at: () => H.hand3.root.position.add(v3(0, 1.4, 0)), label: "Talk to Jimbo", r: 5, act: (done) => g.mini.wires({ eyebrow: "Stop Work Authority", title: "Cut the Wire", intro: "Jimbo's smoke cannon has a timer on it. He taped the instructions to the side.", fixed: true,
       clue: "\"Cut the trigger wire. It is NOT red, NOT blue, and NOT next to the green one.\"",
       colors: [{ name: "YELLOW", hex: "#e8c423", correct: true }, { name: "RED", hex: "#d63a2b", correct: false }, { name: "GREEN", hex: "#2f9a45", correct: false }, { name: "BLUE", hex: "#2f6fd6", correct: false }] }, (r) => {
-      if (r.skipped) { g.shortcutToast("You just confiscated the cannon."); g.radio("cooter", "You TOOK it? Boss, that's my sister-in-law's whole thing."); g.gain(0.05, -8); g.addDebt({ id: "cannon", afterMin: 100, chance: 0.5, run: () => { g.ui.toast("IT'S A… PIPE WRENCH?", "Blue smoke everywhere."); g.sfx.horn(); g.radio("marcus", "Somebody fired the confetti cannon at shift change. The H2S monitor went off. It's fine. It's fine.", 9000); g.inc(1, "UNAUTHORIZED PYROTECHNICS"); g.gain(-0.2, 8); } }); }
+      if (r.skipped) { g.shortcutToast("You just confiscated the cannon."); g.radio("jimbo", "You TOOK it? Boss, that's my sister-in-law's whole thing."); g.gain(0.05, -8); g.addDebt({ id: "cannon", afterMin: 100, chance: 0.5, run: () => { g.ui.toast("IT'S A… PIPE WRENCH?", "Blue smoke everywhere."); g.sfx.horn(); g.radio("marcus", "Somebody fired the confetti cannon at shift change. The H2S monitor went off. It's fine. It's fine.", 9000); g.inc(1, "UNAUTHORIZED PYROTECHNICS"); g.gain(-0.2, 8); } }); }
       else if (r.score >= 1) { g.gain(0.4, 4); g.radio("earl", "Good stop. The guy still wants the party. Can he just have cake?"); }
       else { g.ui.toast("IT'S A… PIPE WRENCH?", "Blue smoke everywhere."); g.sfx.horn(); g.radio("marcus", "The H2S monitor just went off. It's confetti. It's fine. It's fine."); g.gain(-0.4, 14); g.inc(1); }
       done(); }) }] });

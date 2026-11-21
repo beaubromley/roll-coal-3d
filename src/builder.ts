@@ -59,6 +59,16 @@ export class Builder {
     }
   }
 
+  /** smooth sloped plank spanning z0 (at y0) to z1 (at y1), top surface on the line */
+  ramp(m: string, cx: number, w: number, z0: number, y0: number, z1: number, y1: number, t = 0.1) {
+    const dz = z1 - z0, dy = y1 - y0, len = Math.hypot(dz, dy);
+    const mesh = MeshBuilder.CreateBox("ramp", { width: w, height: t, depth: len }, this.scene);
+    const ang = Math.atan2(-dy, dz); // +z end lower when dy < 0
+    mesh.rotation.x = ang;
+    mesh.position.set(cx, (y0 + y1) / 2 - (t / 2) * Math.cos(ang), (z0 + z1) / 2 + (t / 2) * Math.sin(ang));
+    this.push(m, mesh);
+  }
+
   /** min/max based box */
   slab(m: string, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, solid = false) {
     this.box(m, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, solid);

@@ -192,7 +192,7 @@ export class Game {
     talk("driller", "dale", ["Everything's green, boss. I'm just watching the numbers.", "You want more weight? Say it in the console, I can't read minds.", "I've drilled wells since before you had a hard hat. Just so you know."]);
     talk("pusher", "earl", ["If it's not on the JSA, we don't do it.", "Your trailer's got the good chair. Don't tell the others.", "Walk the location. Then walk it again."]);
     talk("mudeng", "marcus", ["Mud's looking good. The mud is always looking good until it isn't.", "Delaware's coming up. You'll want ten-nine in the pits before six thousand.", "That's not 'sticky.' That's 'rheology.'"]);
-    talk("hand3", "cooter", ["Pipe's pipe, boss.", "I do not get paid enough for the forklift.", "Is it break time? It feels like break time."]);
+    talk("hand3", "jimbo", ["Pipe's pipe, boss.", "I do not get paid enough for the forklift.", "Is it break time? It feels like break time."]);
   }
 
   openBunk() {

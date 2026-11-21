@@ -191,10 +191,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.stairs("dsteel", "yellow", -FX, -0.9, "-x", F, 1.5);
   // V-door pipe ramp (z=6 -> 18)
   {
-    const n = 30, run = 0.4;
+    const n = 60, run = 0.2; // fine collision steps approximate a smooth slope
+    b.ramp("deck", 0, 2.0, FZ, F, FZ + n * run, 0);
     for (let k = 1; k <= n; k++) {
       const top = F - (F / n) * k, cz = FZ + (k - 0.5) * run;
-      b.box("deck", 0, top - 0.04, cz, 2.0, 0.08, run);
       b.blocker(-1.0, 0, cz - run / 2, 1.0, top, cz + run / 2);
     }
     b.beam("yellow", v(-1.05, F + 0.9, FZ), v(-1.05, 0.9, FZ + n * run), 0.06);
@@ -672,7 +672,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // walker paths
   const walkers = [
-    { h: humans.hand3, pts: [v(2.1, 0, 20), v(2.1, 0, 33), v(-2.1, 0, 33), v(-2.1, 0, 20)], i: 0, speed: 1.1 },
+    { h: humans.hand3, pts: [v(2.1, 0, 20), v(2.1, 0, 36), v(-2.1, 0, 36), v(-2.1, 0, 20), v(-2.1, 0, 36), v(2.1, 0, 36)], i: 0, speed: 1.1 },
     { h: humans.hand1, pts: [v(-0.9, F, 2.4), v(-0.9, F, 4.3), v(1.2, F, 4.3), v(1.2, F, 2.4)], i: 0, speed: 0.8 },
   ];
 

@@ -45,7 +45,6 @@ export class Human {
   /** sitting pose (thighs forward, knees bent, hands on the controls) */
   seated = false;
   constructor(public scene: Scene, o: HumanOpts) {
-    o = { ...o, vest: false };   // no hi-vis vest: it looked bad over the character model
     this.root = new TransformNode("human", scene);
     if (Human.char) { this.fromChar(Human.char, o); return; }
     if (Human.kit) { this.fromKit(Human.kit, o); return; }

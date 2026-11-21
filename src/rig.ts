@@ -685,12 +685,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   addH("driller", 4.7, F - 0.22, -3.25, -0.97, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" }).seated = true;
   addH("dd1", 4.8, F - 0.22, -4.62, Math.PI, { shirt: "#2b4a66", pants: "#3a3a3a", hat: null, skin: "#8a5a3a" }).seated = true;
   addH("dd2", 5.6, F - 0.22, -4.62, Math.PI, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
-  addH("hand1", -0.9, F, 2.4, 0.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f", vest: true });
-  addH("hand2", 1.9, F, 3.6, -2.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a", vest: true });
-  addH("derrickman", -4.2, FB + 0.12, 3.0, 2.2, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f", vest: true });
-  addH("mudeng", -6, 2.78, -22.8, 1.2, { shirt: "#1d6fb5", pants: "#3a3a3a", hat: "#f2f2f2", skin: "#e0b48f", vest: true });
+  addH("hand1", -0.9, F, 2.4, 0.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
+  addH("hand2", 1.9, F, 3.6, -2.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a" });
+  addH("derrickman", -4.2, FB + 0.12, 3.0, 2.2, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
+  addH("mudeng", -6, 2.78, -22.8, 1.2, { shirt: "#1d6fb5", pants: "#3a3a3a", hat: "#f2f2f2", skin: "#e0b48f" });
   addH("pusher", 27.5, 0, 30, -1.6, { shirt: "#3a5a3a", pants: "#4a3a2a", hat: "#d9d9d9", skin: "#b9805a" });
-  addH("hand3", 2.1, 0, 20, 0, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f", vest: true });
+  addH("hand3", 2.1, 0, 20, 0, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
   addH("guard", 6.0, 0, 95.3, Math.PI, { shirt: "#2d3a4a", pants: "#2d3a4a", hat: "#2d3a4a", skin: "#b9805a" });
   addH("vp", 63, 0, 61, 0, { shirt: "#e9eef3", pants: "#1a1f2a", hat: null, skin: "#e0b48f" });
   humans.vp.root.setEnabled(false);

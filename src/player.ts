@@ -38,7 +38,8 @@ export class Player {
     this.cam.minZ = 0.08; this.cam.maxZ = 1800; this.cam.fov = 0.95;
     this.cam.inputs.clear();
     scene.activeCamera = this.cam;
-    this.body = new Human(scene, { shirt: "#2f5f8f", pants: "#8a7a5a", hat: "#f4f4f4", skin: "#e0b48f", vest: true });
+    this.body = new Human(scene, { shirt: "#2f5f8f", pants: "#8a7a5a", hat: "#f4f4f4", skin: "#e0b48f", vest: true, detail: true });
+    this.body.setPPE(false);   // hard hat, vest and glasses come from the gate shack after sign-in
     window.addEventListener("keydown", (e) => {
       this.keys.add(e.code);
       if (e.code === "KeyV" && !e.repeat && this.enabled) this.third = !this.third;

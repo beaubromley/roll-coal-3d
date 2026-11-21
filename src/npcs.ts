@@ -15,6 +15,10 @@ function m(scene: Scene, hex: string) {
 
 export interface HumanOpts {
   shirt: string; pants: string; hat: string | null; skin?: string; vest?: boolean; scale?: number;
+  /** extra face / clothing detail (the player's own body) */
+  detail?: boolean;
+  /** hat / vest / glasses start hidden until setPPE(true) */
+  ppeOff?: boolean;
 }
 
 export class Human {
@@ -24,6 +28,8 @@ export class Human {
   static kit: Kit | null = null;
   kneeL: TransformNode | null = null; kneeR: TransformNode | null = null; elbowL: TransformNode | null = null; elbowR: TransformNode | null = null;
   meshes: Mesh[] = [];
+  /** hard hat, vest, safety glasses: toggled together */
+  ppe: Mesh[] = [];
   phase = Math.random() * 6;
   walking = false;
   constructor(public scene: Scene, o: HumanOpts) {
@@ -36,9 +42,9 @@ export class Human {
     torso.position.y = 1.12; mk(torso, o.shirt, this.root);
     if (o.vest) {
       const v = MeshBuilder.CreateBox("v", { width: 0.52, height: 0.5, depth: 0.3 }, scene);
-      v.position.y = 1.15; mk(v, "#e8f542", this.root);
+      v.position.y = 1.15; this.ppe.push(mk(v, "#e8f542", this.root));
       const st = MeshBuilder.CreateBox("vs", { width: 0.53, height: 0.07, depth: 0.31 }, scene);
-      st.position.y = 1.12; mk(st, "#cfd3d6", this.root);
+      st.position.y = 1.12; this.ppe.push(mk(st, "#cfd3d6", this.root));
     }
     const skin = o.skin ?? "#d9a77f";
     const head = MeshBuilder.CreateSphere("hd", { diameter: 0.25, segments: 16 }, scene);
@@ -57,13 +63,13 @@ export class Human {
     buckle.position.set(0, 0.82, 0.155); mk(buckle, "#b8b8b8", this.root);
     if (o.hat) {
       const hat = MeshBuilder.CreateSphere("hat", { diameter: 0.31, segments: 16, slice: 0.55 }, scene);
-      hat.position.y = 1.68; mk(hat, o.hat, this.root);
+      hat.position.y = 1.68; this.ppe.push(mk(hat, o.hat, this.root));
       const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.38, height: 0.025, tessellation: 20 }, scene);
-      brim.position.y = 1.68; mk(brim, o.hat, this.root);
+      brim.position.y = 1.68; this.ppe.push(mk(brim, o.hat, this.root));
       const bill = MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, scene);
-      bill.position.set(0, 1.675, 0.2); mk(bill, o.hat, this.root);
+      bill.position.set(0, 1.675, 0.2); this.ppe.push(mk(bill, o.hat, this.root));
       const ridge = MeshBuilder.CreateBox("rdg", { width: 0.035, height: 0.025, depth: 0.28 }, scene);
-      ridge.position.set(0, 1.84, 0); mk(ridge, o.hat, this.root);
+      ridge.position.set(0, 1.84, 0); this.ppe.push(mk(ridge, o.hat, this.root));
     }
     const limb = (name: string, w: number, h: number, d: number, x: number, y: number, hex: string) => {
       const pivot = new TransformNode(name, scene);
@@ -95,6 +101,7 @@ export class Human {
       knee.position.set(0, -0.42, 0.02); knee.scaling.set(1, 0.7, 0.9); mk(knee, o.pants, leg);
     }
     const bootR = bootL.clone("br"); bootR.parent = this.legR; this.meshes.push(bootR);
+    this.addDetail(o);
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Jointed Blender model: hips, KNEES, ankles, shoulders, ELBOWS, wrists are real pivots. */
@@ -105,17 +112,18 @@ export class Human {
       glove: "#2b2118", boot: "#2a1d12", belt: "#1e1a16", dark: "#101012", steel: "#9aa0a8",
     };
     const piv = (name: string, parent: TransformNode, x: number, y: number, z = 0) => { const n = new TransformNode(name, sc); n.parent = parent; n.position.set(x, y, z); return n; };
-    const put = (part: string, parent: TransformNode, flip = false) => {
-      const tpl = kit.templates.get(part); if (!tpl) return;
+    const put = (part: string, parent: TransformNode, flip = false): Mesh | undefined => {
+      const tpl = kit.templates.get(part); if (!tpl) return undefined;
       const mat = part.slice(part.lastIndexOf("_") + 1);
       const c = tpl.clone(part + "_h", parent) as Mesh;
       c.setEnabled(true); c.isPickable = false; c.material = m(sc, colors[mat] ?? "#808080"); c.receiveShadows = true;
       if (flip) c.scaling.x = -1;
       this.meshes.push(c);
+      return c;
     };
     for (const p of ["torso_shirt", "pelvis_pants", "belt_belt", "buckle_dark", "neck_skin", "head_skin", "nose_skin", "eyes_dark"]) put(p, root);
-    if (o.vest) { put("vest_vest", root); put("stripe_stripe", root); }
-    if (o.hat) put("hat_hat", root);
+    if (o.vest) for (const p of ["vest_vest", "stripe_stripe"]) { const c = put(p, root); if (c) this.ppe.push(c); }
+    if (o.hat) { const c = put("hat_hat", root); if (c) this.ppe.push(c); }
     const leg = (side: number) => {
       const hip = piv("hip", root, side * 0.12, 0.9);
       put("thigh_pants", hip);
@@ -137,7 +145,66 @@ export class Human {
     const L = leg(-1), R = leg(1), aL = arm(-1), aR = arm(1);
     this.legL = L.hip; this.legR = R.hip; this.kneeL = L.knee; this.kneeR = R.knee;
     this.armL = aL.sh; this.armR = aR.sh; this.elbowL = aL.el; this.elbowR = aR.el;
+    this.addDetail(o);
     this.root.scaling.setAll(o.scale ?? 1);
+  }
+  /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
+  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); }
+
+  /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
+  private addDetail(o: HumanOpts) {
+    if (!o.detail) return;
+    const sc = this.scene, skin = o.skin ?? "#d9a77f";
+    const add = (mesh: Mesh, hex: string, parent: TransformNode = this.root, ppe = false) => {
+      mesh.material = m(sc, hex); mesh.parent = parent; this.meshes.push(mesh); if (ppe) this.ppe.push(mesh); return mesh;
+    };
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: string, parent?: TransformNode, ppe = false) => {
+      const b = MeshBuilder.CreateBox("dt", { width: w, height: h, depth: d }, sc); b.position.set(x, y, z); return add(b, hex, parent, ppe);
+    };
+    const ball = (dia: number, x: number, y: number, z: number, hex: string, sx = 1, sy = 1, sz = 1, parent?: TransformNode) => {
+      const b = MeshBuilder.CreateSphere("dt", { diameter: dia, segments: 8 }, sc); b.position.set(x, y, z); b.scaling.set(sx, sy, sz); return add(b, hex, parent);
+    };
+    const ring = (dia: number, hgt: number, y: number, hex: string, parent: TransformNode = this.root) => {
+      const c = MeshBuilder.CreateCylinder("dt", { diameter: dia, height: hgt, tessellation: 14 }, sc); c.position.y = y; return add(c, hex, parent);
+    };
+    // head: hair, ears, brows, mouth, stubble
+    const hair = MeshBuilder.CreateSphere("hair", { diameter: 0.268, segments: 12, slice: 0.58 }, sc);
+    hair.position.set(0, 1.645, -0.012); hair.scaling.set(0.92, 1, 1.02); add(hair, "#3b2a1c");
+    box(0.24, 0.07, 0.05, 0, 1.6, -0.1, "#3b2a1c");                       // hair down the back of the neck
+    for (const sx of [-1, 1]) {
+      ball(0.05, sx * 0.118, 1.615, 0.0, skin, 0.5, 1, 0.8);               // ears
+      box(0.05, 0.011, 0.014, sx * 0.046, 1.668, 0.112, "#2a1d12");        // eyebrows
+      ball(0.012, sx * 0.046, 1.635, 0.116, "#ffffff");                    // eye whites catch the light
+    }
+    box(0.07, 0.012, 0.014, 0, 1.562, 0.112, "#7a4a3a");                    // mouth
+    box(0.11, 0.045, 0.02, 0, 1.54, 0.1, "#8a6a50");                        // stubble on the chin
+    // shirt: collar, pocket, flap, company badge, ID on a lanyard
+    ring(0.17, 0.035, 1.455, o.shirt);
+    box(0.115, 0.115, 0.014, -0.115, 1.27, 0.147, o.shirt);
+    box(0.12, 0.025, 0.018, -0.115, 1.325, 0.149, "#101012");
+    box(0.07, 0.04, 0.01, -0.115, 1.255, 0.156, "#e8f542");                  // pocket notebook
+    box(0.05, 0.016, 0.01, -0.095, 1.325, 0.152, "#c8c8c8");                 // pen clip
+    box(0.08, 0.05, 0.012, 0.11, 1.28, 0.147, "#f2f2f2");                    // name patch
+    box(0.06, 0.012, 0.014, 0.11, 1.29, 0.153, "#233a52");
+    box(0.012, 0.18, 0.012, 0.02, 1.34, 0.145, "#c4561a");                   // lanyard
+    box(0.065, 0.08, 0.008, 0.02, 1.22, 0.15, "#ffffff");                    // ID card
+    // belt gear: radio holster + antenna, tool pouch, tape measure, pants pockets
+    box(0.07, 0.13, 0.05, 0.24, 0.84, 0.03, "#15171a");
+    box(0.012, 0.16, 0.012, 0.255, 0.99, 0.035, "#15171a");
+    box(0.1, 0.1, 0.07, -0.23, 0.82, 0.05, "#3a2a1c");
+    box(0.06, 0.05, 0.04, -0.17, 0.82, 0.14, "#e8b923");
+    for (const sx of [-1, 1]) box(0.1, 0.014, 0.014, sx * 0.14, 0.72, 0.14, "#1a2230");
+    // arms: reflective sleeve bands, cuffs, wristwatch
+    for (const arm of [this.armL, this.armR]) {
+      ring(0.145, 0.035, -0.24, "#cfd3d6", arm);
+      ring(0.142, 0.045, -0.54, o.shirt, arm);
+    }
+    ring(0.15, 0.035, -0.5, "#1a1a1c", this.armL);
+    box(0.07, 0.02, 0.07, 0, -0.5, 0.05, "#9aa0a8", this.armL);
+    // safety glasses ride with the PPE
+    box(0.125, 0.04, 0.012, 0, 1.635, 0.122, "#9fd3e8", undefined, true);
+    for (const sx of [-1, 1]) box(0.012, 0.012, 0.11, sx * 0.0625, 1.64, 0.07, "#15171a", undefined, true);
+    box(0.014, 0.012, 0.014, 0, 1.64, 0.126, "#15171a", undefined, true);
   }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
   animate(dt: number, speed: number) {

@@ -205,22 +205,33 @@ export class Builder {
 
   label(text: string, x: number, y: number, z: number, w: number, h: number, rotY: number,
         bg = "#1b2a3a", fg = "#ffffff", fontPx = 56) {
-    const tex = new DynamicTexture("lbl", { width: 512, height: Math.round(512 * (h / w)) }, this.scene, true);
+    // 1024px-wide texture, 16x anisotropic: stays crisp at grazing angles instead of smearing out
+    const TW = 1024, TH = Math.max(64, Math.round(TW * (h / w))), k = TW / 512;
+    const tex = new DynamicTexture("lbl", { width: TW, height: TH }, this.scene, true);
+    tex.anisotropicFilteringLevel = 16;
     const ctx = tex.getContext() as CanvasRenderingContext2D;
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, 512, 512);
-    ctx.strokeStyle = fg; ctx.lineWidth = 8; ctx.strokeRect(6, 6, 500, Math.round(512 * (h / w)) - 12);
-    ctx.fillStyle = fg; ctx.font = `bold ${fontPx}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, TW, TH);
+    ctx.strokeStyle = fg; ctx.lineWidth = 14; ctx.strokeRect(12, 12, TW - 24, TH - 24);
+    const px = Math.round(fontPx * k * 1.12);
+    ctx.fillStyle = fg; ctx.font = `bold ${px}px Arial, Helvetica, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const lines = text.split("\n");
-    const ch = Math.round(512 * (h / w));
-    lines.forEach((ln, i) => ctx.fillText(ln, 256, ch / 2 + (i - (lines.length - 1) / 2) * (fontPx + 6)));
+    // shrink to fit so long lines are never cut off at the sign edge
+    const widest = Math.max(...lines.map((ln) => ctx.measureText(ln).width));
+    const fit = Math.min(1, (TW - 70) / widest, (TH - 50) / (lines.length * px * 1.1));
+    ctx.font = `bold ${Math.floor(px * fit)}px Arial, Helvetica, sans-serif`;
+    const lh = Math.floor(px * fit) * 1.12;
+    lines.forEach((ln, i) => ctx.fillText(ln, TW / 2, TH / 2 + (i - (lines.length - 1) / 2) * lh));
     tex.update();
     const mat = new StandardMaterial("lblm", this.scene);
     mat.diffuseTexture = tex; mat.emissiveTexture = tex; mat.specularColor = Color3.Black();
-    mat.emissiveColor = new Color3(0.55, 0.55, 0.55);
+    mat.emissiveColor = new Color3(0.8, 0.8, 0.8);   // bright so it reads in shade and at night
+    const root = new TransformNode("label", this.scene);
+    root.position.set(x, y, z); root.rotation.y = rotY;
+    // one plane per side so the text is readable (not mirrored) from either side
     const p = MeshBuilder.CreatePlane("label", { width: w, height: h }, this.scene);
-    p.material = mat;
-    p.position.set(x, y, z);
-    p.rotation.y = rotY;
+    p.material = mat; p.parent = root; p.position.z = -0.012;
+    const back = MeshBuilder.CreatePlane("labelB", { width: w, height: h }, this.scene);
+    back.material = mat; back.parent = root; back.position.z = 0.012; back.rotation.y = Math.PI;
     return p;
   }
 

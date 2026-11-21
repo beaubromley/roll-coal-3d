@@ -69,6 +69,65 @@ export class Mini {
     });
   }
 
+  // ---------------------------------------------------------------- 1b. SIGN SHEET (draw a signature on paper)
+  signSheet(o: { eyebrow: string; title: string; intro: string }, done: Done) {
+    const W = 560, H = 300, dpr = Math.min(2, window.devicePixelRatio || 1);
+    const body = `<div style="display:flex;justify-content:center;margin:10px 0"><canvas id="sheet" width="${W * dpr}" height="${H * dpr}" style="width:min(100%,${W}px);aspect-ratio:${W}/${H};background:#f4efe1;border:2px solid #9a8f74;box-shadow:0 6px 18px rgba(0,0,0,.45);touch-action:none;cursor:crosshair"></canvas></div>
+      <div id="mgResult" class="hint">Sign on the line, then initial in the box.</div>`;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body, `<button class="b alt" id="sgClear">Clear</button><button class="b" id="sgDone" disabled>Hand it back</button>`), undefined, true);
+    this.skip(done, p);
+    const cv = p.querySelector<HTMLCanvasElement>("#sheet")!, ctx = cv.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+    const SIG = { x: 40, y: 150, w: 330, h: 70 }, INI = { x: 410, y: 130, w: 110, h: 90 };   // fields; y,h = box the pen should stay in
+    type Pt = { x: number; y: number };
+    let strokes: Pt[][] = [], cur: Pt[] | null = null;
+    const paper = () => {
+      ctx.fillStyle = "#f4efe1"; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = "rgba(60,80,120,.18)"; ctx.lineWidth = 1;
+      for (let y = 34; y < H; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      ctx.fillStyle = "#222"; ctx.font = "bold 17px Georgia, serif"; ctx.textAlign = "left";
+      ctx.fillText("SITE VISITOR / CONTRACTOR SIGN-IN SHEET", 24, 32);
+      ctx.font = "13px Georgia, serif"; ctx.fillStyle = "#444";
+      ctx.fillText("Al Drilling · Rig 107 · I have read the site safety rules and agree to follow them.", 24, 56);
+      ctx.fillText("Name: ____COMPANY MAN____      Date: ________      Badge #: 0001", 24, 90);
+      ctx.fillStyle = "rgba(180,40,30,.85)"; ctx.font = "bold 22px Georgia, serif"; ctx.fillText("X", 20, SIG.y + SIG.h - 14);
+      ctx.strokeStyle = "#222"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(SIG.x, SIG.y + SIG.h - 10); ctx.lineTo(SIG.x + SIG.w, SIG.y + SIG.h - 10); ctx.stroke();
+      ctx.strokeRect(INI.x, INI.y + 0, INI.w, INI.h);
+      ctx.fillStyle = "#444"; ctx.font = "12px Georgia, serif"; ctx.fillText("Signature", SIG.x, SIG.y + SIG.h + 8); ctx.fillText("Initials", INI.x, INI.y + INI.h + 18);
+      ctx.fillStyle = "rgba(180,40,30,.8)"; ctx.font = "bold 13px Georgia, serif"; ctx.fillText("SIGN HERE ▸", SIG.x, SIG.y - 6); ctx.fillText("INITIAL ▾", INI.x, INI.y - 6);
+      ctx.strokeStyle = "#101c4a"; ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (const s of strokes) { ctx.beginPath(); s.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); if (s.length === 1) ctx.lineTo(s[0].x + 0.1, s[0].y); ctx.stroke(); }
+    };
+    const inBox = (q: Pt, b: { x: number; y: number; w: number; h: number }) => q.x >= b.x - 6 && q.x <= b.x + b.w + 6 && q.y >= b.y - 4 && q.y <= b.y + b.h + 4;
+    const len = (pts: Pt[]) => { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return L; };
+    const stats = () => {
+      const all = strokes.flat(); const sig = all.filter((q) => q.x < INI.x - 10), ini = all.filter((q) => q.x >= INI.x - 10);
+      const sigLen = strokes.reduce((a, s) => a + (s[0].x < INI.x - 10 ? len(s) : 0), 0), iniLen = strokes.reduce((a, s) => a + (s[0].x >= INI.x - 10 ? len(s) : 0), 0);
+      return { sigLen, iniLen, sigIn: sig.length ? sig.filter((q) => inBox(q, SIG)).length / sig.length : 0, iniIn: ini.length ? ini.filter((q) => inBox(q, INI)).length / ini.length : 0 };
+    };
+    const refresh = () => {
+      paper();
+      const st = stats(), ok = st.sigLen > 70 && st.iniLen > 18;
+      (p.querySelector("#sgDone") as HTMLButtonElement).disabled = !ok;
+      const r = document.getElementById("mgResult");
+      if (r && this.alive) r.textContent = ok ? "Looks signed. Hand it back." : st.sigLen > 70 ? "Now initial in the box." : "Sign on the line, then initial in the box.";
+    };
+    const pt = (e: PointerEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }; };
+    cv.onpointerdown = (e) => { cv.setPointerCapture(e.pointerId); cur = [pt(e)]; strokes.push(cur); refresh(); e.preventDefault(); };
+    cv.onpointermove = (e) => { if (!cur) return; cur.push(pt(e)); paper(); };
+    const up = () => { if (cur) { cur = null; this.g.sfx.click(); refresh(); } };
+    cv.onpointerup = up; cv.onpointercancel = up;
+    p.querySelector<HTMLButtonElement>("#sgClear")!.onclick = () => { strokes = []; cur = null; refresh(); };
+    p.querySelector<HTMLButtonElement>("#sgDone")!.onclick = () => {
+      const st = stats(); if (!(st.sigLen > 70 && st.iniLen > 18)) return;
+      // neat = stayed on the line / in the box
+      const score = clamp(0.15 + 0.85 * ((st.sigIn + st.iniIn) / 2) ** 1.5, 0, 1);
+      this.end(done, { score, skipped: false }, score >= 0.75 ? "Neat. Roy actually nods." : score >= 0.4 ? "Legible enough." : "That's… all over the page.");
+    };
+    refresh();
+  }
+
   // ---------------------------------------------------------------- 2. PICK (quiz)
   pick(o: { eyebrow: string; title: string; intro: string; options: { label: string; correct: boolean }[]; need: number }, done: Done) {
     const opts = shuffle(o.options);

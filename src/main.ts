@@ -11,6 +11,7 @@ import { TitleFx } from "./titlefx";
 import { TouchControls, detectTouch } from "./touch";
 import { Graphics, QUALITY_NAMES } from "./graphics";
 import { Kit } from "./models";
+import { CharKit } from "./chars";
 import { Human } from "./npcs";
 
 const isTouch = detectTouch();
@@ -37,6 +38,7 @@ sun.shadowMinZ = 1; sun.shadowMaxZ = 400;
 // Blender-authored props and jointed crew (falls back to procedural geometry if the models can't load)
 const kit = await Kit.load(scene);
 Human.kit = kit;
+Human.char = await CharKit.load(scene, new URLSearchParams(location.search).get("char") ?? "worker.glb");
 const rig = buildRig(scene, { bump: !isTouch, kit });
 const player = new Player(scene, canvas, rig.colliders);
 player.touch = isTouch;

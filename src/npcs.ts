@@ -1,5 +1,7 @@
 import { Scene, MeshBuilder, StandardMaterial, Color3, TransformNode, Mesh, Vector3 } from "@babylonjs/core";
 import type { Kit } from "./models";
+import type { CharKit, CharInstance } from "./chars";
+import { Quaternion } from "@babylonjs/core";
 
 const matCache = new Map<string, StandardMaterial>();
 function m(scene: Scene, hex: string) {
@@ -21,11 +23,19 @@ export interface HumanOpts {
   ppeOff?: boolean;
 }
 
+const SIT_HIP = -Math.PI / 2;
+
 export class Human {
   root: TransformNode;
   legL!: TransformNode; legR!: TransformNode; armL!: TransformNode; armR!: TransformNode;
   /** set by main once the Blender kit has loaded; Humans built afterwards use the jointed model */
   static kit: Kit | null = null;
+  /** rigged character model; when present it replaces the Blender kit / procedural body */
+  static char: CharKit | null = null;
+  private ch: CharInstance | null = null;
+  private chState = "";
+  private chSat = false;
+  private bones: Record<string, TransformNode | null> = {};
   kneeL: TransformNode | null = null; kneeR: TransformNode | null = null; elbowL: TransformNode | null = null; elbowR: TransformNode | null = null;
   meshes: Mesh[] = [];
   /** hard hat, vest, safety glasses: toggled together */
@@ -36,6 +46,7 @@ export class Human {
   seated = false;
   constructor(public scene: Scene, o: HumanOpts) {
     this.root = new TransformNode("human", scene);
+    if (Human.char) { this.fromChar(Human.char, o); return; }
     if (Human.kit) { this.fromKit(Human.kit, o); return; }
     const mk = (mesh: Mesh, hex: string, parent: TransformNode) => {
       mesh.material = m(scene, hex); mesh.parent = parent; this.meshes.push(mesh); return mesh;
@@ -106,6 +117,69 @@ export class Human {
     this.addDetail(o);
     this.root.scaling.setAll(o.scale ?? 1);
   }
+  /** Rigged, skinned character: real animation clips, with PPE that follows the head / chest bones. */
+  private fromChar(ck: CharKit, o: HumanOpts) {
+    const sc = this.scene, c = ck.instantiate(1.78);
+    this.ch = c; c.holder.parent = this.root;
+    for (const m of c.meshes) this.meshes.push(m as Mesh);
+    for (const n of ["Head", "Spine2", "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg", "LeftArm", "RightArm", "LeftForeArm", "RightForeArm"]) this.bones[n] = c.bone(n);
+    const mk = (mesh: Mesh, hex: string) => { mesh.material = m(sc, hex); mesh.parent = this.root; this.meshes.push(mesh); this.ppe.push(mesh); return mesh; };
+    const parts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
+    const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
+    const hatCol = o.hat ?? "#f4f4f4";
+    if (o.hat) {
+      add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 14, slice: 0.55 }, sc), hatCol, "Head", 0, 0.16, 0.02);
+      add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, 0.165, 0.03);
+      add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, 0.16, 0.19);
+      add(MeshBuilder.CreateBox("rdg", { width: 0.035, height: 0.025, depth: 0.27 }, sc), hatCol, "Head", 0, 0.31, 0.02);
+    }
+    if (o.vest) {
+      add(MeshBuilder.CreateBox("v", { width: 0.5, height: 0.52, depth: 0.3 }, sc), "#e8f542", "Spine2", 0, -0.04, 0.02);
+      add(MeshBuilder.CreateBox("vs1", { width: 0.51, height: 0.06, depth: 0.31 }, sc), "#cfd3d6", "Spine2", 0, -0.12, 0.02);
+      add(MeshBuilder.CreateBox("vs2", { width: 0.51, height: 0.06, depth: 0.31 }, sc), "#cfd3d6", "Spine2", 0, 0.08, 0.02);
+    }
+    if (o.detail) {
+      add(MeshBuilder.CreateBox("gl", { width: 0.15, height: 0.05, depth: 0.03 }, sc), "#9fd3e8", "Head", 0, 0.08, 0.115);
+    }
+    this.chParts = parts;
+    this.ppeLocal = new Vector3();
+    this.root.scaling.setAll(o.scale ?? 1);
+  }
+  private chParts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
+  private ppeLocal!: Vector3;
+
+  private animateChar(dt: number, speed: number) {
+    const c = this.ch!;
+    const next = this.seated ? "sit" : speed < 0.15 ? "idle" : speed < 2.6 ? "walk" : "run";
+    const grp = { idle: c.idle, walk: c.walk ?? c.idle, run: c.run ?? c.walk, sit: c.idle } as Record<string, any>;
+    if (next !== this.chState) {
+      for (const g of [c.idle, c.walk, c.run]) g?.stop();
+      this.chState = next;
+      const g = grp[next]; g?.start(true, 1, g.from, g.to, false);
+      if (next === "idle" && !c.idle && c.walk) { c.walk.start(true); c.walk.goToFrame(c.walk.from); c.walk.pause(); }
+      if (next === "sit") { g?.goToFrame(g.from); g?.pause(); this.chSat = false; }
+    }
+    if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.5, speed / 2.0);
+    if (next === "run" && grp.run) grp.run.speedRatio = Math.max(0.6, speed / 5);
+    if (next === "sit" && !this.chSat) {
+      // freeze the idle pose, then fold hips and knees; arms stay relaxed
+      const q = (n: string, ang: number) => { const b = this.bones[n]; if (!b) return; const r = b.rotationQuaternion ?? Quaternion.FromEulerVector(b.rotation); b.rotationQuaternion = r.multiply(Quaternion.RotationAxis(Vector3.Right(), ang)); };
+      q("LeftUpLeg", SIT_HIP); q("RightUpLeg", SIT_HIP); q("LeftLeg", -SIT_HIP); q("RightLeg", -SIT_HIP);
+      this.chSat = true;
+    }
+    // PPE follows the bones (positions taken in this person's local space)
+    if (this.chParts.length) {
+      this.root.computeWorldMatrix(true);
+      const inv = this.root.getWorldMatrix().clone().invert();
+      const cache: Record<string, Vector3> = {};
+      for (const p of this.chParts) {
+        const b = this.bones[p.bone]; if (!b) continue;
+        const pos = cache[p.bone] ?? (cache[p.bone] = Vector3.TransformCoordinates(b.getAbsolutePosition(), inv));
+        p.mesh.position.set(pos.x + p.off.x, pos.y + p.off.y, pos.z + p.off.z);
+      }
+    }
+  }
+
   /** Jointed Blender model: hips, KNEES, ankles, shoulders, ELBOWS, wrists are real pivots. */
   private fromKit(kit: Kit, o: HumanOpts) {
     const sc = this.scene, root = this.root;
@@ -210,6 +284,7 @@ export class Human {
   }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
   animate(dt: number, speed: number) {
+    if (this.ch) { this.animateChar(dt, speed); return; }
     if (this.seated) {
       this.phase += dt * 1.2;
       this.legL.rotation.x = this.legR.rotation.x = -1.5;

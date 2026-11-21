@@ -40,7 +40,9 @@ interface Veh {
   eye: { x: number; y: number; z: number }; camDist: number; camHeight: number;
   steerNodes: TransformNode[]; steerSign: number[]; spinNodes: TransformNode[]; wheelR: number[];
   boxes: AABB[]; boxH: number; solid: boolean;
-  lift: number;                       // 0..1 for forks / basket
+  lift: number;                       // 0..1 boom angle / basket height
+  ext: number; tilt: number;                   // telehandler: boom extension 0..1, fork tilt -1..1
+  boomPivot?: TransformNode; boomIn?: TransformNode; tiltNode?: TransformNode; forkMark?: TransformNode;
   liftNode?: TransformNode; scissor?: { a: TransformNode[]; b: TransformNode[]; L: number; platform: TransformNode };
   casters: Mesh[]; controls: string; platformY: number;
 }
@@ -63,12 +65,15 @@ export class Vehicles {
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0;
+  /** pedals: travel 0..1; reverse only engages after the brake has been released at a stop */
+  private gas = 0; private brk = 0; private revArm = true; private spaceWas = false;
+  private pallet!: TransformNode; private palletHeld = false; private palletVy = 0; private palletV!: Veh;
   private climb = { on: false, y: 0 };
 
   constructor(private scene: Scene, private colliders: AABB[], private player: Player, private game: Game) {
     this.world = colliders.slice();            // static world only (vehicles don't collide with their own boxes)
     this.hud = document.createElement("div");
-    this.hud.style.cssText = "position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:30;display:none;padding:8px 16px;background:rgba(10,16,24,.78);border:2px solid #f4c04a;color:#fff;font:700 13px/1.45 system-ui,sans-serif;letter-spacing:.5px;text-align:center;pointer-events:none;text-transform:none;white-space:pre;max-width:96vw";
+    this.hud.style.cssText = "position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:30;display:none;padding:8px 16px;background:rgba(10,16,24,.78);border:2px solid #f4c04a;color:#fff;font:700 13px/1.45 system-ui,sans-serif;letter-spacing:.5px;text-align:center;pointer-events:none;text-transform:none;white-space:pre-wrap;max-width:94vw";
     document.body.appendChild(this.hud);
     const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "KeyT" && this.chair.on && this.chair.idx === 0 && !e.repeat) this.toggleAuto(); };
     const up = (e: KeyboardEvent) => this.pressed.delete(e.code);
@@ -79,7 +84,7 @@ export class Vehicles {
   get riding() { return !!this.active || this.chair.on || this.climb.on; }
   private k(...codes: string[]) { return codes.some((c) => this.pressed.has(c)); }
 
-  setShadow(sg: ShadowGenerator) { for (const v of this.list) v.casters.forEach((m) => sg.addShadowCaster(m)); }
+  setShadow(sg: ShadowGenerator) { for (const v of [...this.list, this.palletV]) v.casters.forEach((m) => sg.addShadowCaster(m)); }
 
   // ---------------------------------------------------------------------------------------------- building
   private mk(v: Veh, m: Mesh, hex: string, parent: TransformNode, x: number, y: number, z: number, o: { emissive?: number; alpha?: number; spec?: number } = {}) {
@@ -108,13 +113,14 @@ export class Vehicles {
     const root = new TransformNode(id, this.scene); root.position.set(x, 0, z); root.rotation.y = yaw;
     return { id, name, kind, root, x, z, yaw, speed: 0, steer: 0, wheelbase: 3, maxFwd: 10, maxRev: 4, accel: 5, radius: 1, pts: [0],
       eye: { x: 0, y: 1.6, z: 0 }, camDist: 7, camHeight: 2.6, steerNodes: [], steerSign: [], spinNodes: [], wheelR: [], boxes: [], boxH: 2.5, solid: true,
-      lift: 0, casters: [], controls: "", platformY: 0 };
+      lift: 0, ext: 0, tilt: 0, casters: [], controls: "", platformY: 0 };
   }
 
   private build() {
     this.list.push(this.buildF250(22, 22.8, Math.PI));
     this.list.push(this.buildForklift(14, 44, -0.6));
     this.list.push(this.buildManlift(-7, 13, 0.4));
+    this.buildPallet(9.2, 51.5, -0.6);
     for (const v of this.list) {
       for (let i = 0; i < v.pts.length; i++) { const b: AABB = { x0: 0, x1: 0, y0: 0, y1: v.boxH, z0: 0, z1: 0 }; v.boxes.push(b); this.colliders.push(b); }
       this.place(v);
@@ -124,7 +130,7 @@ export class Vehicles {
   private buildF250(x: number, z: number, yaw: number): Veh {
     const v = this.blank("f250", "Lifted F-250", "car", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 3.9, maxFwd: 26, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0], camDist: 8.5, camHeight: 3.2, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
-      controls: "W/S gas & brake  ·  A/D steer  ·  SPACE handbrake  ·  SHIFT boost  ·  V camera  ·  E get out" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  V camera  ·  E get out" });
     const BODY = "#9c1c16", CH = "#c4c8ce";
     this.box(v, r, "#22262c", 1.5, 0.28, 5.6, 0, 1.05, 0);                       // frame rails
     for (const az of [2.0, -2.0]) { this.cyl(v, r, "#2a2d31", 0.28, 2.3, 0, 0.66, az, "x", 10); this.cyl(v, r, "#555a60", 0.22, 0.9, 0.8, 0.92, az, "y", 8); this.cyl(v, r, "#555a60", 0.22, 0.9, -0.8, 0.92, az, "y", 8); }
@@ -161,34 +167,90 @@ export class Vehicles {
     return v;
   }
 
+  private buildPallet(x: number, z: number, yaw: number) {
+    const v = this.blank("pallet", "Pipe pallet", "car", x, z, yaw); this.palletV = v;
+    const r = v.root; this.pallet = r;
+    this.box(v, r, "#8a6a40", 1.5, 0.14, 1.2, 0, 0.12, 0);
+    for (const sx of [-0.6, 0, 0.6]) this.box(v, r, "#6e5230", 0.18, 0.12, 1.2, sx, 0.05, 0);
+    for (let row = 0; row < 3; row++) for (let i = 0; i < 5 - (row % 2); i++) {
+      this.cyl(v, r, "#8d9299", 0.24, 1.4, 0, 0.32 + row * 0.22, -0.46 + i * 0.235 + (row % 2) * 0.12, "x", 8);
+    }
+    this.box(v, r, "#e8b923", 1.46, 0.03, 0.04, 0, 0.62, 0.55);   // strap
+  }
+
+  /** SkyTrak-style telehandler: side cab, pivoting telescopic boom, tilting fork carriage. */
   private buildForklift(x: number, z: number, yaw: number): Veh {
-    const v = this.blank("forklift", "Big Forklift", "forklift", x, z, yaw), r = v.root;
-    Object.assign(v, { wheelbase: 2.6, maxFwd: 7, maxRev: 5, accel: 4, radius: 1.0, pts: [1.2, -0.4, -1.6], camDist: 7, camHeight: 2.8, eye: { x: 0, y: 2.45, z: -0.5 }, boxH: 2.6,
-      controls: "W/S drive  ·  A/D steer  ·  R/F raise / lower forks  ·  V camera  ·  E get out" });
-    const Y = "#e8a317", D = "#2b2f35";
-    this.box(v, r, Y, 1.75, 0.65, 3.0, 0, 0.85, -0.2);                           // chassis
-    this.box(v, r, D, 1.8, 1.0, 1.0, 0, 1.05, -1.85);                            // counterweight
-    this.box(v, r, Y, 1.5, 0.5, 1.2, 0, 1.45, -1.0);                             // engine cover
-    this.box(v, r, "#15171a", 0.7, 0.2, 0.6, 0, 1.45, -0.35);                    // seat
-    this.box(v, r, "#15171a", 0.7, 0.6, 0.12, 0, 1.8, -0.7);                     // seat back
-    this.cyl(v, r, "#15171a", 0.42, 0.06, 0, 1.75, 0.5, "y", 12).rotation.x = 0.6;   // steering wheel
-    this.cyl(v, r, D, 0.07, 0.8, 0, 1.4, 0.55, "y", 6);
-    for (const sx of [-0.78, 0.78]) for (const sz of [0.65, -0.95]) this.box(v, r, D, 0.08, 1.3, 0.08, sx, 1.95, sz);   // overhead guard posts
-    this.box(v, r, D, 1.75, 0.07, 1.8, 0, 2.62, -0.15);                          // guard roof
-    for (let i = 0; i < 5; i++) this.box(v, r, Y, 1.7, 0.03, 0.05, 0, 2.66, -0.9 + i * 0.4);
-    this.sphere(v, r, "#ff8a1a", 0.22, 0, 2.78, -0.15, 0.9);                      // beacon
-    this.box(v, r, "#fff6c8", 0.18, 0.12, 0.05, 0.6, 1.6, 0.66, { emissive: 0.8 }); this.box(v, r, "#fff6c8", 0.18, 0.12, 0.05, -0.6, 1.6, 0.66, { emissive: 0.8 });
-    // mast and carriage
-    const mast = new TransformNode("mast", this.scene); mast.parent = r; mast.position.set(0, 0, 1.6);
-    for (const sx of [-0.55, 0.55]) { this.box(v, mast, D, 0.14, 4.1, 0.24, sx, 2.05, 0); this.box(v, mast, "#555a60", 0.1, 3.6, 0.16, sx * 0.5, 2.0, 0.18); }
-    for (const y of [0.6, 2.0, 3.8]) this.box(v, mast, D, 1.3, 0.1, 0.22, 0, y, 0);
-    const car = new TransformNode("carriage", this.scene); car.parent = mast; car.position.set(0, 0.2, 0.3); v.liftNode = car;
-    this.box(v, car, D, 1.6, 0.9, 0.1, 0, 0.55, 0);
-    for (const sx of [-0.5, 0.5]) { this.box(v, car, "#6a6f76", 0.18, 0.09, 1.7, sx, 0.05, 0.9, { spec: 0.4 }); this.box(v, car, "#6a6f76", 0.18, 0.7, 0.09, sx, 0.4, 0.07); }
-    this.wheel(v, r, -0.82, 0.5, 0.95, 1.0, 0.42, null); this.wheel(v, r, 0.82, 0.5, 0.95, 1.0, 0.42, null);
-    this.wheel(v, r, -0.78, 0.38, -1.6, 0.76, 0.34, 1); this.wheel(v, r, 0.78, 0.38, -1.6, 0.76, 0.34, 1);
+    const v = this.blank("forklift", "SkyTrak Telehandler", "forklift", x, z, yaw), r = v.root;
+    Object.assign(v, { wheelbase: 3.2, maxFwd: 9, maxRev: 5, accel: 3.6, radius: 1.2, pts: [1.8, 0, -1.8], camDist: 10.5, camHeight: 3.6, eye: { x: -0.75, y: 2.6, z: 0.45 }, boxH: 2.5,
+      controls: "W gas · S brake/reverse · A/D steer · R/F boom · T/G extend · Y/H tilt · SPACE pick up / set down · E get out" });
+    const Y = "#f0b400", D = "#25282d", G = "#d4d7da";
+    this.box(v, r, D, 2.0, 0.3, 5.2, 0, 0.7, 0);                                  // axle frame
+    this.box(v, r, Y, 2.2, 0.8, 5.4, 0, 1.15, 0);                                 // chassis
+    this.box(v, r, Y, 1.3, 1.1, 1.9, 0, 2.0, -1.75);                              // boom tower / engine
+    this.box(v, r, D, 2.1, 0.7, 0.5, 0, 1.25, -2.85);                             // counterweight
+    this.cyl(v, r, "#9aa0a8", 0.14, 0.9, 0.45, 2.85, -2.2, "y", 8, { spec: 0.6 });     // exhaust
+    // left-side cab
+    this.box(v, r, Y, 1.0, 0.5, 1.6, -0.75, 1.75, 0.6);
+    this.box(v, r, "#9fc3d6", 1.02, 1.05, 1.5, -0.75, 2.45, 0.6, { alpha: 0.5 });
+    for (const sx of [-1.24, -0.26]) for (const sz of [-0.12, 1.32]) this.box(v, r, D, 0.07, 1.1, 0.07, sx, 2.45, sz);
+    this.box(v, r, D, 1.1, 0.07, 1.7, -0.75, 3.02, 0.6);
+    this.box(v, r, "#15171a", 0.55, 0.18, 0.55, -0.75, 2.0, 0.35);                // seat
+    this.box(v, r, "#15171a", 0.55, 0.6, 0.1, -0.75, 2.35, 0.1);
+    this.cyl(v, r, "#15171a", 0.36, 0.05, -0.75, 2.4, 0.8, "y", 12).rotation.x = 0.7;     // steering wheel
+    this.box(v, r, "#ff8a1a", 0.14, 0.12, 0.14, -0.75, 3.14, 0.6, { emissive: 0.9 });  // beacon
+    this.box(v, r, "#fff6c8", 0.4, 0.18, 0.06, -0.7, 1.35, 2.72, { emissive: 0.8 }); this.box(v, r, "#fff6c8", 0.4, 0.18, 0.06, 0.7, 1.35, 2.72, { emissive: 0.8 });
+    this.box(v, r, "#ff2a1a", 0.3, 0.16, 0.06, -0.8, 1.3, -3.12, { emissive: 0.7 }); this.box(v, r, "#ff2a1a", 0.3, 0.16, 0.06, 0.8, 1.3, -3.12, { emissive: 0.7 });
+    this.box(v, r, D, 1.6, 0.2, 0.3, 0, 0.85, 2.85);                              // front bumper
+    // telescopic boom: outer section pivots on the tower, inner section slides out, carriage tilts on the nose
+    const pivot = new TransformNode("boomPivot", this.scene); pivot.parent = r; pivot.position.set(0, 2.3, -2.1); v.boomPivot = pivot;
+    this.box(v, pivot, Y, 0.62, 0.66, 3.8, 0, 0, 1.9);
+    this.box(v, pivot, D, 0.7, 0.2, 0.6, 0, 0.3, 0.2);
+    const inner = new TransformNode("boomIn", this.scene); inner.parent = pivot; v.boomIn = inner;
+    this.box(v, inner, G, 0.46, 0.5, 3.8, 0, 0, 2.3, { spec: 0.4 });
+    this.cyl(v, pivot, "#9aa0a8", 0.14, 1.9, 0, -0.95, 1.4, "y", 8, { spec: 0.6 }).rotation.x = 0.25;   // lift ram
+    const tilt = new TransformNode("tilt", this.scene); tilt.parent = inner; tilt.position.set(0, 0, 4.2); v.tiltNode = tilt;
+    this.box(v, tilt, D, 0.5, 0.5, 0.4, 0, 0, -0.15);                              // head
+    this.box(v, tilt, D, 1.7, 0.95, 0.1, 0, -0.1, 0.2);                            // carriage back plate
+    for (const sx of [-0.55, 0.55]) {
+      this.box(v, tilt, "#6a6f76", 0.17, 0.09, 1.7, sx, -0.5, 1.05, { spec: 0.4 });  // forks
+      this.box(v, tilt, "#6a6f76", 0.17, 0.75, 0.09, sx, -0.15, 0.27, { spec: 0.4 });
+    }
+    const mark = new TransformNode("forkMark", this.scene); mark.parent = tilt; mark.position.set(0, -0.5, 1.2); v.forkMark = mark;
+    for (const s of [-1, 1]) { this.wheel(v, r, s * 1.12, 0.63, 1.8, 1.26, 0.52, 1); this.wheel(v, r, s * 1.12, 0.63, -1.8, 1.26, 0.52, null); }
+    this.setBoom(v);
     return v;
   }
+  private setBoom(v: Veh) {
+    if (!v.boomPivot || !v.boomIn || !v.tiltNode) return;
+    v.boomPivot.rotation.x = 0.34 - v.lift * 1.5;   // negative x raises the +z end; lift 0 = nose just above the ground
+    v.boomIn.position.z = v.ext * 3.4;
+    v.tiltNode.rotation.x = v.tilt * 0.45;         // positive tips the fork tips down
+  }
+  private forkPos(v: Veh): Vector3 { v.root.computeWorldMatrix(true); v.forkMark!.computeWorldMatrix(true); return v.forkMark!.getAbsolutePosition().clone(); }
+
+  private grab(v: Veh) {
+    const f = this.forkPos(v), pl = this.pallet;
+    if (!this.palletHeld) {
+      const pp = pl.getAbsolutePosition();
+      if (Math.hypot(f.x - pp.x, f.z - pp.z) < 1.4 && Math.abs(f.y - (pp.y + 0.1)) < 0.6) {
+        pl.setParent(v.tiltNode!); this.palletHeld = true; this.game.sfx.click();
+        this.game.ui.toast("PIPE PALLET LOADED", "Boom up, tilt back, and mind the people.");
+      } else this.game.ui.toast("NO LOAD", "Drive the forks under the pallet, level with it, then press SPACE.");
+      return;
+    }
+    const h = pl.getAbsolutePosition().y;
+    pl.setParent(null); this.palletHeld = false; this.palletVy = 0;
+    const fw = pl.getDirection(Vector3.Forward()); pl.rotationQuaternion = null; pl.rotation.set(0, Math.atan2(fw.x, fw.z), 0);
+    this.game.sfx.click();
+    if (h > 1.5) { this.game.inc(1, "DROPPED OBJECT"); this.game.sim.addCost(12000); this.game.radio("earl", "That pallet came off the forks from " + Math.round(h * 3.28) + " feet. Set it down, don't drop it.", 7000); }
+  }
+  private updatePallet(dt: number) {
+    if (this.palletHeld || !this.pallet) return;
+    const p = this.pallet.position;
+    if (p.y > 0.001) { this.palletVy -= 9.8 * dt; p.y = Math.max(0, p.y + this.palletVy * dt); if (p.y === 0) { this.palletVy = 0; if (this.palletFell > 1.5) { this.game.sfx.thud(); } } }
+  }
+  private palletFell = 0;
+
   private sphere(v: Veh, p: TransformNode, hex: string, dia: number, x: number, y: number, z: number, em = 0) {
     return this.mk(v, MeshBuilder.CreateSphere("vs", { diameter: dia, segments: 8 }, this.scene), hex, p, x, y, z, em ? { emissive: em } : {});
   }
@@ -196,7 +258,7 @@ export class Vehicles {
   private buildManlift(x: number, z: number, yaw: number): Veh {
     const v = this.blank("manlift", "Scissor Manlift", "lift", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 2.4, maxFwd: 3.2, maxRev: 2.4, accel: 2.5, radius: 0.95, pts: [0.9, -0.9], camDist: 9, camHeight: 3.4, eye: { x: 0, y: 1.6, z: 0.1 }, boxH: 1.3,
-      controls: "W/S drive  ·  A/D steer  ·  R/F raise / lower the basket  ·  V camera  ·  E get out" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  V camera  ·  E get out" });
     const O = "#e07a10", D = "#3d434b";
     this.box(v, r, O, 1.7, 0.55, 3.0, 0, 0.62, 0);
     this.box(v, r, D, 1.5, 0.1, 2.8, 0, 0.92, 0);
@@ -224,7 +286,7 @@ export class Vehicles {
 
   private setLift(v: Veh, t: number) {
     v.lift = Math.max(0, Math.min(1, t));
-    if (v.kind === "forklift" && v.liftNode) v.liftNode.position.y = 0.2 + v.lift * 2.9;
+    if (v.kind === "forklift") this.setBoom(v);
     if (v.scissor) {
       const { a, b, L, platform } = v.scissor, levels = a.length / 2;
       const hl = 0.12 + v.lift * (2.15 - 0.12), th = Math.asin(Math.min(0.99, hl / L));
@@ -263,7 +325,7 @@ export class Vehicles {
     this.player.body.root.setEnabled(false);
     this.hud.style.display = "block";
     this.game.sfx.click();
-    this.game.ui.toast(v.name.toUpperCase(), v.kind === "lift" ? "Raise the basket with R and reach the drill floor." : v.kind === "forklift" ? "R / F raise and lower the forks." : "Hold SHIFT for nitrous. Don't tell HSE.");
+    this.game.ui.toast(v.name.toUpperCase(), v.kind === "lift" ? "R / F raise and lower the basket. It reaches the drill floor." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
   }
 
   exit() {
@@ -371,34 +433,49 @@ export class Vehicles {
   // ---------------------------------------------------------------------------------------------- simulation
   update(dt: number) {
     dt = Math.min(dt, 0.05);
+    this.updatePallet(dt);
     // idle vehicles keep their boxes / wheels honest
     if (this.climb.on) { this.updateClimb(dt); return; }
     if (this.chair.on) { this.updateChair(dt); return; }
     const v = this.active;
     if (!v) return;
     const p = this.player, joy = p.touchMove;
-    let thr = (this.k("KeyW", "ArrowUp") ? 1 : 0) - (this.k("KeyS", "ArrowDown") ? 1 : 0) + (joy.y || 0);
-    let str = (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0) + (joy.x || 0);
-    thr = Math.max(-1, Math.min(1, thr)); str = Math.max(-1, Math.min(1, str));
-    const boost = v.kind === "car" && this.k("ShiftLeft", "ShiftRight") ? 1.6 : 1;
-    const hand = this.k("Space");
-    let maxF = v.maxFwd * boost, maxR = v.maxRev;
+    const gasIn = Math.max(0, Math.min(1, (this.k("KeyW", "ArrowUp") ? 1 : 0) + Math.max(0, joy.y || 0)));
+    const brkIn = Math.max(0, Math.min(1, (this.k("KeyS", "ArrowDown") ? 1 : 0) + Math.max(0, -(joy.y || 0))));
+    const str = Math.max(-1, Math.min(1, (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0) + (joy.x || 0)));
+    this.gas += (gasIn - this.gas) * Math.min(1, dt * 9); this.brk += (brkIn - this.brk) * Math.min(1, dt * 9);
+    let maxF = v.maxFwd, maxR = v.maxRev;
     if (v.kind === "lift") { const k = 1 - v.lift * 0.75; maxF *= k; maxR *= k; }
-    // longitudinal
-    if (thr > 0) v.speed += (v.speed < 0 ? v.accel * 2.5 : v.accel * boost) * thr * dt;
-    else if (thr < 0) v.speed -= (v.speed > 0 ? v.accel * 2.5 : v.accel * 0.8) * -thr * dt;
-    else v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), (1.6 + Math.abs(v.speed) * 0.12) * dt);
-    if (hand) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 14 * dt);
+    // gas pedal
+    if (gasIn > 0) v.speed += (v.speed < -0.3 ? v.accel * 3 : v.accel) * this.gas * dt;
+    // brake / reverse pedal: brakes while rolling forward; reverse only after it has been released at a stop
+    if (brkIn > 0) {
+      if (v.speed > 0.4) { v.speed -= (v.kind === "car" ? 16 : 10) * this.brk * dt; this.revArm = false; }
+      else if (this.revArm || v.speed < -0.05) { v.speed -= v.accel * 0.7 * this.brk * dt; this.revArm = true; }
+      else v.speed *= Math.max(0, 1 - dt * 10);
+    } else if (v.speed < 0.4) this.revArm = true;
+    if (gasIn === 0 && brkIn === 0) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), (1.6 + Math.abs(v.speed) * 0.12) * dt);
     v.speed = Math.max(-maxR, Math.min(maxF, v.speed));
+    const thr = gasIn - brkIn;
     // steering (speed-sensitive)
     const lock = v.kind === "car" ? 0.62 : 0.75, tgt = -str * lock / (1 + Math.abs(v.speed) * (v.kind === "car" ? 0.07 : 0.05));
     v.steer += (tgt - v.steer) * Math.min(1, dt * 7);
     // kinematic bicycle: yaw rate follows steer angle (screen-right = +yaw)
     const yawRate = (v.speed / v.wheelbase) * Math.tan(-v.steer);
-    v.yaw += yawRate * dt * (hand && v.kind === "car" ? 1.5 : 1);
+    v.yaw += yawRate * dt;
     v.x += Math.sin(v.yaw) * v.speed * dt; v.z += Math.cos(v.yaw) * v.speed * dt;
     // lift controls
-    if (v.kind !== "car") { const d = (this.k("KeyR") ? 1 : 0) - (this.k("KeyF") ? 1 : 0); if (d) this.setLift(v, v.lift + d * dt * (v.kind === "lift" ? 0.11 : 0.35)); }
+    if (v.kind === "lift") { const d = (this.k("KeyR") ? 1 : 0) - (this.k("KeyF") ? 1 : 0); if (d) this.setLift(v, v.lift + d * dt * 0.11); }
+    if (v.kind === "forklift") {
+      const d = (this.k("KeyR") ? 1 : 0) - (this.k("KeyF") ? 1 : 0), e = (this.k("KeyT") ? 1 : 0) - (this.k("KeyG") ? 1 : 0), t = (this.k("KeyY") ? 1 : 0) - (this.k("KeyH") ? 1 : 0);
+      if (d || e || t) {
+        const old = { l: v.lift, e: v.ext, t: v.tilt };
+        v.lift = Math.max(0, Math.min(1, v.lift + d * dt * 0.28)); v.ext = Math.max(0, Math.min(1, v.ext + e * dt * 0.4)); v.tilt = Math.max(-1, Math.min(1, v.tilt + t * dt * 0.9));
+        this.setBoom(v);
+        if (this.forkPos(v).y < 0.04 && (d < 0 || e)) { v.lift = old.l; v.ext = old.e; this.setBoom(v); }   // forks stop at the ground
+      }
+      const sp = this.k("Space"); if (sp && !this.spaceWas) this.grab(v); this.spaceWas = sp;
+    }
     // collisions
     let hit = false;
     for (const o of v.pts) {
@@ -425,7 +502,7 @@ export class Vehicles {
     this.place(v);
     // wheels
     v.spinNodes.forEach((n, i) => { n.rotation.x += (v.speed / v.wheelR[i]) * dt; });
-    v.steerNodes.forEach((n, i) => { n.rotation.y = v.steer * v.steerSign[i] * (v.kind === "forklift" ? -1 : 1) * 0.8; });
+    v.steerNodes.forEach((n, i) => { n.rotation.y = v.steer * v.steerSign[i] * 0.8; });
     // chassis roll / pitch for the big truck
     if (v.kind === "car") { v.root.rotation.z = -v.steer * v.speed * 0.006; v.root.rotation.x = -thr * 0.012 * Math.min(1, Math.abs(v.speed) / 8); }
 
@@ -457,8 +534,9 @@ export class Vehicles {
       cam.position.copyFrom(eye); cam.setTarget(eye.add(p.lookDir()));
     }
     const mph = Math.round(Math.abs(v.speed) * 2.237);
-    const extra = v.kind === "forklift" ? `   FORKS ${(0.2 + v.lift * 2.9).toFixed(1)} m` : v.kind === "lift" ? `   BASKET ${(v.platformY * 3.281).toFixed(0)} ft` : "";
-    this.hud.textContent = `${v.name.toUpperCase()}   ${mph} MPH${extra}\n${v.controls}`;
+    const extra = v.kind === "forklift" ? `   FORKS ${(this.forkPos(v).y * 3.281).toFixed(0)} ft   REACH ${(v.ext * 3.4 * 3.281).toFixed(0)} ft${this.palletHeld ? "   LOAD ON" : ""}` : v.kind === "lift" ? `   BASKET ${(v.platformY * 3.281).toFixed(0)} ft` : "";
+    const bar = (t: number) => "▮".repeat(Math.round(t * 5)) + "▯".repeat(5 - Math.round(t * 5));
+    this.hud.textContent = `${v.name.toUpperCase()}   ${mph} MPH${extra}   GAS ${bar(this.gas)}  BRAKE ${bar(this.brk)}\n${v.controls}`;
   }
 
   private updateChair(dt: number) {

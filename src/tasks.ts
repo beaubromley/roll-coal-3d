@@ -28,9 +28,9 @@ export function defineMissions(g: Game) {
           g.addDebt({ id: "ppe", afterMin: 150, chance: 0.7, run: () => { g.radio("roy", "HSE just called. Somebody never really signed the sheet. The auditor has feelings about it.", 9000); g.inc(1, "UNSIGNED SIGN-IN SHEET"); sim.addCost(15000); } });
         } else if (good(r)) g.gain(0.15, 2);
         else if (bad(r)) { g.radio("roy", "That signature is all over the page. Welcome aboard."); g.gain(-0.05, 0); }
-        // signed in: now (and only now) he gets a hard hat, vest and safety glasses
+        // signed in: now (and only now) he gets a hard hat and safety glasses
         g.player.body.setPPE(true);
-        g.ui.toast("PPE ISSUED", "Roy hands you a hard hat, vest and safety glasses.");
+        g.ui.toast("PPE ISSUED", "Roy hands you a hard hat and safety glasses.");
         sim.start(); g.radio("earl", "Company Man's on location. Clock's running, boss — and it's about $80,000 a day.");
         done();
       });

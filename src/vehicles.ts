@@ -53,6 +53,7 @@ export class Vehicles {
   private chairPos: Vector3;
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
+  private dmgCd = 0;
 
   constructor(private scene: Scene, private colliders: AABB[], private player: Player, private game: Game) {
     this.world = colliders.slice();            // static world only (vehicles don't collide with their own boxes)
@@ -302,6 +303,14 @@ export class Vehicles {
     s.auto.on = !s.auto.on; this.game.sfx.click();
   }
 
+  /** thrown out of the vehicle (the stand-down places the player afterwards) */
+  eject() {
+    const v = this.active; if (!v) return;
+    v.speed = 0; this.active = null; this.setSolid(v, true);
+    this.player.ride = false; this.player.third = this.wasThird; this.hud.style.display = "none";
+    this.player.teleport(v.x, 0, v.z, v.yaw);
+  }
+
   /** E while riding */
   leave() { if (this.chair.on) this.stand(); else this.exit(); }
 
@@ -346,8 +355,18 @@ export class Vehicles {
       const dx = v.x - w.x, dz = v.z - w.z, d = Math.hypot(dx, dz), min = v.radius + w.radius + 0.9;
       if (d < min && d > 0.001) { v.x += (dx / d) * (min - d); v.z += (dz / d) * (min - d); hit = true; }
     }
-    if (hit && Math.abs(v.speed) > 1.5) { if (Math.abs(v.speed) > 6) this.game.sfx.bad(); v.speed *= -0.25; }
+    this.dmgCd -= dt;
+    const impact = Math.abs(v.speed);
+    if (hit && impact > 4 && this.dmgCd <= 0) { this.dmgCd = 2.5; this.game.propertyDamage(impact); }
+    if (hit && impact > 1.5) v.speed *= -0.25;
     else if (hit) v.speed *= 0.5;
+    // people
+    if (impact > 0.8) for (const h of this.game.peopleAt()) {
+      if (h.y > 2.5) continue;
+      for (const o of v.pts) {
+        if (Math.hypot(h.x - (v.x + Math.sin(v.yaw) * o), h.z - (v.z + Math.cos(v.yaw) * o)) < v.radius + 0.35) { this.game.personStruck(h.name); return; }
+      }
+    }
     this.place(v);
     // wheels
     v.spinNodes.forEach((n, i) => { n.rotation.x += (v.speed / v.wheelR[i]) * dt; });

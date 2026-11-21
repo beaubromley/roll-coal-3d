@@ -162,9 +162,47 @@ export class Game {
   sinceDone() { return this.realT - this.lastDone; }
   fell(m: number) {
     this.sfx.thud();
-    this.player.teleport(28, 0.5, 14, Math.PI / 2);
     this.inc(1, "FALL FROM HEIGHT");
     this.radio("earl", `You fell ${Math.round(m * 3.28)} feet. That's a recordable. Do the paperwork, Company Man.`);
+    this.standDown(`You fell ${Math.round(m * 3.28)} feet. Someone has to call it in, and that someone is a lot of people.`, 5000, 900, () => this.player.teleport(28, 0.5, 14, Math.PI / 2));
+  }
+  /** Vehicle hit something solid: a property damage incident, no stand-down. */
+  propertyDamage(speed: number) {
+    const cost = Math.round((2500 + speed * 900) / 100) * 100;
+    this.sim.addCost(cost); this.sfx.thud();
+    this.inc(1, "PROPERTY DAMAGE");
+    this.radio("earl", `You hit something near the ${this.district().toLowerCase()}. That's $${cost.toLocaleString("en-US")} in damage. Fill out the form.`, 7000);
+  }
+  /** Vehicle hit a person: out of the vehicle, mandatory safety stand down, then reset at the trailers. */
+  personStruck(name: string) {
+    this.veh.eject();
+    this.sfx.thud();
+    this.inc(2, "STRUCK BY VEHICLE");
+    this.standDown(`${name} was struck by your vehicle. They're okay, mostly. All work on location is stopped until everyone has talked about it.`, 25000, 1800, () => this.player.teleport(28, 0.5, 14, Math.PI / 2));
+  }
+  /** people a vehicle can run over */
+  peopleAt(): { name: string; x: number; y: number; z: number }[] {
+    const out: { name: string; x: number; y: number; z: number }[] = [];
+    const names: Record<string, string> = { hand1: "A floorhand", hand2: "A floorhand", hand3: "Jimbo", derrickman: "The derrickman", mudeng: "Marcus", pusher: "Earl", guard: "Roy", vp: "The VP", driller: "Dale" };
+    for (const [k, h] of Object.entries(this.rig.humans)) if (h.root.isEnabled()) out.push({ name: names[k] ?? "Someone", x: h.root.position.x, y: h.root.position.y, z: h.root.position.z });
+    for (const h of this.interns) out.push({ name: "The intern", x: h.root.position.x, y: h.root.position.y, z: h.root.position.z });
+    return out;
+  }
+  /** Mandatory pause. The panel can't be dismissed until the clock runs out; then `reset` puts you back. */
+  standDown(why: string, cost: number, lostSec: number, reset: () => void) {
+    this.sim.addCost(cost); this.sim.s.t += lostSec;
+    let left = 8;
+    const p = this.openMini(`<div class="eyebrow" style="color:#e5483b">Mandatory</div><h2>SAFETY STAND DOWN</h2>
+      <p>${why}</p>
+      <p>Work is stopped on location. Everyone gathers at the muster point to talk it through. Cost so far: <b>$${cost.toLocaleString("en-US")}</b> and about ${Math.round(lostSec / 60)} minutes of rig time.</p>
+      <div class="btns"><button class="b" id="sdGo" disabled>STANDING DOWN… ${left}</button></div>`);
+    const btn = p.querySelector<HTMLButtonElement>("#sdGo")!;
+    const t = window.setInterval(() => {
+      left--;
+      if (left > 0) { btn.textContent = `STANDING DOWN… ${left}`; return; }
+      window.clearInterval(t); btn.disabled = false; btn.textContent = "RETURN TO WORK";
+    }, 1000);
+    btn.onclick = () => { if (btn.disabled) return; window.clearInterval(t); this.closeMini(); reset(); this.radio("earl", "Alright. Everybody back to work. Be careful out there, Company Man.", 6000); };
   }
 
   // ---------- ambient interactables ----------

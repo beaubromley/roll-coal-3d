@@ -1,0 +1,1072 @@
+import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport } from "@babylonjs/core";
+import { Rig, F } from "./rig";
+import { Player } from "./player";
+import { Sim, WELL, clockString, formationAt, poreAt, fracAt } from "./sim";
+import { Sfx } from "./audio";
+import { UI, Who, Choice, $ } from "./ui";
+import { Human } from "./npcs";
+import { pushOutXZ } from "./builder";
+
+interface Step {
+  text: string;
+  at?: () => Vector3 | null;
+  label?: string;
+  r?: number;
+  act?: (done: () => void) => void;
+  watch?: () => boolean;
+  enter?: () => void;
+}
+interface Mission {
+  id: string; title: string; sub: string; steps: Step[];
+  trigger: () => boolean; start?: () => void; end?: () => void;
+  a?: number; m?: number; priority?: boolean;
+}
+interface Interactable { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean; mission?: boolean }
+
+const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const money = (n: number) => "$" + (n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : fmt(n));
+const v3 = (x: number, y: number, z: number) => new Vector3(x, y, z);
+const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
+
+export class Game {
+  started = false;
+  approval = 3; morale = 62; incidents = 0;
+  interacts: Interactable[] = [];
+  queue: Mission[] = [];
+  active: { m: Mission; i: number } | null = null;
+  stack: { m: Mission; i: number }[] = [];
+  missionNo = 0; missionTotal = 0;
+  realT = 0; lastDone = 0;
+  sleeping = false; sleepUntil = 0;
+  live = false; // keep clock running while a panel is open
+  interns: Human[] = []; trail: Vector3[] = []; trailT = 0;
+  deer = { target: null as Vector3 | null, shoo: 0 };
+  snake: Mesh | null = null;
+  asteroid: Mesh | null = null; asteroidT = -1;
+  orderT = -1; casingOrder = 0;
+  kmwInput = 0;
+  flags: Record<string, any> = {};
+  nearest: Interactable | null = null;
+  hold: number | null = null;
+  holdPending = false;
+  lastDistrict = "";
+  chokeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+  env: { hemi: HemisphericLight; sun: DirectionalLight };
+  slip = { t: 0, hits: 0, tries: 0, on: false };
+
+  constructor(public scene: Scene, public rig: Rig, public player: Player, public sim: Sim, public sfx: Sfx, public ui: UI,
+              env: { hemi: HemisphericLight; sun: DirectionalLight }) {
+    this.env = env;
+    this.ui.onPanelClose = () => { this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
+    this.player.onFall = (m) => this.fell(m);
+    this.player.onStep = () => this.sfx.step();
+    this.buildAmbient();
+    this.buildMissions();
+  }
+
+  // ---------- helpers ----------
+  inc(n = 1, why = "") { this.incidents += n; this.approval = clamp(this.approval - 0.3 * n, 0, 5); this.sfx.bad(); if (why) this.ui.toast("INCIDENT", why); }
+  gain(a = 0, m = 0) { this.approval = clamp(this.approval + a, 0, 5); this.morale = clamp(this.morale + m, 0, 100); }
+  say(who: Who, text: string, choices?: Choice[], eyebrow?: string) { this.player.enabled = false; this.player.unlock(); this.ui.say(who, text, choices, eyebrow); this.sfx.radio(); }
+  radio(who: Who, text: string, ms?: number) { this.ui.radio(who, text, ms); this.sfx.radio(); }
+  open(html: string, o: { wide?: boolean; live?: boolean; tick?: () => void } = {}) {
+    this.player.enabled = false; this.player.unlock(); this.live = !!o.live;
+    const p = this.ui.panel(html, { wide: o.wide, tick: o.tick });
+    this.sfx.click();
+    return p;
+  }
+  closeBtn(p: HTMLElement) { p.querySelector<HTMLButtonElement>("[data-close]")?.addEventListener("click", () => this.ui.closePanel()); }
+  sinceDone() { return this.realT - this.lastDone; }
+  fell(m: number) {
+    this.sfx.thud();
+    this.player.teleport(28, 0.5, 14, Math.PI / 2);
+    this.inc(1, "FALL FROM HEIGHT");
+    this.radio("earl", `You fell ${Math.round(m * 3.28)} feet. That's a recordable. Do the paperwork, Company Man.`);
+  }
+
+  // ---------- ambient interactables ----------
+  buildAmbient() {
+    const S = this.rig.spots, H = this.rig.humans;
+    const add = (pos: () => Vector3, label: string | (() => string), r: number, act: () => void, ok?: () => boolean) =>
+      this.interacts.push({ pos, label: typeof label === "string" ? () => label : label, r, act, ok });
+    add(() => S.cabin, "Driller's console", 3.2, () => this.openCabin());
+    add(() => S.hopper, "Mud hopper", 3.4, () => this.openHopper());
+    add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
+    add(() => S.phone, "Phone", 2.6, () => this.openPhone());
+    add(() => S.bunk, "Rack out", 2.8, () => this.openBunk());
+    add(() => S.choke, "Choke panel", 3.2, () => this.openChoke());
+    add(() => S.accumulator, "BOP accumulator", 3.2, () => this.openAccum());
+    add(() => S.shakers, "Shale shakers", 3.4, () => this.openShakers());
+    add(() => S.pits, "Pit levels", 3.2, () => this.openPits());
+    add(() => S.pumps, "Mud pumps", 3.4, () => this.openPumps());
+    add(() => S.gens, "Generators", 3.4, () => this.openGens());
+    add(() => S.fuel, "Diesel tank", 3.4, () => this.openFuel());
+    add(() => S.mudlog, "Mud logging unit", 2.8, () => this.openMudlog());
+    add(() => S.bop, "BOP stack", 3.6, () => this.openBop());
+    add(() => S.coffee, "Coffee", 2.2, () => { if (this.flags.coffeeEmpty) this.radio("earl", "Pot's empty. Somebody's going to have to make coffee."); else { this.gain(0, 3); this.ui.toast("+3 MORALE", "Tastes like diesel."); } });
+    const talk = (key: "driller" | "pusher" | "mudeng" | "hand3", who: Who, lines: string[]) => {
+      let i = 0;
+      add(() => H[key].root.position.add(v3(0, 1.1, 0)), "Talk", 2.4, () => { this.radio(who, lines[i++ % lines.length], 6500); }, () => H[key].root.isEnabled());
+    };
+    talk("driller", "dale", ["Everything's green, boss. I'm just watching the numbers.", "You want more weight? Say it in the console, I can't read minds.", "I've drilled wells since before you had a hard hat. Just so you know."]);
+    talk("pusher", "earl", ["If it's not on the JSA, we don't do it.", "Your trailer's got the good chair. Don't tell the others.", "Walk the location. Then walk it again."]);
+    talk("mudeng", "marcus", ["Mud's looking good. The mud is always looking good until it isn't.", "Delaware's coming up. You'll want ten-nine in the pits before six thousand.", "That's not 'sticky.' That's 'rheology.'"]);
+    talk("hand3", "cooter", ["Pipe's pipe, boss.", "I do not get paid enough for the forklift.", "Is it break time? It feels like break time."]);
+  }
+
+  openBunk() {
+    const p = this.open(`<div class="eyebrow">Company Man Trailer</div><h2>Rack Out</h2><p>Sleep until something goes wrong. It will.</p>
+      <div class="btns"><button class="b" data-s="1">Sleep (up to 6 hr)</button><button class="b alt" data-close>Not now</button></div>`);
+    this.closeBtn(p);
+    p.querySelector<HTMLButtonElement>("[data-s]")!.onclick = () => {
+      this.ui.closePanel(); this.sleeping = true; this.sleepUntil = this.sim.s.t + 360;
+      $("fade").style.opacity = "0.85"; this.player.enabled = false; this.player.unlock(); this.ui.toast("ZZZ…");
+    };
+  }
+  wake(why: string) {
+    if (!this.sleeping) return;
+    this.sleeping = false; $("fade").style.opacity = "0"; this.player.enabled = true; this.ui.toast("WOKE UP", why);
+  }
+
+  // ---------- panels ----------
+  statRow(k: string, v: string, cls = "") { return `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`; }
+
+  openCabin() {
+    const s = this.sim.s;
+    const render = () => {
+      const k = s.kick;
+      return `<div class="eyebrow">Driller's Cabin</div><h2>Driller's Console</h2>
+        <div class="grid2">
+          <div>
+            ${this.statRow("Depth", fmt(s.depth) + " ft")}${this.statRow("Formation", formationAt(s.depth).name)}
+            ${this.statRow("ROP", fmt(s.rop) + " ft/hr")}${this.statRow("Bit health", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : "")}
+            ${this.statRow("Standpipe pressure", fmt(s.spp) + " psi")}${this.statRow("Mud weight", s.mw.toFixed(2) + " ppg")}
+            ${this.statRow("Pit volume", fmt(s.pit) + " bbl", k.active ? "bad" : "")}${this.statRow("Mode", s.mode.toUpperCase())}
+          </div>
+          <div>
+            <div class="hint">Weight on bit: <b id="wv">${s.wobTarget}</b> klbs</div>
+            <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${s.mode === "tripping" || s.mode === "casing" ? "disabled" : ""}/>
+            <div class="hint" style="margin-top:10px">Pump rate: <b id="fv">${s.flowTarget}</b> gpm</div>
+            <input type="range" id="flow" min="400" max="1000" step="50" value="${s.flowTarget}"/>
+            <p class="hint">More WOB = faster, but the bit wears like a cheap tire. Flow lifts ROP and ECD.</p>
+          </div>
+        </div>
+        <div class="btns" id="cbtn"></div>`;
+    };
+    const p = this.open(render(), { wide: true, live: true });
+    const bind = () => {
+      const wob = p.querySelector<HTMLInputElement>("#wob")!, flow = p.querySelector<HTMLInputElement>("#flow")!;
+      wob.oninput = () => { s.wobTarget = Number(wob.value); p.querySelector("#wv")!.textContent = wob.value; };
+      wob.onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus? Your funeral, boss. Bit's gonna scream."); else this.radio("dale", `Copy. ${s.wobTarget} on the weight.`, 4000); };
+      flow.oninput = () => { s.flowTarget = Number(flow.value); p.querySelector("#fv")!.textContent = flow.value; };
+      const btns: string[] = [];
+      if (s.kick.active && !s.kick.shut) btns.push(`<button class="b red" data-a="shut">SHUT IN THE WELL</button>`);
+      if (s.kill.stage === "flowcheck") btns.push(`<button class="b green" data-a="open">Flow check OK — open BOP & resume</button>`);
+      if ((s.mode === "drilling" || s.mode === "connection") && !s.kick.active) btns.push(`<button class="b alt" data-a="trip">Trip for a new bit</button>`);
+      if (s.depth >= WELL.td - 0.5 && (s.mode === "idle")) btns.push(`<button class="b green" data-a="casing">Run 9⅝″ casing & cement</button>`);
+      btns.push(`<button class="b alt" data-close>Close</button>`);
+      const box = p.querySelector<HTMLElement>("#cbtn")!;
+      box.innerHTML = btns.join("");
+      this.closeBtn(p);
+      box.querySelectorAll<HTMLButtonElement>("[data-a]").forEach((b) => b.onclick = () => this.cabinAction(b.dataset.a!));
+    };
+    bind();
+    let lastBtn = "";
+    this.ui.panelOpen && (this.ui as any).panelTick === undefined;
+    (this.ui as any).panelTick = () => {
+      // refresh the live numbers only (cheap): re-render rows when mode/stage changes
+      const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td);
+      if (sig !== lastBtn) { lastBtn = sig; const keepW = s.wobTarget, keepF = s.flowTarget; p.innerHTML = render(); s.wobTarget = keepW; s.flowTarget = keepF; bind(); }
+      const rows = p.querySelectorAll(".row b");
+      if (rows.length >= 8) {
+        rows[0].textContent = fmt(s.depth) + " ft"; rows[2].textContent = fmt(s.rop) + " ft/hr"; rows[3].textContent = Math.round(s.bit) + "%";
+        rows[4].textContent = fmt(s.spp) + " psi"; rows[5].textContent = s.mw.toFixed(2) + " ppg"; rows[6].textContent = fmt(s.pit) + " bbl"; rows[7].textContent = s.mode.toUpperCase();
+        rows[1].textContent = formationAt(s.depth).name;
+      }
+    };
+  }
+  cabinAction(a: string) {
+    const s = this.sim.s;
+    if (a === "shut") {
+      if (!this.sim.shutIn(false)) {
+        this.sfx.bad(); this.ui.closePanel();
+        this.radio("dale", "BOP WON'T CLOSE — accumulator pressure is low! Somebody get to the accumulator!", 9000);
+        this.flags.accumFailSeen = true;
+        return;
+      }
+      this.ui.closePanel(); this.sfx.horn();
+      this.radio("dale", "Well's shut in. Annular's closed. Now go read the pressures at the choke panel.", 8000);
+    } else if (a === "open") {
+      this.sim.openBopResume(); this.ui.closePanel(); this.gain(0.4, 8); this.radio("dale", "Flow check's dead. Back on bottom, boss. Nice work on the kill.");
+      setTimeout(() => this.radio("marcus", "That gas pocket was only about 60 feet thick. Once we drill through it, dilute the mud back toward 11 ppg at the hopper — at this weight we're over frac and we'll lose returns.", 14000), 4000);
+    } else if (a === "trip") {
+      this.ui.closePanel(); this.sim.startTrip(); this.radio("dale", "Tripping out. See you in about nine hours of staring at pipe.");
+    } else if (a === "casing") {
+      this.ui.closePanel(); this.sim.startCasing(); this.flags.casingStarted = true;
+    }
+  }
+
+  openHopper() {
+    const s = this.sim.s;
+    const render = () => `<div class="eyebrow">Mud System</div><h2>Mud Hopper</h2>
+      <div class="grid2"><div>
+        ${this.statRow("Mud weight (active)", s.mw.toFixed(2) + " ppg")}
+        ${this.statRow("Target", s.mwTarget.toFixed(1) + " ppg")}
+        ${this.statRow("Effective (w/ ECD)", (this.sim.mwEff).toFixed(2) + " ppg")}
+        ${this.statRow("LCM in system", s.lcm.toFixed(0) + " ppb")}
+      </div><div>
+        ${this.statRow("Pore pressure here", poreAt(s.depth).toFixed(1) + " ppg")}
+        ${this.statRow("Fracture limit", fracAt(s.depth).toFixed(1) + " ppg")}
+        <p class="hint">Stay between the two. Under pore = kick. Over frac = losses. Weight-up isn't instant — it circulates in.</p>
+      </div></div>
+      <div class="btns">
+        <button class="b" data-a="up">+0.2 ppg barite ($6k)</button>
+        <button class="b alt" data-a="dn">−0.2 ppg dilute ($1k)</button>
+        <button class="b" data-a="lcm">Pump LCM pill (+15 ppb, $20k)</button>
+        <button class="b alt" data-close>Close</button></div>`;
+    const p = this.open(render(), { live: true, wide: true });
+    const wire = () => {
+      this.closeBtn(p);
+      p.querySelectorAll<HTMLButtonElement>("[data-a]").forEach((b) => b.onclick = () => {
+        const a = b.dataset.a;
+        if (a === "up" && s.mwTarget < 17) { s.mwTarget = Math.round((s.mwTarget + 0.2) * 10) / 10; this.sim.addCost(6000); this.sfx.click(); }
+        if (a === "dn" && s.mwTarget > 8.4) { s.mwTarget = Math.round((s.mwTarget - 0.2) * 10) / 10; this.sim.addCost(1000); this.sfx.click(); }
+        if (a === "lcm") { s.lcmTarget = Math.min(80, s.lcmTarget + 15); s.lcm = Math.min(80, s.lcm + 15); this.sim.addCost(20000); this.sfx.click(); setTimeout(() => (s.lcmTarget = Math.max(0, s.lcmTarget - 15)), 90000); }
+        p.innerHTML = render(); wire();
+      });
+    };
+    wire();
+    (this.ui as any).panelTick = () => { const r = p.querySelectorAll(".row b"); if (r.length >= 6) { r[0].textContent = s.mw.toFixed(2) + " ppg"; r[1].textContent = s.mwTarget.toFixed(1) + " ppg"; r[2].textContent = this.sim.mwEff.toFixed(2) + " ppg"; r[3].textContent = s.lcm.toFixed(0) + " ppb"; r[4].textContent = poreAt(s.depth).toFixed(1) + " ppg"; r[5].textContent = fracAt(s.depth).toFixed(1) + " ppg"; } };
+  }
+
+  openDesk() {
+    const s = this.sim.s;
+    const p = this.open(`<div class="eyebrow">Company Man Trailer</div><h2>Computer</h2>
+      ${this.statRow("Cost to date", money(s.cost), s.cost > WELL.afe ? "bad" : "")}${this.statRow("AFE", money(WELL.afe))}
+      ${this.statRow("Remaining depth", fmt(WELL.td - s.depth) + " ft")}${this.statRow("Casing ordered", this.casingOrder ? this.casingOrder + " joints" : "No", this.casingOrder ? "ok" : "warn")}
+      <div class="btns">
+        <button class="b" data-a="casing" ${this.casingOrder ? "disabled" : ""}>Order 9⅝″ casing</button>
+        <button class="b alt" data-a="report">Submit daily report</button>
+        <button class="b alt" data-close>Close</button></div>`);
+    this.closeBtn(p);
+    p.querySelector<HTMLButtonElement>("[data-a=report]")!.onclick = () => {
+      this.ui.closePanel();
+      const day = clockString(s.t).day;
+      if (this.flags.lastReportDay === day) { this.radio("brent", "You already sent today's report. Please stop adding emoji."); return; }
+      this.flags.lastReportDay = day; this.gain(0.25, 0); this.ui.toast("REPORT SUBMITTED", "Brent has opened it and not read it.");
+    };
+    p.querySelector<HTMLButtonElement>("[data-a=casing]")!.onclick = () => this.orderCasing();
+  }
+  orderCasing() {
+    this.say("brent", "You need 9⅝″ casing on location before TD. Hole's 8,500 ft, joints are about 40 ft each, and you want a little spare. How many joints do you order?", [
+      { label: "180 joints", cls: "alt", run: () => this.casingPicked(180) },
+      { label: "225 joints", run: () => this.casingPicked(225) },
+      { label: "400 joints (just in case)", cls: "alt", run: () => this.casingPicked(400) },
+    ], "Order casing");
+  }
+  casingPicked(n: number) {
+    this.casingOrder = n; this.orderT = this.sim.s.t;
+    if (n === 225) { this.gain(0.25); this.radio("brent", "225 joints. Shockingly reasonable. Truck's about 25 minutes out."); }
+    else if (n < 212) { this.flags.shortCasing = true; this.radio("brent", "180 joints? That's 7,200 feet. I'm not going to say anything. Truck's coming."); }
+    else { this.sim.addCost(180000); this.radio("brent", "400 joints. You've ordered casing for a second well. Billing you for it. Truck's coming."); }
+    this.sim.addCost(n * 20);
+  }
+
+  openPhone() {
+    const m = this.flags.houstonPending;
+    if (m) { this.flags.houstonPhone = true; return; }
+    this.say("brent", "Hey. Just checking in. No reason. Okay, a little reason: what's the hole look like?", [
+      { label: "Fine.", run: () => this.radio("brent", "Great. 'Fine' goes in the slide deck.") },
+      { label: `${fmt(this.sim.s.depth)} ft, ${money(this.sim.s.cost)} spent`, run: () => this.radio("brent", "Wonderful. I'll forward that to someone who will ask you the same question.") },
+    ], "Phone");
+  }
+
+  inspect(title: string, rows: [string, string, string?][], extra = "", btns: { label: string; run: () => void; cls?: string }[] = []) {
+    const p = this.open(`<div class="eyebrow">Walk the Location</div><h2>${title}</h2>${rows.map((r) => this.statRow(r[0], r[1], r[2] ?? "")).join("")}${extra}
+      <div class="btns">${btns.map((b, i) => `<button class="b ${b.cls ?? ""}" data-x="${i}">${b.label}</button>`).join("")}<button class="b alt" data-close>Close</button></div>`);
+    this.closeBtn(p);
+    p.querySelectorAll<HTMLButtonElement>("[data-x]").forEach((b) => b.onclick = () => { this.ui.closePanel(); btns[Number(b.dataset.x)].run(); });
+  }
+  openShakers() {
+    const s = this.sim.s, f = formationAt(s.depth);
+    const torn = this.flags.screenTorn !== false;
+    this.flags.shakersLooked = true;
+    this.inspect("Shale Shakers", [
+      ["Cuttings", `<span style="color:${f.color}">■</span> ${f.name}`], ["Screen condition", torn ? "TORN — solids bypassing" : "Good", torn ? "bad" : "ok"],
+      ["Gas units", s.kick.active ? "ELEVATED" : "Background", s.kick.active ? "bad" : ""],
+    ], `<p class="hint">Cuttings tell you what the bit is eating. Torn screens tell you someone skipped rounds.</p>`,
+      torn ? [{ label: "Replace screens ($1,200)", run: () => { this.flags.screenTorn = false; this.sim.addCost(1200); this.radio("marcus", "New screens in. Mud's cleaner. You're basically a mud engineer now."); this.flags.screensFixed = true; } }] : []);
+  }
+  openPits() { const s = this.sim.s; this.inspect("Active Pits", [["Volume", fmt(s.pit) + " bbl"], ["Gain / loss", (s.pit - s.pitBase >= 0 ? "+" : "") + fmt(s.pit - s.pitBase) + " bbl", Math.abs(s.pit - s.pitBase) > 8 ? "bad" : "ok"], ["Losses to date", fmt(s.loss.total) + " bbl"]], `<p class="hint">Pit gain is the first sign of a kick. Pit loss means you're over fracture pressure.</p>`); }
+  openPumps() { const s = this.sim.s; this.inspect("Mud Pumps (3× triplex)", [["Standpipe pressure", fmt(s.spp) + " psi"], ["Pump rate", fmt(s.flow) + " gpm"], ["Liners", "OK", "ok"], ["Pulsation dampener", "Charged", "ok"]]); }
+  openGens() { const s = this.sim.s; this.inspect("Generators (4× engine/gen)", [["Load", s.mode === "idle" ? "Low" : "Normal"], ["Coolant temp", "190 °F", "ok"], ["Fuel", fmt(s.fuel) + " gal", s.fuel < 1200 ? "bad" : "ok"]]); }
+  openFuel() {
+    const s = this.sim.s;
+    this.inspect("Diesel Tank", [["Level", fmt(s.fuel) + " gal", s.fuel < 1200 ? "bad" : "ok"], ["Burn rate", "~160 gal/hr"]], "", [{ label: "Order 4,000 gal ($14k)", run: () => { s.fuel += 4000; this.sim.addCost(14000); this.radio("earl", "Fuel truck's here already. Don't ask how."); } }]);
+  }
+  openMudlog() { const s = this.sim.s; this.inspect("Mud Logging Unit", [["Formation", formationAt(s.depth).name], ["Pore pressure (est.)", poreAt(s.depth).toFixed(1) + " ppg"], ["Gas", s.kick.active ? "SPIKING" : "Background", s.kick.active ? "bad" : ""]], `<p class="hint">Dr. Pruitt: "Watch past 7,000 ft. I've seen gassy stringers in this part of the Delaware."</p>`); }
+  openBop() { const s = this.sim.s; this.inspect("BOP Stack", [["Annular", s.kick.shut ? "CLOSED" : "Open", s.kick.shut ? "warn" : "ok"], ["Rams", "Open · tested", "ok"], ["Closing unit", fmt(s.accum) + " psi", s.accum < 1200 ? "bad" : "ok"]]); }
+  openAccum() {
+    const s = this.sim.s;
+    this.inspect("BOP Accumulator (closing unit)", [["System pressure", fmt(s.accum) + " psi", s.accum < 1200 ? "bad" : "ok"], ["Precharge pump", this.sim.accumDead ? "TRIPPED" : "Ready", this.sim.accumDead ? "bad" : "ok"], ["Minimum to close BOP", "1,200 psi"]],
+      `<p class="hint">If this is low when the well kicks, the BOP will not close.</p>`,
+      this.sim.accumDead || s.accum < 2800 ? [{ label: "Reset breaker & recharge", cls: "green", run: () => { this.sim.accumDead = false; s.accum = 3000; this.flags.accumFixed = true; this.sfx.good(); this.radio("dale", "Accumulator's at three thousand. Thank you, boss."); } }] : []);
+  }
+
+  // ---------- CHOKE PANEL (kill the well) ----------
+  openChoke() {
+    const s = this.sim.s, k = s.kill;
+    if (!s.kick.shut && k.stage === "none") {
+      this.inspect("Remote Choke Panel", [["Well status", "Open · flowing normally", "ok"], ["Casing pressure", "0 psi"], ["Drill pipe pressure", fmt(s.spp) + " psi"]],
+        `<p class="hint">Keep your hands off the choke unless the well is shut in. The choke panel is for well control only.</p>`);
+      return;
+    }
+    const render = () => {
+      let body = "";
+      const stable = this.sim.s.t - s.kick.shutT >= 6;
+      const ramp = clamp((this.sim.s.t - s.kick.shutT) / 5, 0, 1);
+      const sidpp = Math.round(s.kick.sidpp * (k.stage === "readings" ? ramp : 1)), sicp = Math.round(s.kick.sicp * (k.stage === "readings" ? ramp : 1));
+      if (k.stage === "readings") {
+        body = `<p>Well is shut in. Let the pressures stabilize, then record <b>SIDPP</b> (drill pipe) and <b>SICP</b> (casing).</p>
+        <div class="grid2"><div class="gauge"><div class="g-l">SIDPP</div><div class="g-v" id="g1">${sidpp}</div><div class="g-s">psi · drill pipe</div></div>
+        <div class="gauge"><div class="g-l">SICP</div><div class="g-v" id="g2">${sicp}</div><div class="g-s">psi · casing</div></div></div>
+        <div class="btns"><button class="b" id="rec" ${stable ? "" : "disabled"}>${stable ? "Record pressures" : "Stabilizing…"}</button></div>`;
+      } else if (k.stage === "calc") {
+        body = `<div class="grid2"><div class="gauge"><div class="g-l">SIDPP</div><div class="g-v">${Math.round(s.kick.sidpp)}</div></div><div class="gauge"><div class="g-l">Pit gain</div><div class="g-v">${s.kick.gain.toFixed(0)}</div><div class="g-s">bbl</div></div></div>
+        <div class="note"><b>Kill mud weight</b> = current MW + SIDPP ÷ (0.052 × TVD)<br/>MW = <b>${s.mw.toFixed(2)}</b> ppg · SIDPP = <b>${Math.round(s.kick.sidpp)}</b> psi · TVD = <b>${fmt(s.depth)}</b> ft</div>
+        <p>Enter the kill mud weight (ppg):</p><input type="number" step="0.1" id="kmw" value="${this.kmwInput ? this.kmwInput : ""}"/>
+        <div class="btns"><button class="b" id="calc">Submit kill sheet</button></div><p class="hint" id="calcmsg"></p>`;
+      } else if (k.stage === "weightup") {
+        body = `<p>Kill sheet signed. Weight up the active system to <b>${k.kmw.toFixed(1)} ppg</b> at the mud hopper, then come back and start the circulation.</p>
+        ${this.statRow("Current MW", s.mw.toFixed(2) + " ppg")}${this.statRow("Kill MW", k.kmw.toFixed(1) + " ppg")}
+        <div class="btns"><button class="b" id="circ" ${s.mw >= k.kmw - 0.1 ? "" : "disabled"}>${s.mw >= k.kmw - 0.1 ? "Begin circulating the kick out" : "Waiting on mud weight…"}</button></div>`;
+      } else if (k.stage === "circ") {
+        const pct = Math.round((k.inBand / Math.max(1, k.total)) * 100);
+        body = `<p>Circulate with the <b>Driller's Method</b>. Hold <b>drill pipe pressure</b> on the gold target line by working the choke — <b>close</b> it to raise pressure, <b>open</b> it to lower it. Keep casing pressure under <b>${k.maasp} psi</b> or you'll break down the shoe.</p>
+        <div class="grid2"><div class="gauge"><div class="g-l">Drill pipe pressure</div><div class="g-v" id="gd">${Math.round(k.dpp)}</div><div class="g-s" id="gdt">target ${Math.round(k.dppTarget)}</div>
+          <div class="chokebar"><div class="band" id="gband"></div><div class="tgt" id="gtgt"></div><div class="needle" id="gneedle"></div></div></div>
+        <div class="gauge"><div class="g-l">Casing pressure</div><div class="g-v" id="gc">${Math.round(k.cp)}</div><div class="g-s" id="gct">MAASP ${k.maasp}</div></div></div>
+        <div class="grid2" style="margin-top:12px"><div><div class="hint">Choke position: <b id="chv">${Math.round(k.choke * 100)}</b>% closed</div><input type="range" id="chk" min="0" max="100" value="${Math.round(k.choke * 100)}"/>
+          <div class="btns"><button class="b alt" id="co">◀ Open (A)</button><button class="b alt" id="cc">Close (D) ▶</button></div></div>
+        <div>${this.statRow("Circulation", Math.round(k.progress * 100) + "%")}${this.statRow("In band", pct + "%", pct > 70 ? "ok" : "bad")}${this.statRow("Mud weight", s.mw.toFixed(2) + " ppg")}</div></div>`;
+      } else {
+        body = `<div class="note" style="border-color:var(--green)"><b>Circulation complete.</b> Pressures bled to zero. Go to the Driller's console, flow-check the well and open the BOP.</div>`;
+      }
+      return `<div class="eyebrow">Well Control</div><h2>Remote Choke Panel</h2>${body}<div class="btns"><button class="b alt" data-close>Close</button></div>`;
+    };
+    const p = this.open(render(), { wide: true, live: true });
+    const wire = () => {
+      this.closeBtn(p);
+      p.querySelector<HTMLButtonElement>("#rec")?.addEventListener("click", () => { k.stage = "calc"; this.sfx.click(); p.innerHTML = render(); wire(); });
+      p.querySelector<HTMLButtonElement>("#calc")?.addEventListener("click", () => {
+        const val = Number((p.querySelector("#kmw") as HTMLInputElement).value); this.kmwInput = val;
+        const right = this.sim.killMudWeight();
+        if (Math.abs(val - right) <= 0.15) { k.kmw = Math.ceil(right * 10) / 10 + 0.1; k.stage = "weightup"; this.sfx.good(); this.radio("marcus", `Kill weight ${k.kmw.toFixed(1)}. Bring me to the hopper — let's weight it up.`); p.innerHTML = render(); wire(); }
+        else { this.sfx.bad(); p.querySelector("#calcmsg")!.innerHTML = `Not quite. Try again: ${s.mw.toFixed(2)} + ${Math.round(s.kick.sidpp)} ÷ (0.052 × ${fmt(s.depth)}).`; }
+      });
+      p.querySelector<HTMLButtonElement>("#circ")?.addEventListener("click", () => { this.sim.beginCirculation(); this.sfx.good(); p.innerHTML = render(); wire(); });
+      const adj = (d: number) => { k.choke = clamp(k.choke + d, 0, 1); const r = p.querySelector<HTMLInputElement>("#chk"); if (r) r.value = String(Math.round(k.choke * 100)); };
+      p.querySelector("#co")?.addEventListener("click", () => adj(-0.03));
+      p.querySelector("#cc")?.addEventListener("click", () => adj(0.03));
+      const slider = p.querySelector<HTMLInputElement>("#chk");
+      if (slider) slider.oninput = () => { k.choke = Number(slider.value) / 100; };
+    };
+    wire();
+    if (this.chokeKeyHandler) window.removeEventListener("keydown", this.chokeKeyHandler);
+    this.chokeKeyHandler = (e) => { if (k.stage === "circ") { if (e.code === "KeyA" || e.code === "ArrowLeft") { k.choke = clamp(k.choke - 0.025, 0, 1); } if (e.code === "KeyD" || e.code === "ArrowRight") { k.choke = clamp(k.choke + 0.025, 0, 1); } } };
+    window.addEventListener("keydown", this.chokeKeyHandler);
+    let lastStage = k.stage;
+    (this.ui as any).panelTick = () => {
+      if (k.stage !== lastStage) { lastStage = k.stage; p.innerHTML = render(); wire(); return; }
+      if (k.stage === "readings") {
+        const stable = this.sim.s.t - s.kick.shutT >= 6, ramp = clamp((this.sim.s.t - s.kick.shutT) / 5, 0, 1);
+        const g1 = p.querySelector("#g1"), g2 = p.querySelector("#g2"), rec = p.querySelector<HTMLButtonElement>("#rec");
+        if (g1) g1.textContent = String(Math.round(s.kick.sidpp * ramp)); if (g2) g2.textContent = String(Math.round(s.kick.sicp * ramp));
+        if (rec && stable && rec.disabled) { rec.disabled = false; rec.textContent = "Record pressures"; }
+      } else if (k.stage === "weightup") {
+        const c = p.querySelector<HTMLButtonElement>("#circ"); if (c && s.mw >= k.kmw - 0.1 && c.disabled) { c.disabled = false; c.textContent = "Begin circulating the kick out"; }
+        const r = p.querySelectorAll(".row b"); if (r[0]) r[0].textContent = s.mw.toFixed(2) + " ppg";
+      } else if (k.stage === "circ") {
+        const set = (id: string, t: string) => { const e = p.querySelector(id); if (e) e.textContent = t; };
+        set("#gd", String(Math.round(k.dpp))); set("#gdt", "target " + Math.round(k.dppTarget)); set("#gc", String(Math.round(k.cp))); set("#chv", String(Math.round(k.choke * 100)));
+        const gc = p.querySelector<HTMLElement>("#gc"); if (gc) gc.style.color = k.cp > k.maasp * 0.9 ? "var(--red)" : "";
+        const off = Math.abs(k.dpp - k.dppTarget); const gd = p.querySelector<HTMLElement>("#gd"); if (gd) gd.style.color = off <= 120 ? "var(--green)" : off <= 250 ? "var(--gold)" : "var(--red)";
+        // bar: map ±400 psi around target to the bar width
+        const needle = p.querySelector<HTMLElement>("#gneedle"), band = p.querySelector<HTMLElement>("#gband"), tgt = p.querySelector<HTMLElement>("#gtgt");
+        if (needle && band && tgt) { const pos = clamp(50 + ((k.dpp - k.dppTarget) / 800) * 100, 0, 100); needle.style.left = pos + "%"; tgt.style.left = "50%"; band.style.left = "35%"; band.style.width = "30%"; }
+        const sl = p.querySelector<HTMLInputElement>("#chk"); if (sl && document.activeElement !== sl) sl.value = String(Math.round(k.choke * 100));
+        const r = p.querySelectorAll(".row b"); if (r[0]) { r[0].textContent = Math.round(k.progress * 100) + "%"; const pct = Math.round((k.inBand / Math.max(1, k.total)) * 100); r[1].textContent = pct + "%"; r[1].className = pct > 70 ? "ok" : "bad"; r[2].textContent = s.mw.toFixed(2) + " ppg"; }
+      }
+    };
+  }
+
+  // ---------- slips mini-game ----------
+  openSlips(done: () => void) {
+    this.slip = { t: 0, hits: 0, tries: 0, on: true };
+    const p = this.open(`<div class="eyebrow">Drill Floor</div><h2>Pull the Slips</h2>
+      <p>The floorhands are in the porta john. A connection's coming up and somebody has to set the slips on the pipe. Hit <b>SET SLIPS</b> when the marker is in the green zone. Three good sets.</p>
+      <div class="slipbar"><div class="zone"></div><div class="mk" id="mk"></div></div>
+      <div class="grid2"><div class="row"><span>Good sets</span><b id="sh">0 / 3</b></div><div class="row"><span>Attempts</span><b id="st">0</b></div></div>
+      <div class="btns"><button class="b" id="setslips">SET SLIPS (Space)</button></div><p class="hint" id="slipmsg"></p>`, { closable: false } as any);
+    this.ui.closable = false;
+    const act = () => {
+      if (!this.slip.on) return;
+      this.slip.tries++;
+      const pos = (Math.sin(this.slip.t * 3.1) + 1) / 2;
+      const hit = pos > 0.42 && pos < 0.58;
+      const msg = p.querySelector("#slipmsg")!;
+      if (hit) { this.slip.hits++; msg.textContent = "Slips set. Clean."; this.sfx.good(); } else { msg.textContent = pos < 0.5 ? "Too early — the string bounced." : "Too late — pipe's sliding!"; this.sfx.bad(); this.sim.addCost(2000); }
+      p.querySelector("#sh")!.textContent = this.slip.hits + " / 3"; p.querySelector("#st")!.textContent = String(this.slip.tries);
+      if (this.slip.hits >= 3) { this.slip.on = false; window.removeEventListener("keydown", key); this.ui.closable = true; this.ui.closePanel(); done(); }
+    };
+    const key = (e: KeyboardEvent) => { if (e.code === "Space") { e.preventDefault(); act(); } };
+    window.addEventListener("keydown", key);
+    p.querySelector<HTMLButtonElement>("#setslips")!.onclick = act;
+    (this.ui as any).panelTick = () => {
+      this.slip.t += 1 / 60;
+      const pos = (Math.sin(this.slip.t * 3.1) + 1) / 2;
+      const mk = p.querySelector<HTMLElement>("#mk"); if (mk) mk.style.left = `calc(${pos * 100}% - 3px)`;
+    };
+  }
+
+  // ---------- missions ----------
+  buildMissions() {
+    const S = this.rig.spots, H = this.rig.humans, sim = this.sim, s = this.sim.s;
+    const sy = (sp: Vector3) => () => sp;
+    const gap = (n: number) => () => this.sinceDone() >= n;
+    const M = (m: Mission) => this.queue.push(m);
+
+    M({ id: "ppe", title: "Hard Hat Area", sub: "Check in at the gate shack. Safety first. Then second. Then also third.", trigger: () => true, a: 0.1, m: 0, steps: [
+      { text: "Sign in at the gate", at: sy(S.gate), label: "Sign in & suit up", r: 3.2, act: (done) => {
+        const items = ["Hard hat", "FR coveralls", "Safety glasses", "Gloves", "H2S monitor"];
+        const got = new Set<string>();
+        const p = this.open(`<div class="eyebrow">Gate Shack</div><h2>Sign In</h2><p>Roy slides a clipboard under the glass. "You're the Company Man? Sign here. And here. And here. And your hard hat is on upside down."</p>
+          <div id="ppe" class="btns">${items.map((it) => `<button class="b alt" data-i="${it}">${it}</button>`).join("")}</div><div class="btns"><button class="b" id="go" disabled>Clock in</button></div>`, { });
+        p.querySelectorAll<HTMLButtonElement>("[data-i]").forEach((b) => b.onclick = () => { got.add(b.dataset.i!); b.classList.remove("alt"); b.classList.add("green"); b.disabled = true; this.sfx.click(); if (got.size === items.length) (p.querySelector("#go") as HTMLButtonElement).disabled = false; });
+        p.querySelector<HTMLButtonElement>("#go")!.onclick = () => { this.ui.closePanel(); this.sim.start(); this.radio("earl", "Company Man's on location. Clock's running, boss — and it's about $80,000 a day."); done(); };
+      } },
+    ] });
+
+    M({ id: "meeting", title: "Morning Meeting", sub: "Give the safety talk in the doghouse. Nobody will remember it.", trigger: gap(2), a: 0.15, m: 4, steps: [
+      { text: "Walk to the rig floor and find the doghouse", at: () => v3(-4.3, F + 1.2, -3.0), label: "Hold the safety meeting", r: 3.5, act: (done) => {
+        this.say("earl", "Alright boss, crew's here. Pick a safety topic and let's get the tour started. I've got a cup of coffee and low expectations.", [
+          { label: "Dropped objects", run: () => { this.gain(0.25, 2); this.radio("earl", "Good call. Nobody stands under anything. That includes the mast."); this.geoProg(done); } },
+          { label: "Hand placement", run: () => { this.gain(0.2, 2); this.radio("earl", "Fingers are not replaceable. Unlike Brent."); this.geoProg(done); } },
+          { label: "Whatever's in the coffee", cls: "alt", run: () => { this.gain(0, 6); this.radio("earl", "…I'll allow it. The crew likes you now."); this.geoProg(done); } },
+        ], "Pre-tour meeting");
+      } },
+    ] });
+
+    M({ id: "casing", title: "Order Casing", sub: "Houston wants casing on location before TD. It's a phone call for them, a trailer for you.", trigger: gap(3), a: 0.3, m: 0, steps: [
+      { text: "Order casing at the computer in your trailer", at: sy(S.desk), label: "Order 9⅝″ casing", r: 3, act: () => this.orderCasing(), watch: () => this.casingOrder > 0 },
+      { text: "Wait for the casing truck…", watch: () => this.sim.s.t - this.orderT >= 50, enter: () => {} },
+      { text: "Verify the tally at the casing truck", at: sy(S.casing), label: "Check the casing tally", r: 5, enter: () => { this.rig.setCasingTruck(true); this.radio("brent", "Casing's on location. Please verify the tally. And be nice to the driver, he's been talking about his boat since Pecos."); }, act: (done) => {
+        this.say("cooter", "Driver says he's got 'about the right amount' and a lot of opinions about boats. You want to count every joint, or just trust him?", [
+          { label: "Count every joint", run: () => { this.sim.s.t += 15; this.radio("marcus", "He was one joint over. You counted it. He'll never forgive you."); this.gain(0.3, 0); done(); } },
+          { label: "Sign the ticket", cls: "alt", run: () => { this.radio("earl", "Signed. Whatever's on that truck is now the company's problem. Yours, specifically."); this.gain(0.1, 0); done(); } },
+        ], "Casing tally");
+      } },
+    ] });
+
+    M({ id: "wob", title: "A Little More Weight", sub: "Tell the driller to add weight on bit. This is the most Company Man thing you will do all day.", trigger: gap(3), a: 0.25, m: 0, steps: [
+      { text: "Go up to the driller's cabin and ask for ≥ 26 klbs WOB", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => this.openCabin(), watch: () => s.wobTarget >= 26 },
+    ], end: () => this.radio("dale", "More weight. Got it. 'More weight.' Let me write that down. On the thing.") });
+
+    M({ id: "shakers", title: "Check the Shakers", sub: "Climb the pit roof and look at some rocks. Then say something about them.", trigger: gap(3), a: 0.2, m: 3, steps: [
+      { text: "Climb the tanks and inspect the shale shakers", at: sy(S.shakers), label: "Shale shakers", r: 3.8, act: () => this.openShakers(), watch: () => !!this.flags.shakersLooked && this.flags.screenTorn === false },
+    ], end: () => this.radio("marcus", "You replaced the screens. That's four more tasks than the last Company Man ever did.") });
+
+    M({ id: "interns", title: "Intern Tour", sub: "HR says: keep them alive, keep them off the rig floor, and never say 'figure it out.'", trigger: gap(3), a: 0.35, m: 5,
+      start: () => { this.spawnInterns(); this.radio("brent", "Three summer interns are walking out to you. Please give them 'the full experience.' Please don't."); },
+      steps: [
+        { text: "Tour stop 1: the pipe racks", at: sy(S.tally), label: "Give the tour: pipe racks", r: 5, act: (done) => this.tourStop("tyler", "Stop 1 — Pipe racks", "'Is this where they keep the straws?'", [["Yes. Very big straws.", "Tyler writes that down. He does not realize it is a joke.", 0.05, 4], ["It's drill pipe. 30 feet each, 4 inches around.", "Tyler: 'That's what she said' — and then looks at Madison, who doesn't laugh.", 0.15, 1]], done) },
+        { text: "Tour stop 2: the BOP stack", at: sy(S.bop), label: "Give the tour: the BOP", r: 6, act: (done) => this.tourStop("tyler", "Stop 2 — BOP stack", "'So it's a giant emergency brake?'", [["Basically, yes.", "Madison: 'Cool, so what's the other lever?' There is no other lever.", 0.1, 3], ["It seals the well if it kicks. Don't touch it.", "Brayden touches it.", 0.1, 1]], done) },
+        { text: "Tour stop 3: the rig floor", at: () => v3(2.3, F + 1.0, 2.6), label: "Give the tour: drill floor", r: 4, act: (done) => this.tourStop("tyler", "Stop 3 — Drill floor", "'Can I push the big red button?'", [["No. There's no button. It's a rotary table.", "Brayden: 'So it IS a button.' You let it go.", 0.1, 2], ["Sure. Press it.", "The fire alarm goes off. For three seconds. Everyone looks at you.", -0.15, 6]], done) },
+        { text: "Tour stop 4: the muster point", at: sy(S.muster), label: "Give the tour: muster", r: 5, act: (done) => this.tourStop("tyler", "Stop 4 — Muster point", "'What happens if there's an emergency?'", [["You come here. Calmly. And count heads.", "Tyler: 'And if I'm already here?' 'Then you're early.'", 0.2, 3], ["You run. Not toward me.", "Madison nods. She's the smart one.", 0.05, 4]], done) },
+      ], end: () => this.despawnInterns() });
+
+    M({ id: "porta", title: "Porta John Standoff", sub: "Both floorhands are locked in the porta john. A connection is coming. Somebody has to pull the slips.", trigger: gap(3), a: 0.4, m: 6,
+      start: () => { this.rig.setPortaLocked(true); H.hand1.root.setEnabled(false); H.hand2.root.setEnabled(false); this.radio("dale", "BOSS! Cooter and Dewayne are locked in the porta john and we've got a connection coming! I can't leave the brake — somebody's gotta pull the slips!", 11000); },
+      steps: [
+        { text: "Go to the drill floor and pull the slips", at: () => v3(1.9, F + 1.0, 1.4), label: "Pull the slips", r: 4, act: (done) => this.openSlips(done) },
+        { text: "Free the floorhands from the porta john", at: sy(S.porta), label: "Open the porta john", r: 3, act: (done) => {
+          this.say("cooter", "Boss, thank God. The latch just… jammed. Both of us. At the same time. On the same trip.", [
+            { label: "Open the door", run: () => { this.rig.setPortaLocked(false); H.hand1.root.setEnabled(true); H.hand2.root.setEnabled(true); this.gain(0.2, 8); this.radio("cooter", "Dewayne says nobody saw anything. I say nobody saw anything."); done(); } },
+          ], "Porta john");
+        } },
+      ] });
+
+    M({ id: "weightup", title: "Weight Up Before the Delaware", sub: "Pore pressure jumps at 6,000 ft. Get the mud to at least 10.9 ppg or the well will tell you about it.", trigger: () => s.depth >= 4650, priority: true, a: 0.5, m: 0,
+      start: () => this.radio("marcus", "We're three-quarters of a mile from the Delaware. Pore pressure's 10.8 down there. Get ten-nine in the pits before six thousand.", 11000),
+      steps: [{ text: "Weight up the mud at the hopper (≥ 10.9 ppg)", at: sy(S.hopper), label: "Mud hopper", r: 3.8, act: () => this.openHopper(), watch: () => s.mw >= 10.85 || s.depth >= 6150 }],
+      end: () => { if (s.mw < 10.85) this.radio("marcus", "You didn't make it. We'll find out what the formation thinks."); else { this.gain(0.4, 0); this.radio("marcus", "Mud's 10.9. We're ready for the Delaware. Mostly."); } } });
+
+    M({ id: "kick", title: "Kill the Well", sub: "The well is kicking. Shut it in, read the pressures, calculate the kill weight, weight up and circulate it out through the choke.", trigger: () => s.kick.alarm || s.kill.stage !== "none", priority: true, a: 1.0, m: 10,
+      start: () => { this.sfx.horn(); this.ui.toast("KICK!", "Pit gain — flow check!"); this.radio("dale", "PIT GAIN! She's flowing! BOSS — shut it in!", 10000); },
+      steps: [
+        { text: "Shut in the well at the driller's console", at: sy(S.cabin), label: "Driller's console — SHUT IN", r: 3.5, act: () => this.openCabin(), watch: () => s.kick.shut },
+        { text: "Record SIDPP & SICP at the choke panel", at: sy(S.choke), label: "Choke panel", r: 4, act: () => this.openChoke(), watch: () => s.kill.stage === "calc" || s.kill.stage === "weightup" || s.kill.stage === "circ" },
+        { text: "Calculate the kill mud weight", at: sy(S.choke), label: "Choke panel", r: 4, act: () => this.openChoke(), watch: () => s.kill.stage === "weightup" || s.kill.stage === "circ" },
+        { text: "Weight up to kill weight at the mud hopper", at: sy(S.hopper), label: "Mud hopper", r: 3.8, act: () => this.openHopper(), watch: () => s.mw >= s.kill.kmw - 0.1 && s.kill.kmw > 0 },
+        { text: "Circulate the kick out through the choke", at: sy(S.choke), label: "Choke panel — circulate", r: 4, act: () => this.openChoke(), watch: () => s.kill.stage === "flowcheck" },
+        { text: "Flow-check and open the BOP at the console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => this.openCabin(), watch: () => s.kill.stage === "none" && !s.kick.shut },
+      ], end: () => { this.holdPending = true; } });
+
+    M({ id: "coffee", title: "Coffee Crisis", sub: "Morale on this rig is a direct function of caffeine. The pot is empty.", trigger: gap(10), a: 0.2, m: 8,
+      start: () => { this.flags.coffeeEmpty = true; this.radio("earl", "Pot's empty. Whoever took the last cup didn't refill it. Which means it was one of you.", 9000); },
+      steps: [
+        { text: "Brew a fresh pot in the doghouse", at: sy(S.coffee), label: "Brew coffee", r: 3, act: (done) => {
+          const stepsDone = [false, false, false];
+          const p = this.open(`<div class="eyebrow">Doghouse</div><h2>Coffee Maker</h2><p>The rig runs on diesel. The crew runs on this.</p>
+            <div class="btns"><button class="b" data-i="0">Scoop grounds</button><button class="b" data-i="1">Add water</button><button class="b" data-i="2">Press BREW</button></div><p class="hint" id="cm"></p>`);
+          p.querySelectorAll<HTMLButtonElement>("[data-i]").forEach((b) => b.onclick = () => { stepsDone[Number(b.dataset.i)] = true; b.disabled = true; this.sfx.click(); if (stepsDone.every(Boolean)) { this.ui.closePanel(); this.flags.coffeeEmpty = false; done(); } });
+        } },
+        { text: "Deliver a cup to Earl", at: () => H.pusher.root.position.add(v3(0, 1.2, 0)), label: "Give Earl his coffee", r: 3.5, act: (done) => {
+          this.say("earl", "…This is decaf.", [{ label: "It's the good decaf.", run: () => { this.gain(0.1, 6); done(); } }, { label: "Marcus used the good creamer.", cls: "alt", run: () => { this.gain(0.1, 4); this.radio("marcus", "I did not use the good creamer."); done(); } }], "Coffee");
+        } },
+      ] });
+
+    M({ id: "deer", title: "Deer on Location", sub: "A deer wandered onto the pad. Nobody has the number for wildlife control. It's now a Company Man issue.", trigger: gap(8), a: 0.3, m: 6,
+      start: () => { this.rig.deerNode.setEnabled(true); this.rig.deerNode.position.set(34, 0, -48); this.deer = { target: null, shoo: 0 }; this.radio("marcus", "There's a deer by the tank battery. It's… looking at me. Do deer do that?"); },
+      steps: [{ text: "Shoo the deer off location (3 times)", at: () => this.rig.deerNode.position.add(v3(0, 1.3, 0)), label: "Shoo deer", r: 5, act: () => {
+        const d = this.deer; d.shoo++; const dp = this.rig.deerNode.position, pp = this.player.pos;
+        const away = dp.subtract(pp); away.y = 0; away.normalize();
+        d.target = dp.add(away.scale(14 + d.shoo * 6)); this.sfx.click();
+        const quips = ["You wave your hands. The deer stares.", "You yell 'HYAH!' It takes two steps.", "You throw your hard hat. Not the best idea."];
+        this.ui.toast("SHOO!", quips[Math.min(2, d.shoo - 1)]);
+      }, watch: () => this.deer.shoo >= 3 && !!this.deer.target && this.rig.deerNode.position.subtract(this.deer.target).length() < 1.5 }],
+      end: () => { this.rig.deerNode.setEnabled(false); this.radio("earl", "That deer has more seniority than you at this company, and it still left."); } });
+
+    M({ id: "snake", title: "Rattlesnake in the Doghouse", sub: "It's under the table. The crew is standing on the benches. Someone has to go in there.", trigger: gap(8), a: 0.3, m: 6,
+      start: () => { this.spawnSnake(); this.radio("cooter", "BOSS. There's a snake in the doghouse. It's a rattler. It's rattling.", 9000); },
+      steps: [{ text: "Go to the doghouse and handle it", at: () => v3(-4.3, F + 0.6, -3.2), label: "Handle the snake", r: 3.5, act: (done) => {
+        this.say("earl", "Company Man's call, boss. What's the plan?", [
+          { label: "Broom", run: () => { this.radio("cooter", "You swung. The snake is now on your hard hat. It's very calm about it. You are not."); this.gain(-0.1, 6); this.sim.addCost(500); done(); } },
+          { label: "Call wildlife control", cls: "alt", run: () => { this.radio("brent", "Wildlife control? That's not in the AFE. I'll need a one-pager."); this.gain(0, 2); done(); } },
+          { label: "Send an intern", cls: "alt", run: () => { this.radio("tyler", "Is this a test? This feels like a test."); this.gain(0, 8); this.inc(1); done(); } },
+          { label: "Stop work, write a JSA, wait", cls: "green", run: () => { this.radio("earl", "Stop work authority, JSA, mutual agreement. The snake didn't sign it, but it left."); this.gain(0.5, 4); done(); } },
+        ], "Snake");
+      } }],
+      end: () => this.despawnSnake() });
+
+    M({ id: "reveal", title: "Gender Reveal", sub: "A floorhand has brought a smoke cannon to the pipe deck. Nobody knows who approved it. Nobody did.", trigger: gap(8), a: 0.3, m: 10,
+      steps: [{ text: "Stop the gender reveal on the pipe deck", at: () => H.hand3.root.position.add(v3(0, 1.4, 0)), label: "Talk to Cooter", r: 5, act: (done) => {
+        this.say("cooter", "It's just a little confetti cannon, boss. It's for my sister-in-law. We're fifty-fifty on the color.", [
+          { label: "Stop work. Pyrotechnics on a drilling location?", cls: "green", run: () => { this.gain(0.4, -4); this.radio("earl", "Good stop. The guy still wants the party. Can he just have cake?"); done(); } },
+          { label: "…do it away from the well.", cls: "alt", run: () => { this.ui.toast("IT'S A… PIPE WRENCH?", "Blue smoke everywhere."); this.sfx.horn(); this.radio("marcus", "The H2S monitor just went off. It's confetti. It's fine. It's fine."); this.gain(-0.4, 14); this.inc(1); done(); } },
+        ], "Stop Work Authority");
+      } }] });
+
+    M({ id: "vp", title: "VP Fly-In", sub: "Chadwick from Houston is landing on the pad in a helicopter. In loafers. He wants to 'touch the rig.'", trigger: gap(8), a: 0.5, m: -5,
+      start: () => { this.rig.heliState.node.setEnabled(true); this.rig.heliState.node.position.set(70, 80, 60); this.rig.heliState.phase = "landing"; this.radio("brent", "Chadwick's flying out. Today. He wants a 'quick walk-around.' Please have the rig look like it's going well.", 10000); },
+      steps: [
+        { text: "Meet Chadwick at the helipad", at: sy(S.helipad), label: "Greet the VP", r: 6, enter: () => {}, act: (done) => {
+          H.vp.root.setEnabled(true);
+          this.say("chad", "Great to be out in the field! Love the 'oil'. Where's my hard hat? I don't see a hard hat.", [
+            { label: "Hand him your spare hard hat & vest", cls: "green", run: () => { this.gain(0.3, 0); done(); } },
+            { label: "Send him to the gate for PPE", cls: "alt", run: () => { this.gain(-0.3, 4); this.radio("roy", "Is the VP here for a tour? He didn't sign in."); done(); } },
+          ], "VP of Operations");
+        } },
+        { text: "Take Chadwick to the driller's console", at: sy(S.cabin), label: "Show Chadwick the console", r: 3.5, act: (done) => {
+          this.say("chad", "So this is where the magic happens? I want to optimize it. I'm increasing WOB to eighty for synergy.", [
+            { label: "Let him", cls: "red", run: () => { const prev = s.wobTarget; s.wobTarget = 80; this.sim.addCost(35000); this.radio("dale", "EIGHTY?! BOSS! THE BIT IS CRYING!", 8000); setTimeout(() => { s.wobTarget = prev; }, 9000); this.gain(0.2, -6); done(); } },
+            { label: "Gently redirect him to a cookie", cls: "green", run: () => { this.gain(0.4, 3); this.radio("chad", "Oh these are good cookies. Who makes these? Let's scale this."); done(); } },
+          ], "VP of Operations");
+        } },
+        { text: "Send Chadwick back to the helicopter", at: sy(S.helipad), label: "Walk Chadwick out", r: 6, act: (done) => {
+          this.say("chad", "Fantastic visit. Super impressive. I have no idea what any of it does. Let's circle back.", [{ label: "Wave goodbye", run: () => { this.rig.heliState.phase = "leaving"; H.vp.root.setEnabled(false); done(); } }], "VP of Operations");
+        } },
+      ] });
+
+    M({ id: "houston", title: "Houston Calls", sub: "The office wants 'a quick one-pager' and 'a few bullets' — at 3 a.m., mid-sentence, on a Sunday.", trigger: gap(8), a: 0.4, m: -4,
+      start: () => { this.flags.houstonPending = true; this.sfx.horn(); this.radio("earl", "Your phone in the trailer won't stop ringing. It's Houston. It's always Houston.", 9000); },
+      steps: [{ text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, watch: () => !!this.flags.houstonDone, act: () => {
+        this.say("brent", "Hey! Quick one. Can you put together a one-pager on why drilling takes time? Also, the VP says 'sync'. What does 'sync' mean?", [
+          { label: "Time and money, Brent. Time and money.", run: () => this.houstonRound2(1) },
+          { label: "I'll send a bullet list.", cls: "alt", run: () => this.houstonRound2(2) },
+          { label: "I'm on a drilling rig, Brent.", cls: "alt", run: () => this.houstonRound2(3) },
+        ], "Houston");
+      } }],
+      end: () => { this.flags.houstonPending = false; } });
+
+    M({ id: "armageddon", title: "Armageddon", sub: "Drill to TD, set casing, and then — apparently — save the planet.", trigger: () => this.flags.chainDone === true, a: 1.0, m: 20,
+      start: () => { this.hold = null; sim.hold = null; this.radio("dale", "Released the hold. We're drilling to TD, boss.", 8000); },
+      steps: [
+        { text: "Drill to TD (8,500 ft)", watch: () => s.depth >= WELL.td - 0.5 && s.mode === "idle" },
+        { text: "Run the casing & cement at the console", at: sy(S.cabin), label: "Driller's console — run casing", r: 3.5, act: () => this.openCabin(), watch: () => s.mode === "casing" || s.mode === "done" },
+        { text: "Casing & cement in the hole…", watch: () => s.casing.phase === "done" || s.mode === "done" },
+        { text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, enter: () => { this.sfx.horn(); this.spawnAsteroid(); this.sim.s.paused = true; this.radio("earl", "Phone's ringing in your trailer. Caller ID says… the White House?", 9000); }, act: (done) => {
+          this.say("president", "We are faced with the very gravest of challenges. An asteroid the size of Texas is on a collision course with Earth. NASA's best astronauts can't drill. You're the best Company Man we've got, and you just delivered an 8,500-foot hole under budget-ish.", [
+            { label: "Is this covered under the AFE?", cls: "alt", run: () => { this.radio("brent", "It is not. But I'll allow it."); done(); } },
+            { label: "Where do I sign?", cls: "green", run: () => { this.radio("earl", "Well, boss. It's been a good tour."); done(); } },
+          ], "Incoming call — Priority One");
+        } },
+        { text: "Board the helicopter at the helipad", at: sy(S.helipad), label: "Board the helicopter", r: 7, enter: () => { this.rig.heliState.node.setEnabled(true); this.rig.heliState.node.position.set(70, 80, 60); this.rig.heliState.phase = "landing"; this.radio("president", "A chopper is en route. Godspeed, Company Man.", 8000); },
+          act: (done) => { if (this.rig.heliState.phase !== "landed") { this.ui.toast("HOLD ON", "The helicopter is still landing"); return; } this.callUp(done); } },
+        { text: "Walk to the drill console on the asteroid", at: () => this.arm.console, label: "Take the driller's seat", r: 4, act: () => this.openArm(), watch: () => this.arm.depth > 0 },
+        { text: "Drill 800 feet through the asteroid", watch: () => this.arm.depth >= 800 },
+        { text: "Plant the bomb and detonate", at: () => this.arm.console, label: "Detonate", r: 4, act: () => this.openArm() },
+      ] });
+    this.missionTotal = this.queue.length;
+  }
+
+  geoProg(done: () => void) {
+    const p = this.open(`<div class="eyebrow">Geologic Prognosis</div><h2>The Plan</h2>
+      <p>Earl pins the geo-prog to the whiteboard. Your intermediate hole runs <b>750 → 8,500 ft</b> through the Delaware Basin.</p>
+      ${this.statRow("Surface → 4,300 ft", "Salt & anhydrite · pore 8.6 ppg")}${this.statRow("4,300 → 6,000 ft", "Bell / Cherry Canyon · pore 9.2 ppg")}
+      ${this.statRow("6,000 ft +", "Delaware sand · pore 10.8 ppg · frac 12.0 ppg", "warn")}
+      ${this.statRow("7,000 ft +", "Gassy stringers possible · losses in Brushy Canyon", "bad")}
+      <p class="hint">Keep mud weight above pore pressure and below fracture. Your mud weight starts at 9.0 ppg.</p>
+      <div class="btns"><button class="b" id="geoOk">Got it</button></div>`, {});
+    p.querySelector<HTMLButtonElement>("#geoOk")!.onclick = () => { this.ui.closePanel(); done(); };
+  }
+
+  tourStop(who: Who, title: string, q: string, opts: [string, string, number, number][], done: () => void) {
+    this.say(who, `${q}`, opts.map((o) => ({ label: o[0], run: () => { this.radio("tyler", o[1], 8000); this.gain(o[2], o[3]); done(); } })), title);
+  }
+  houstonRound2(n: number) {
+    const ans: [string, string][] = [["I'll put that in the slide deck.", "Perfect. One more thing: can we get the well done 'faster and cheaper but also safer'?"], ["Great. Bullets are the best.", "Perfect. One more thing: can we get the well done 'faster and cheaper but also safer'?"], ["Ha! Okay. Love the energy.", "Perfect. One more thing: can we get the well done 'faster and cheaper but also safer'?"]];
+    this.radio("brent", ans[n - 1][0]);
+    this.say("brent", ans[n - 1][1], [
+      { label: "Yes. All three.", run: () => { this.gain(0.2, -2); this.finishHouston(); } },
+      { label: "Pick two.", cls: "alt", run: () => { this.gain(0.4, 3); this.radio("brent", "…that's honestly the first honest answer I've gotten all week."); this.finishHouston(); } },
+    ], "Houston");
+  }
+  finishHouston() { this.flags.houstonDone = true; }
+
+  spawnInterns() {
+    const cols = [["#2f6fa8", "#d9a77f"], ["#a82f6f", "#8a5a3a"], ["#3a8a3f", "#e0b48f"]];
+    cols.forEach((c, i) => { const h = new Human(this.scene, { shirt: c[0], pants: "#3a3a3a", hat: "#f2f2f2", skin: c[1], vest: true, scale: 0.97 }); h.root.position.set(26 - i, 0, 14 + i); this.interns.push(h); });
+    this.trail = []; for (let i = 0; i < 400; i++) this.trail.push(this.player.pos.clone());
+  }
+  despawnInterns() { this.interns.forEach((h) => h.root.dispose()); this.interns = []; }
+  spawnSnake() {
+    const m = new StandardMaterial("snk", this.scene); m.diffuseColor = Color3.FromHexString("#7a6a3a");
+    const root = MeshBuilder.CreateBox("snake", { width: 0.05, height: 0.05, depth: 0.05 }, this.scene); root.isVisible = false;
+    for (let i = 0; i < 7; i++) { const sgm = MeshBuilder.CreateSphere("ss", { diameter: 0.14 - i * 0.008, segments: 4 }, this.scene); sgm.material = m; sgm.parent = root; sgm.position.set(Math.sin(i * 1.1) * 0.25 + i * 0.06, 0.07, i * 0.2 - 0.6); }
+    root.position.set(-4.0, F, -3.7); this.snake = root;
+  }
+  despawnSnake() { this.snake?.dispose(); this.snake = null; }
+  spawnAsteroid() {
+    const a = MeshBuilder.CreateSphere("asteroid", { diameter: 160, segments: 10 }, this.scene);
+    const m = new StandardMaterial("ast", this.scene); m.diffuseColor = Color3.FromHexString("#4a3a32"); m.emissiveColor = Color3.FromHexString("#7a2a10");
+    a.material = m; a.position.set(120, 420, -500); this.asteroid = a; this.asteroidT = 0;
+  }
+  // ---------- ARMAGEDDON (finale, from the original "Roll Coal Make Hole") ----------
+  arm = {
+    site: null as Vector3 | null, console: v3(4000, 1.4, 4006), depth: 0, wob: 22, bit: 100, bombed: false, said: new Set<number>(),
+    rig: null as any, pipe: null as Mesh | null, flash: 0,
+  };
+  armFormation(d: number) {
+    return d < 200 ? { name: "Asteroid Crust", hard: 7, abr: 0.25 } : d < 400 ? { name: "Metallic Core", hard: 10, abr: 0.5 } : { name: "Vibranium", hard: 15, abr: 1.0 };
+  }
+  buildAsteroidSite() {
+    if (this.arm.site) return;
+    const ox = 4000, oz = 4000, sc = this.scene;
+    this.arm.site = v3(ox, 0, oz);
+    const gm = new StandardMaterial("astg", sc); gm.diffuseColor = Color3.FromHexString("#3a2622"); gm.specularColor = Color3.Black();
+    const ground = MeshBuilder.CreateGround("astground", { width: 400, height: 400 }, sc); ground.material = gm; ground.position.set(ox, 0, oz);
+    const rm = new StandardMaterial("astr", sc); rm.diffuseColor = Color3.FromHexString("#2a1a18"); rm.emissiveColor = Color3.FromHexString("#2a0c06");
+    let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 60; i++) {
+      const a = rnd() * Math.PI * 2, r = 25 + rnd() * 160, s = 2 + rnd() * 9;
+      const rock = MeshBuilder.CreateBox("rock", { width: s, height: s * (0.6 + rnd()), depth: s * (0.6 + rnd()) }, sc);
+      rock.material = rm; rock.position.set(ox + Math.cos(a) * r, s * 0.3, oz + Math.sin(a) * r); rock.rotation.set(rnd() * 0.4, rnd() * 3, rnd() * 0.4); rock.freezeWorldMatrix();
+    }
+    // drill rig-lite: platform, mast, moving pipe, console
+    const steel = new StandardMaterial("asts", sc); steel.diffuseColor = Color3.FromHexString("#8a9099");
+    const orange = new StandardMaterial("asto", sc); orange.diffuseColor = Color3.FromHexString("#e0701a");
+    const plat = MeshBuilder.CreateBox("plat", { width: 12, height: 0.5, depth: 12 }, sc); plat.material = steel; plat.position.set(ox, 0.25, oz);
+    this.colliders.push({ x0: ox - 6, x1: ox + 6, y0: 0, y1: 0.5, z0: oz - 6, z1: oz + 6 });
+    for (const [x, z] of [[-2, -2], [2, -2], [2, 2], [-2, 2]]) {
+      const leg = MeshBuilder.CreateCylinder("al", { diameter: 0.35, height: 26, tessellation: 6 }, sc); leg.material = orange; leg.position.set(ox + x * 0.8, 13.2, oz + z * 0.8);
+    }
+    const pipe = MeshBuilder.CreateCylinder("apipe", { diameter: 0.3, height: 1, tessellation: 8 }, sc); pipe.material = steel; this.arm.pipe = pipe; pipe.position.set(ox, 10, oz); pipe.scaling.y = 20;
+    const topd = MeshBuilder.CreateBox("atd", { width: 1.2, height: 2, depth: 1.2 }, sc); topd.material = orange; topd.position.set(ox, 22, oz); this.arm.rig = topd;
+    const con = MeshBuilder.CreateBox("acon", { width: 3, height: 1.2, depth: 1.2 }, sc); con.material = steel; con.position.set(ox + 4, 1.1, oz + 3);
+    const scr = MeshBuilder.CreateBox("ascr", { width: 2.6, height: 0.8, depth: 0.1 }, sc); const sm = new StandardMaterial("asscr", sc); sm.emissiveColor = Color3.FromHexString("#8a1f10"); sm.diffuseColor = Color3.Black(); scr.material = sm; scr.position.set(ox + 4, 1.95, oz + 3.65);
+    this.colliders.push({ x0: ox + 2.5, x1: ox + 5.5, y0: 0.5, y1: 1.7, z0: oz + 2.4, z1: oz + 3.6 });
+    this.arm.console = v3(ox + 4, 1.8, oz + 4.6);
+    // crew in orange suits
+    const crew: [number, number, string][] = [[-3, 3, "chick"], [3, 3.5, "bear"], [-4, -2, "rockhound"]];
+    for (const [x, z] of crew) { const h = new Human(sc, { shirt: "#e07010", pants: "#d0d0d0", hat: "#f2f2f2", skin: "#d9a77f" }); h.root.position.set(ox + x, 0.5, oz + z); h.root.rotation.y = Math.PI; this.armCrew.push(h); }
+  }
+  armCrew: Human[] = [];
+  colliders: import("./builder").AABB[] = [];
+  callUp(done: () => void) {
+    this.player.enabled = false; this.player.unlock();
+    this.rig.humans.vp.root.setEnabled(false);
+    $("fade").style.opacity = "1";
+    this.radio("president", "Hold on to something, Company Man. This is going to be… a long commute.", 4000);
+    setTimeout(() => {
+      this.buildAsteroidSite();
+      this.player.colliders.push(...this.colliders);
+      this.rig.heliState.phase = "leaving";
+      const o = this.arm.site!;
+      this.player.teleport(o.x, 0.6, o.z + 8, Math.PI);
+      this.player.gScale = 0.35; this.player.third = true;
+      this.scene.fogDensity = 0.004;
+      this.asteroidT = -1; if (this.asteroid) { this.asteroid.dispose(); this.asteroid = null; }
+      this.astMode = true;
+      this.sim.s.paused = true;
+      $("fade").style.opacity = "0"; this.player.enabled = true; this.player.lock();
+      this.ui.toast("ARMAGEDDON", "Low gravity. High stakes. Eight hundred feet.");
+      this.radio("harry", "Alright, Company Man. You're the driller now. Get in that seat.", 8000);
+      done();
+    }, 1800);
+  }
+  astMode = false;
+  openArm() {
+    const a = this.arm;
+    if (!a.bombed) { this.flags.armDrilling = true; a.depth = Math.max(a.depth, 0.1); }
+    const render = () => {
+      const f = this.armFormation(a.depth);
+      return `<div class="eyebrow">ARMAGEDDON · Asteroid Drill</div><h2>${a.bombed ? "Detonation" : "Drilling Console"}</h2>
+        ${this.statRow("Depth", a.depth.toFixed(0) + " / 800 ft")}${this.statRow("Formation", f.name)}${this.statRow("Bit health", Math.round(a.bit) + "%", a.bit < 25 ? "bad" : "")}
+        ${a.depth >= 800 && !a.bombed ? `<div class="note">TD. Plant the bomb — it's the only casing this well gets. ($5,000,000)</div>` : `<div class="hint">WOB: <b id="aw">${a.wob}</b> klbs — harder rock wears the bit. Vibranium hardness: 15.</div><input type="range" id="awob" min="0" max="80" value="${a.wob}"/>`}
+        <div class="btns">${a.depth >= 800 && !a.bombed ? `<button class="b red" id="bomb">Plant the bomb</button>` : ""}${a.bombed ? `<button class="b red" id="det">Detonate (Space)</button>` : ""}<button class="b alt" data-close>Close</button></div>`;
+    };
+    const p = this.open(render(), { live: false });
+    const wire = () => {
+      this.closeBtn(p);
+      const w = p.querySelector<HTMLInputElement>("#awob"); if (w) w.oninput = () => { a.wob = Number(w.value); p.querySelector("#aw")!.textContent = w.value; };
+      p.querySelector<HTMLButtonElement>("#bomb")?.addEventListener("click", () => { a.bombed = true; this.sim.addCost(5_000_000); this.ui.toast("BOMB PLANTED", "Press SPACE to detonate"); p.innerHTML = render(); wire(); });
+      p.querySelector<HTMLButtonElement>("#det")?.addEventListener("click", () => this.detonate());
+    };
+    wire();
+    const key = (e: KeyboardEvent) => { if (e.code === "Space" && a.bombed) { e.preventDefault(); window.removeEventListener("keydown", key); this.detonate(); } };
+    if (a.bombed) window.addEventListener("keydown", key);
+  }
+  armUpdate(dt: number) {
+    const a = this.arm;
+    if (!this.astMode || a.bombed) return;
+    if (a.depth > 0 || this.flags.armDrilling) {
+      const f = this.armFormation(a.depth);
+      const rop = Math.max(2, (a.wob * 6 / f.hard) * (0.35 + 0.65 * a.bit / 100)) * 1.0; // ft/min-ish
+      a.depth = Math.min(800, a.depth + rop * dt * 1.2);
+      a.bit = Math.max(0, a.bit - 1.3 * Math.pow(a.wob / 20, 2.2) * f.abr * dt * 0.35);
+      if (a.bit <= 0) { a.bit = 100; this.radio("rockhound", "Bit's cooked! Swapped it for a new one. Don't tell the President.", 6000); this.sim.addCost(50000); }
+    }
+    for (const d of [50, 100, 150, 200, 250, 300, 400, 500, 550, 600, 625, 798, 799]) {
+      if (a.depth >= d && !a.said.has(d)) { a.said.add(d); this.armSpeech(d); }
+    }
+    if (a.pipe && this.arm.site) { a.pipe.scaling.y = 20 + a.depth * 0.02; a.pipe.position.y = 10 - a.depth * 0.005; }
+  }
+  armSpeech(d: number) {
+    const L: Record<number, [Who, string, number?]> = {
+      50: ["president", "We are faced with the very gravest of challenges."], 100: ["chick", "You know, Harry, I swore I'd never drill again after that last one."],
+      150: ["bear", "If this thing blows, I want my last meal to be a Twinkie."], 200: ["bear", "You stick that drill in the ground, and you make it sing!"],
+      250: ["rockhound", "I'm not crazy, I'm just a little unwell."], 300: ["max", "I got a bad feeling about this rock, Harry."],
+      400: ["harry", "I can't do it alone, Colonel. I need your help."],
+      500: ["rockhound", "Guess what guys, it's time to embrace the horror! Look, we've got front row tickets to the end of the earth!"],
+      550: ["chick", "Harry, you ever miss a depth?"], 600: ["harry", "Not once, Chick. Not once."],
+      625: ["harry", "I have been drilling holes in the earth for 30 years. And I have never, NEVER missed a depth that I have aimed for. And by God, I am not gonna miss this one — I will make 800 feet.", 11000],
+      798: ["president", "Mission accomplished. Godspeed, gentlemen."], 799: ["harry", "Yeah one more thing, um… none of them wanna pay taxes again."],
+    };
+    const e = L[d]; if (e) this.radio(e[0], e[1], e[2] ?? 7000);
+  }
+  detonate() {
+    if (this.flags.finish) return;
+    this.flags.finish = true; this.ui.closePanel();
+    $("fade").style.transition = "opacity .15s"; $("fade").style.background = "#fff"; $("fade").style.opacity = "1";
+    this.sfx.thud(); this.sfx.horn();
+    setTimeout(() => {
+      this.ui.panel(`<div class="eyebrow">Victory</div><div class="who"><img src="/portraits/nasa.jpg" alt=""/><div><h2 style="font-size:26px">BEN AFFLECK</h2><p>“I asked Michael why it was easier to train oil drillers to become astronauts than it was to train astronauts to become oil drillers, and he told me to shut the %$&! up. So that was the end of that talk.”</p></div></div><div class="btns"><button class="b" id="vc">Continue</button></div>`, { closable: false });
+      $("fade").style.opacity = "0"; $("fade").style.background = "#000"; $("fade").style.transition = "opacity .5s";
+      $("vc").onclick = () => { this.ui.closePanel(); this.showEnd(); };
+    }, 1500);
+  }
+
+  showEnd() {
+    const s = this.sim.s, hours = s.t / 60;
+    const over = s.cost - WELL.afe;
+    const score = this.approval * 12 + this.morale * 0.3 - over / 70000 - this.incidents * 4 + s.stats.kicksKilled * 6;
+    const grade = score > 80 ? "S" : score > 68 ? "A" : score > 56 ? "B" : score > 44 ? "C" : score > 30 ? "D" : "F";
+    const rows: [string, string][] = [
+      ["Depth drilled", fmt(s.stats.feetDrilled) + " ft"], ["Rig time", `${Math.floor(hours)} hr`], ["Final cost vs AFE", `${money(s.cost)} / ${money(WELL.afe)}`],
+      ["Office approval", this.approval.toFixed(1) + " ★"], ["Crew morale", Math.round(this.morale) + "%"], ["Incidents", String(this.incidents)], ["Kicks killed", String(s.stats.kicksKilled)],
+    ];
+    $("endgrade").textContent = grade;
+    $("endstats").innerHTML = rows.map((r) => `<div class="row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
+    $("endtitle").innerHTML = over <= 0 ? `Under <em>AFE</em>` : `Planet <em>Saved</em>`;
+    $("end").style.display = "grid"; this.player.unlock(); this.started = false;
+  }
+
+  // ---------- mission engine ----------
+  beginMission(m: Mission) {
+    this.active = { m, i: 0 }; this.missionNo++;
+    m.start?.();
+    this.ui.setMission(m.title, m.steps[0].text, `Job ${this.missionNo} of ${this.missionTotal}`);
+    this.sfx.good(); this.ui.toast(m.title);
+    m.steps[0].enter?.();
+  }
+  stepDone() {
+    const a = this.active; if (!a) return;
+    a.i++;
+    if (a.i >= a.m.steps.length) {
+      const m = a.m; m.end?.();
+      this.gain(m.a ?? 0, m.m ?? 0); this.sfx.good(); this.ui.toast("JOB COMPLETE", m.title);
+      this.active = null; this.lastDone = this.realT;
+      if (!(m.priority)) { /* keep order */ }
+      this.ui.setMission("", "", "");
+      this.nextFromStack();
+    } else {
+      this.ui.setMission(a.m.title, a.m.steps[a.i].text, `Job ${this.missionNo} of ${this.missionTotal}`);
+      a.m.steps[a.i].enter?.();
+    }
+  }
+  nextFromStack() {
+    const r = this.stack.pop();
+    if (r) { this.active = r; this.ui.setMission(r.m.title, r.m.steps[r.i].text, "Resumed"); }
+  }
+  updateMissions() {
+    // priority missions can interrupt
+    for (const m of this.queue) {
+      if (m.priority && m.trigger() && !(this.active && this.active.m === m)) {
+        if (this.active) this.stack.push(this.active);
+        this.queue.splice(this.queue.indexOf(m), 1); this.beginMission(m); break;
+      }
+    }
+    if (!this.active) {
+      const head = this.queue.find((m) => !m.priority);
+      if (head && head.trigger()) { this.queue.splice(this.queue.indexOf(head), 1); this.beginMission(head); }
+      else if (this.stack.length) this.nextFromStack();
+    }
+    const a = this.active;
+    if (a) {
+      const st = a.m.steps[a.i];
+      if (st.watch && st.watch()) this.stepDone();
+    }
+    // release the hold chain: once all scripted jobs before the finale are done
+    if (this.holdPending && !this.queue.some((m) => !m.priority && m.id !== "armageddon") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
+    // hold the bit off bottom while the cast of characters is still queued
+    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.sim.hold) { this.sim.hold = 8300; this.radio("dale", "We're 200 feet off TD. Holding here till you've handled whatever's on your plate, boss.", 9000); }
+    // random scripted hazards
+    if (this.sim.s.depth >= 6600 && !this.flags.accumFault) { this.flags.accumFault = true; this.sim.accumDead = true; this.sim.s.accum = 900; }
+    if (this.sim.s.depth >= 6900 && !this.flags.accumHint) { this.flags.accumHint = true; this.radio("dale", "Hey boss, somebody ought to walk the accumulator before we get into that gas zone.", 10000); }
+    if (this.sim.s.fuel < 1200 && !this.flags.fuelWarn) { this.flags.fuelWarn = true; this.radio("earl", "Diesel's getting low. You'll want to order fuel from the tank.", 9000); }
+  }
+
+  // ---------- per-frame ----------
+  timeScale(): number {
+    const s = this.sim.s;
+    if (!this.started) return 0;
+    if (this.ui.panelOpen && !this.live) return 0;
+    if (this.sleeping) return 60;
+    if (s.kick.alarm || s.mode === "shutin" || s.mode === "killing") return 0.7;
+    if (s.mode === "tripping") return 8;
+    if (s.mode === "casing") return 10;
+    return 2;
+  }
+
+  processSimEvents() {
+    for (const e of this.sim.drain()) {
+      switch (e.type) {
+        case "kickAlarm": this.wake("PIT GAIN!"); break;
+        case "autoShutIn": this.radio("dale", "I shut it in myself. Late. Got a bigger gain than I'd like.", 9000); this.inc(1); break;
+        case "lossStart": this.radio("marcus", "We're losing returns! Pits are dropping — you're over frac. Back off the mud weight or pump LCM.", 10000); this.wake("LOSSES"); break;
+        case "lossHealed": this.radio("marcus", "Losses healed. Pits are stable.", 6000); break;
+        case "bitDead": this.radio("dale", "Bit's done, boss. ROP fell off a cliff. We need to trip.", 10000); this.wake("BIT DEAD"); break;
+        case "tripDone": this.radio("dale", "New bit's on bottom. Let's make hole.", 7000); break;
+        case "fractured": this.radio("dale", "Casing pressure's too high — we just broke down the shoe!", 9000); this.inc(1, "SHOE BROKE DOWN"); break;
+        case "killDone": this.radio("marcus", e.good ? "Kill's complete. Textbook." : "Kill's done, but that was ugly. Houston's going to ask.", 9000); if (!e.good) this.inc(1); this.sfx.good(); break;
+        case "blackout": if (!this.flags.blackout) { this.flags.blackout = true; this.radio("earl", "We're out of diesel! Power's down, boss. Order fuel at the tank!", 10000); } break;
+        case "td": this.radio("dale", "TD, boss. Eighty-five hundred feet. Circulate and condition?", 9000); break;
+        case "casingDone": this.ui.toast("CASING & CEMENT IN PLACE"); break;
+        default: break;
+      }
+    }
+  }
+
+  update(dt: number, realDt: number) {
+    this.realT += realDt;
+    this.trailT += realDt;
+    if (this.sleeping && (this.sim.s.t >= this.sleepUntil)) this.wake("Alarm clock");
+    this.updateMissions();
+    this.processSimEvents();
+    if (this.hold !== null) this.sim.hold = this.hold;
+    if (this.sim.s.fuel > 0) this.flags.blackout = false;
+    this.ui.tickPanel();
+    // interns follow the player's trail
+    if (this.interns.length) {
+      if (this.trailT > 0.08) { this.trailT = 0; this.trail.push(this.player.pos.clone()); if (this.trail.length > 400) this.trail.shift(); }
+      this.interns.forEach((h, i) => {
+        const idx = Math.max(0, this.trail.length - 1 - 14 * (i + 1));
+        const t = this.trail[idx], p = h.root.position, dx = t.x - p.x, dz = t.z - p.z, d = Math.hypot(dx, dz);
+        const target = this.player.pos;
+        if (Math.hypot(target.x - p.x, target.z - p.z) > 2.2) {
+          const sp = Math.min(6, Math.max(2.4, d * 4));
+          if (d > 0.1) { p.x += (dx / d) * sp * realDt; p.z += (dz / d) * sp * realDt; pushOutXZ(this.player.colliders, p, p.y, 0.35); h.root.rotation.y = Math.atan2(dx, dz); }
+          p.y += (t.y - p.y) * Math.min(1, realDt * 8); h.animate(realDt, sp);
+        } else { h.animate(realDt, 0); p.y += (t.y - p.y) * Math.min(1, realDt * 8); }
+      });
+    }
+    // deer wander
+    const dn = this.rig.deerNode;
+    if (dn.isEnabled()) {
+      if (this.deer.target) {
+        const d = this.deer.target.subtract(dn.position); d.y = 0; const l = d.length();
+        if (l > 0.4) { dn.position.addInPlace(d.scale((7 * realDt) / l)); pushOutXZ(this.player.colliders, dn.position, 0, 0.8); dn.rotation.y = Math.atan2(d.x, d.z); }
+      } else dn.rotation.y += Math.sin(this.realT * 0.7) * 0.003;
+    }
+    this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0));
+    if (this.asteroid) { this.asteroidT += realDt; this.asteroid.position.y = 420 - this.asteroidT * 30; this.asteroid.position.x = 120 - this.asteroidT * 4; this.asteroid.rotation.y += realDt * 0.05; }
+    this.updateEnv();
+    this.updateHud(realDt);
+  }
+
+  updateEnv() {
+    const s = this.sim.s, c = clockString(s.t), hour = c.hour;
+    const elev = Math.sin(((hour - 6.5) / 13.25) * Math.PI);
+    const day = clamp(elev * 3 + 0.25, 0, 1), night = clamp(1 - (elev + 0.15) / 0.3, 0, 1);
+    const sky = (d: number, dawn: number) => {
+      const night = new Color3(0.03, 0.05, 0.1), dawnC = new Color3(0.93, 0.6, 0.42), dayC = new Color3(0.53, 0.76, 0.93);
+      const base = Color3.Lerp(night, dawnC, clamp(dawn * 1.4, 0, 1));
+      return Color3.Lerp(base, dayC, d);
+    };
+    const dawn = clamp(1 - Math.abs(elev) * 4, 0, 1) * (elev > -0.2 ? 1 : 0);
+    let col = sky(day, dawn);
+    if (this.asteroidT >= 0) col = Color3.Lerp(col, new Color3(0.5, 0.15, 0.08), Math.min(0.7, this.asteroidT / 12));
+    if (this.astMode) { col = new Color3(0.16, 0.04, 0.03); }
+    this.scene.clearColor.set(col.r, col.g, col.b, 1);
+    this.scene.fogColor = col.clone();
+    this.env.hemi.intensity = this.astMode ? 0.55 : 0.5 + 0.4 * day;
+    this.env.sun.intensity = this.astMode ? 0.5 : 0.2 + 1.05 * day;
+    const az = (hour - 6.5) / 13.25 * Math.PI;
+    const ex = Math.cos(az), ey = Math.max(0.12, elev);
+    this.env.sun.direction.set(-ex * 0.8, -ey, -0.45);
+    (this.env.sun as any).__night = night;
+    this.nightFactor = night;
+  }
+  nightFactor = 0;
+
+  updateHud(dt: number) {
+    const s = this.sim.s, c = clockString(s.t);
+    const k = s.kick;
+    const items = [
+      { k: "Day " + c.day, v: c.hhmm }, { k: "Depth", v: fmt(s.depth) + " ft" }, { k: "ROP", v: fmt(s.rop) }, { k: "WOB", v: String(Math.round(s.wob)) },
+      { k: "MW ppg", v: s.mw.toFixed(1) }, { k: "SPP psi", v: fmt(s.spp) }, { k: "Pits Δ", v: (s.pit - s.pitBase >= 0 ? "+" : "") + fmt(s.pit - s.pitBase), warn: k.active || s.loss.active },
+      { k: "Bit", v: Math.round(s.bit) + "%", warn: s.bit < 20 }, { k: "Cost / AFE", v: money(s.cost) + "/" + (WELL.afe / 1e6).toFixed(1) + "M", warn: s.cost > WELL.afe },
+    ];
+    this.ui.setStrip(items);
+    this.ui.setStars(this.approval); this.ui.setBars(this.morale, this.incidents);
+    let alert: string | null = null;
+    if (this.astMode) alert = null;
+    else if (k.active && !k.shut) alert = "⚠ PIT GAIN — WELL FLOWING";
+    else if (k.shut && s.kill.stage !== "flowcheck") alert = "WELL SHUT IN — KILL PROCEDURE";
+    else if (s.loss.active) alert = "LOST CIRCULATION";
+    else if (s.fuel <= 0) alert = "BLACKOUT — OUT OF DIESEL";
+    else if (s.needTrip && s.mode !== "tripping") alert = "BIT DEAD — TRIP REQUIRED";
+    this.ui.setAlert(alert);
+    this.sfx.alarmTick(dt, !!(k.active && !k.shut) || s.fuel <= 0);
+
+    // nearest interactable
+    const p = this.player, eye = p.eyePos(), fwd = p.third ? new Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw)) : p.lookDir();
+    const stepPos = this.active ? this.active.m.steps[this.active.i] : null;
+    const cand: { it: Interactable; score: number }[] = [];
+    const consider = (it: Interactable) => {
+      if (it.ok && !it.ok()) return;
+      const pos = it.pos(), d3 = pos.subtract(eye), dist = d3.length();
+      if (dist > it.r + 1 || Math.abs(pos.y - (p.pos.y + 1.2)) > 3.8) return;
+      const hdist = Math.hypot(d3.x, d3.z);
+      const dir = hdist > 0.01 ? new Vector3(d3.x / hdist, 0, d3.z / hdist) : fwd;
+      const dot = Vector3.Dot(fwd.normalizeToNew().multiplyByFloats(1, 0, 1).normalize(), dir);
+      if (dist > 1.6 && dot < 0.0) return;
+      cand.push({ it, score: dist - dot * 2 - (it.mission ? 2.5 : 0) });
+    };
+    if (stepPos?.act && stepPos.at) {
+      const at = stepPos.at;
+      consider({ pos: () => at() ?? v3(0, -999, 0), label: () => stepPos.label ?? "Interact", r: stepPos.r ?? 3, act: () => stepPos.act!(() => this.stepDone()), mission: true });
+    }
+    for (const it of this.interacts) consider(it);
+    cand.sort((a, b) => a.score - b.score);
+    this.nearest = this.ui.panelOpen || !this.started ? null : cand[0]?.it ?? null;
+    this.ui.setPrompt(this.nearest ? this.nearest.label() : null);
+
+    // task arrows: one per open task (the active job plus any jobs it interrupted)
+    const PAL = ["#f4c04a", "#4aa3e8", "#e5483b", "#3dbb6a", "#c77dff"];
+    const markers: { title: string; pos: Vector3; color: string; primary: boolean }[] = [];
+    const addM = (m: Mission, i: number, primary: boolean, ci: number) => {
+      const at = m.steps[i]?.at?.();
+      if (at) markers.push({ title: m.title, pos: at, color: PAL[ci % PAL.length], primary });
+    };
+    if (this.active) addM(this.active.m, this.active.i, true, 0);
+    for (let j = this.stack.length - 1, c = 1; j >= 0; j--, c++) addM(this.stack[j].m, this.stack[j].i, false, c);
+    const cam = this.scene.activeCamera!;
+    const eng = this.scene.getEngine();
+    const W = document.documentElement.clientWidth || 1, Hh = document.documentElement.clientHeight || 1;
+    const scale = eng.getRenderWidth() / W;
+    const vp = new Viewport(0, 0, eng.getRenderWidth(), eng.getRenderHeight());
+    const fwdRay = cam.getForwardRay().direction;
+    const show = this.started && !this.ui.panelOpen;
+    const pins = markers.map((m) => {
+      const wp = m.pos.add(v3(0, 1.4, 0));
+      const sc = Vector3.Project(wp, Matrix.Identity(), this.scene.getTransformMatrix(), vp);
+      let x = sc.x / scale, y = sc.y / scale;
+      const ahead = Vector3.Dot(wp.subtract(cam.position), fwdRay) > 0;
+      if (!ahead) { x = W - x; y = Hh - y; }
+      const mX = 60, mT = 130, mB = 150;
+      let edge = !ahead || x < mX || x > W - mX || y < mT || y > Hh - mB;
+      const dx = x - W / 2, dy = y - Hh / 2;
+      let px = x, py = y;
+      if (edge) {
+        const k = Math.min((W / 2 - mX) / Math.max(1, Math.abs(dx)), (dy < 0 ? Hh / 2 - mT : Hh / 2 - mB) / Math.max(1, Math.abs(dy)));
+        px = W / 2 + dx * k; py = Hh / 2 + dy * k;
+      }
+      const dist = Math.round(Vector3.Distance(m.pos, p.pos) * 3.281);
+      return { x: px, y: py, show: show && (edge || dist > 8), text: dist + " FT", title: m.title, color: m.color, edge, angle: Math.atan2(dx, -dy), primary: m.primary };
+    });
+    this.ui.setPins(pins);
+    this.updateBeams(show ? markers : []);
+    this.ui.drawMap(p.pos.x, p.pos.z, p.yaw, markers.map((m) => ({ x: m.pos.x, z: m.pos.z, color: m.color })));
+    const target = markers[0]?.pos ?? null; void target;
+
+    // district banner
+    const d = this.district();
+    if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }
+    $("crosshair").style.display = !p.third && this.started && !this.ui.panelOpen ? "block" : "none";
+  }
+
+  private beams: Mesh[] = [];
+  /** Tall translucent light beam over each task target so you can spot it across the pad. */
+  updateBeams(markers: { pos: Vector3; color: string; primary: boolean }[]) {
+    while (this.beams.length < markers.length) {
+      const m = MeshBuilder.CreateCylinder("beam", { diameter: 1.2, height: 70, tessellation: 12 }, this.scene);
+      const mat = new StandardMaterial("beamm", this.scene);
+      mat.disableLighting = true; mat.alpha = 0.2; mat.backFaceCulling = false; mat.disableDepthWrite = true;
+      m.material = mat; m.isPickable = false; m.alwaysSelectAsActiveMesh = true;
+      this.beams.push(m);
+    }
+    this.beams.forEach((b, i) => {
+      const mk = markers[i];
+      if (!mk) { b.setEnabled(false); return; }
+      b.setEnabled(true);
+      const c = Color3.FromHexString(mk.color);
+      (b.material as StandardMaterial).emissiveColor = c;
+      (b.material as StandardMaterial).alpha = mk.primary ? 0.22 : 0.12;
+      b.scaling.x = b.scaling.z = mk.primary ? 1 : 0.6;
+      b.position.set(mk.pos.x, mk.pos.y + 33, mk.pos.z);
+    });
+  }
+
+  district(): string {
+    if (this.astMode) return "Asteroid";
+    const { x, y, z } = this.player.pos;
+    if (y > 6 && Math.abs(x) < 7 && Math.abs(z) < 7) return "Drill Floor";
+    if (Math.abs(x) < 7 && Math.abs(z) < 6.5) return "Substructure";
+    if (z > 70) return "Lease Road";
+    if (x > 27 && z > 4 && z < 40) return "Camp";
+    if (x > 38 && z < -20) return "Water Tanks";
+    if (z < -17 && z > -28 && x > -19 && x < 20) return "Mud Tanks";
+    if (x < -18 && x > -45 && z < 4) return "Power House";
+    if (z < -8 && z > -16 && x < 2 && x > -14) return "Pump Room";
+    if (z > 12 && z < 38 && Math.abs(x) < 13) return "Pipe Racks";
+    if (z < -17) return "Backyard";
+    return "Location";
+  }
+
+  interact() {
+    if (!this.started || this.ui.panelOpen || !this.nearest) return;
+    this.sfx.click(); this.nearest.act();
+  }
+}

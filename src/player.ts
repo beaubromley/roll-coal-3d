@@ -15,6 +15,10 @@ export class Player {
   body: Human;
   keys = new Set<string>();
   locked = false;
+  dragging = false;
+  private lx = 0; private ly = 0;
+  lockFailed = false;
+  onLockFailed: () => void = () => {};
   enabled = true;
   gScale = 1;
   moved = 0;
@@ -38,14 +42,35 @@ export class Player {
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
     window.addEventListener("blur", () => this.keys.clear());
     document.addEventListener("pointerlockchange", () => { this.locked = document.pointerLockElement === canvas; });
+    // Pointer-lock look (normal browsers).
+    document.addEventListener("pointerlockerror", () => this.failLock());
     document.addEventListener("mousemove", (e) => {
-      if (!this.locked || !this.enabled) return;
+      if (!this.enabled || !this.locked) return;
       this.yaw += e.movementX * 0.0022;
       this.pitch = Math.max(-1.3, Math.min(1.3, this.pitch + e.movementY * 0.0022));
     });
+    // Fallback for browsers/panes that refuse pointer lock (e.g. embedded previews): click-and-drag to look.
+    // Uses Pointer Events because some embedded panes only deliver those.
+    canvas.addEventListener("pointerdown", (e) => { if (e.button === 0 && !this.locked) { this.dragging = true; this.lx = e.clientX; this.ly = e.clientY; } });
+    const endDrag = () => { this.dragging = false; };
+    window.addEventListener("pointerup", endDrag); window.addEventListener("pointercancel", endDrag);
+    window.addEventListener("pointermove", (e) => {
+      if (!this.dragging || this.locked || !this.enabled) return;
+      this.yaw += (e.clientX - this.lx) * 0.0022;
+      this.pitch = Math.max(-1.3, Math.min(1.3, this.pitch + (e.clientY - this.ly) * 0.0022));
+      this.lx = e.clientX; this.ly = e.clientY;
+    });
   }
 
-  lock() { if (!this.locked) this.canvas.requestPointerLock?.(); }
+  private failLock() { if (!this.lockFailed) { this.lockFailed = true; this.onLockFailed(); } }
+  lock() {
+    if (this.locked) return;
+    try {
+      const r: any = this.canvas.requestPointerLock?.();
+      if (r && typeof r.catch === "function") r.catch(() => this.failLock());
+      else if (!this.canvas.requestPointerLock) this.failLock();
+    } catch { this.failLock(); }
+  }
   unlock() { if (this.locked) document.exitPointerLock?.(); }
 
   teleport(x: number, y: number, z: number, yaw?: number) {

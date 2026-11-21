@@ -53,6 +53,16 @@ export class Sfx {
   radio() { this.tone(1800, 0.05, "square", 0.04); this.tone(1300, 0.07, "square", 0.04, undefined, 0.07); }
   step() { this.tone(70 + Math.random() * 20, 0.07, "triangle", 0.08); }
   thud() { this.tone(90, 0.3, "sine", 0.3, 40); }
+  thunder() {
+    const c = this.ctx; if (!c || this.muted) return;
+    this.tone(70, 1.4, "sawtooth", 0.14, 28); this.tone(46, 1.8, "sine", 0.22, 22, 0.05);
+    const len = Math.floor(c.sampleRate * 1.2), buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 380;
+    const g = c.createGain(); g.gain.value = 0.35;
+    src.connect(lp).connect(g).connect(this.master); src.start();
+  }
   horn() { this.tone(440, 0.45, "sawtooth", 0.1); this.tone(554, 0.45, "sawtooth", 0.1); }
   alarmTick(dt: number, on: boolean) {
     this.alarmTimer -= dt;

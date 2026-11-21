@@ -7,6 +7,7 @@ import { Sim, WELL } from "./sim";
 import { Sfx } from "./audio";
 import { UI, $ } from "./ui";
 import { Game } from "./game";
+import { TitleFx } from "./titlefx";
 
 const canvas = document.getElementById("view") as HTMLCanvasElement;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: false, stencil: false, antialias: true }, true);
@@ -52,14 +53,30 @@ player.teleport(0, 0.5, 112, Math.PI);
 // ---- start / intro ----
 $("loading").style.display = "none";
 $("intro").style.display = "grid";
+const fx = new TitleFx($("titleFx") as HTMLCanvasElement);
+fx.onThunder = () => {
+  const st = $("stage"); st.classList.remove("shake"); void st.offsetWidth; st.classList.add("shake");
+  setTimeout(() => sfx.thunder(), 120);
+};
+fx.start();
+const introOpen = () => $("intro").style.display !== "none";
+$("ctrlBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("controls").style.display = "flex"; $("btnrow").style.visibility = "hidden"; $("pressstart").style.visibility = "hidden"; });
+$("ctrlBack").addEventListener("click", () => { sfx.click(); $("controls").style.display = "none"; $("btnrow").style.visibility = "visible"; $("pressstart").style.visibility = "visible"; });
+window.addEventListener("keydown", (e) => {
+  if (!introOpen() || e.repeat) return;
+  const inControls = $("controls").style.display !== "none";
+  if (inControls && (e.code === "Escape" || e.code === "Enter")) $("ctrlBack").click();
+  else if (!inControls && (e.code === "Enter" || e.code === "Space")) { e.preventDefault(); $("startBtn").click(); }
+});
 $("startBtn").addEventListener("click", () => {
-  sfx.init();
+  sfx.init(); sfx.good(); fx.stop();
   $("intro").style.display = "none";
   $("hud").style.display = "block";
   game.started = true;
   player.lock();
-  ui.toast("ROLL COAL, MAKE HOLE", "Walk to the gate shack and sign in.");
+  ui.toast("ROLL COAL, MAKE HOLE 2", "Walk to the gate shack and sign in.");
 });
+player.onLockFailed = () => ui.toast("MOUSE CAPTURE UNAVAILABLE", "Click and drag to look around");
 canvas.addEventListener("click", () => { if (game.started && !ui.panelOpen) player.lock(); });
 window.addEventListener("keydown", (e) => {
   if (e.code === "KeyE" && !e.repeat) game.interact();

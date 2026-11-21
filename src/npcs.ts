@@ -140,6 +140,13 @@ export class Human {
     const band = o.band !== undefined ? o.band : rnd(2) < 0.3 ? pick(["#b3231c", "#1d6fb5", "#2f7d3e", "#e8b923"], 3) : false;
     const boots = pick(["#2a1d12", "#3a2a1c", "#1a1a1a", "#4a3a2a"], 4);
     tint(/^Brown2/, boots); tint(/^Brown(?!2)/, o.shirt); tint(/^Beige/, o.shirt); tint(/^LightBlue/, o.pants); tint(/^Skin/, o.skin); tint(/^Eyebrows/, hair);
+    // boots: the "Brown" material is shared by shirt, gloves and boots, so give the feet meshes their own copies and keep them dark
+    for (const mesh of c.meshes) if (/feet/i.test(mesh.name) && mesh.material) {
+      const mt: any = mesh.material.clone(mesh.material.name + "_boot");
+      const dark = /Brown2/.test(String(mt.name));
+      if (mt && "albedoColor" in mt) mt.albedoColor = Color3.FromHexString(boots).toLinearSpace().scale(dark ? 0.55 : 1);
+      mesh.material = mt;
+    }
     if (band) tint(/^Red/, band);
     else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
     const sy = o.height ?? 0.95 + rnd(5) * 0.11, sx = 0.95 + rnd(6) * 0.14;
@@ -150,10 +157,10 @@ export class Human {
     const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
     const hatCol = o.hat ?? "#f4f4f4";
     if (o.hat) {
-      add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 14, slice: 0.55 }, sc), hatCol, "Head", 0, -0.1, 0.0);
-      add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, -0.095, 0.01);
-      add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, -0.1, 0.17);
-      add(MeshBuilder.CreateBox("rdg", { width: 0.035, height: 0.025, depth: 0.27 }, sc), hatCol, "Head", 0, 0.05, 0.0);
+      add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 14, slice: 0.55 }, sc), hatCol, "Head", 0, -0.115, 0.0);
+      add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, -0.105, 0.01);
+      add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, -0.11, 0.17);
+      add(MeshBuilder.CreateBox("rdg", { width: 0.04, height: 0.02, depth: 0.24 }, sc), hatCol, "Head", 0, 0.032, 0.0);
     }
     if (o.vest) {
       add(MeshBuilder.CreateBox("v", { width: 0.4, height: 0.5, depth: 0.25 }, sc), "#e8f542", "Spine2", 0, -0.04, 0.02);
@@ -161,7 +168,7 @@ export class Human {
       add(MeshBuilder.CreateBox("vs2", { width: 0.41, height: 0.06, depth: 0.26 }, sc), "#cfd3d6", "Spine2", 0, 0.08, 0.02);
     }
     if (o.detail) {
-      add(MeshBuilder.CreateBox("gl", { width: 0.15, height: 0.05, depth: 0.03 }, sc), "#9fd3e8", "Head", 0, -0.12, 0.105);
+      add(MeshBuilder.CreateBox("gl", { width: 0.15, height: 0.05, depth: 0.03 }, sc), "#9fd3e8", "Head", 0, -0.18, 0.1);
     }
     this.chParts = parts;
     this.ppeLocal = new Vector3();

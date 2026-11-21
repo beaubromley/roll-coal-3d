@@ -256,12 +256,33 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // ---- iron roughneck, setback, fingerboard ----
   b.slab("orange", -2.4, F, 0.6, -1.4, F + 0.7, 1.6, true);
-  const rough = node("rough", scene, -1.6, F + 1.0, 1.0);
+  // ST-80 iron roughneck: rail-mounted pedestal, column, parallel-link boom, and a head with torque wrench (lower) and spinner (upper)
+  b.slab("steel", -2.5, F, 0.5, -2.35, F + 0.12, 1.7); b.slab("steel", -1.45, F, 0.5, -1.3, F + 0.12, 1.7);        // floor rails
+  b.label("ST-80", -1.9, F + 0.5, 1.72, 0.8, 0.26, Math.PI, "#233a52", "#ffd24a", 60);
+  for (const z of [0.75, 1.45]) for (const x of [-2.42, -1.38]) b.cyl("black", x, F + 0.2, z, 0.28, 0.14, { axis: "x", tess: 10 });   // carriage wheels
+  const rough = node("rough", scene, -1.6, F + 0.7, 1.0);
   {
-    const arm = MeshBuilder.CreateBox("ra", { width: 0.2, height: 0.2, depth: 1.5 }, scene);
-    arm.position.z = -0.7; arm.material = b.getMat("orange"); arm.parent = rough;
-    const head = MeshBuilder.CreateCylinder("rh", { diameter: 0.7, height: 0.5, tessellation: 10 }, scene);
-    head.position.z = -1.5; head.material = b.getMat("yellow"); head.parent = rough;
+    const mk = (m: Mesh, mat: string, x: number, y: number, z: number) => { m.material = b.getMat(mat); m.parent = rough; m.position.set(x, y, z); return m; };
+    const bx = (w: number, h: number, d: number, mat: string, x: number, y: number, z: number) => mk(MeshBuilder.CreateBox("rb", { width: w, height: h, depth: d }, scene), mat, x, y, z);
+    const cy = (dia: number, h: number, mat: string, x: number, y: number, z: number, tess = 12) => mk(MeshBuilder.CreateCylinder("rc", { diameter: dia, height: h, tessellation: tess }, scene), mat, x, y, z);
+    cy(0.9, 0.16, "dsteel", 0, 0.08, 0);                          // turntable
+    bx(0.5, 1.05, 0.5, "orange", 0, 0.68, 0);                     // column
+    bx(0.62, 0.22, 0.62, "yellow", 0, 1.25, 0);                   // column cap
+    bx(0.2, 0.2, 1.9, "orange", 0, 1.05, -0.95);                  // upper boom link
+    bx(0.14, 0.14, 1.9, "orange", 0, 0.7, -0.95);                 // lower parallel link
+    bx(0.12, 0.5, 0.12, "dsteel", 0, 0.88, -1.8);                 // head hanger
+    cy(0.1, 0.6, "steel", 0.2, 0.9, -0.25, 8).rotation.x = Math.PI / 2;  // boom ram
+    // head: lower torque wrench, upper spinning wrench, jaws and cylinders
+    cy(0.8, 0.3, "dsteel", 0, 0.5, -1.9, 14);
+    cy(0.62, 0.32, "yellow", 0, 0.9, -1.9, 14);
+    cy(0.4, 0.34, "black", 0, 0.7, -1.9, 12);                     // throat between them
+    for (const sx of [-1, 1]) {
+      bx(0.22, 0.2, 0.14, "steel", sx * 0.3, 0.5, -1.62);          // lower jaws
+      bx(0.2, 0.18, 0.12, "steel", sx * 0.24, 0.9, -1.64);         // upper jaws
+      cy(0.08, 0.45, "steel", sx * 0.34, 0.7, -1.9, 8);            // hydraulic cylinders
+      cy(0.14, 0.12, "red", sx * 0.34, 0.95, -1.9, 8);             // spinner motors
+    }
+    bx(0.4, 0.1, 0.5, "black", 0, 0.3, -1.65);                    // hose bundle tray
   }
   b.slab("dsteel", -5.9, F, 0.7, -2.3, F + 0.1, 5.7);                          // setback pad
   b.blocker(-5.95, F, 0.65, -2.25, F + 2.2, 5.75);                           // racked stands: not walkable
@@ -350,15 +371,40 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // ---- dynamic: top drive, block, cables, string, hose ----
   const td = node("topdrive", scene, 0, F + 20, -0.3);
+  const tdSpin = node("tdspin", scene, 0, -0.75, 0); tdSpin.parent = td;       // everything below the gearbox that turns with the string
   {
-    const body = MeshBuilder.CreateBox("tdb", { width: 1.0, height: 2.4, depth: 0.9 }, scene);
-    body.material = b.getMat("orange"); body.parent = td; body.position.y = 0;
-    const motor = MeshBuilder.CreateCylinder("tdm", { diameter: 0.8, height: 1.0, tessellation: 10 }, scene);
-    motor.material = b.getMat("dsteel"); motor.parent = td; motor.position.y = 1.7;
-    const blk = MeshBuilder.CreateBox("blk", { width: 1.5, height: 1.4, depth: 0.8 }, scene);
-    blk.material = b.getMat("yellow"); blk.parent = td; blk.position.y = 3.1;
-    const quill = MeshBuilder.CreateCylinder("q", { diameter: 0.28, height: 1.0, tessellation: 8 }, scene);
-    quill.material = b.getMat("steel"); quill.parent = td; quill.position.y = -1.7;
+    const put = (m: Mesh, mat: string, x: number, y: number, z: number, parent: TransformNode = td) => { m.material = b.getMat(mat); m.parent = parent; m.position.set(x, y, z); return m; };
+    const bx = (w: number, h: number, d: number, mat: string, x: number, y: number, z: number, parent?: TransformNode) => put(MeshBuilder.CreateBox("tb", { width: w, height: h, depth: d }, scene), mat, x, y, z, parent);
+    const cy = (dia: number, h: number, mat: string, x: number, y: number, z: number, tess = 12, parent?: TransformNode) => put(MeshBuilder.CreateCylinder("tc", { diameter: dia, height: h, tessellation: tess }, scene), mat, x, y, z, parent);
+    // guide dolly: two side plates that ride the mast rails, with roller blocks
+    for (const sx of [-1, 1]) { bx(0.12, 2.6, 0.7, "dsteel", sx * 0.62, 0.35, 0); for (const y of [-0.7, 1.4]) bx(0.2, 0.3, 0.8, "steel", sx * 0.7, y, 0); }
+    bx(1.3, 0.3, 0.8, "dsteel", 0, 1.55, 0);                                 // dolly top crossbar
+    bx(1.3, 0.3, 0.8, "dsteel", 0, -0.7, 0);                                 // dolly bottom crossbar
+    // main gearbox and drive motor
+    bx(0.95, 1.2, 0.85, "orange", 0, 0.3, 0);
+    cy(0.75, 1.3, "dsteel", 0, 0.95, -0.55, 14).rotation.z = Math.PI / 2;     // AC motor, lying across the back
+    for (let i = 0; i < 6; i++) cy(0.82, 0.05, "steel", -0.5 + i * 0.2, 0.95, -0.55, 14).rotation.z = Math.PI / 2;  // cooling fins
+    cy(0.2, 0.4, "red", 0.75, 0.95, -0.55, 8).rotation.z = Math.PI / 2;       // blower
+    // gooseneck and washpipe
+    cy(0.3, 0.7, "steel", 0, 1.35, 0.1, 10);
+    cy(0.22, 0.5, "steel", 0, 1.55, -0.18, 8).rotation.x = 0.9;
+    // bails (links) up to the travelling block
+    for (const sx of [-1, 1]) bx(0.09, 1.9, 0.12, "steel", sx * 0.55, 2.2, 0.15);
+    // travelling block: sheave housing, sheaves, hook
+    bx(1.5, 0.8, 0.8, "yellow", 0, 3.35, 0);
+    for (const sx of [-0.45, 0, 0.45]) cy(0.95, 0.22, "dsteel", sx, 3.4, 0.46, 18).rotation.x = Math.PI / 2;
+    bx(0.4, 0.3, 0.4, "dsteel", 0, 2.9, 0);
+    // pipe handler: link tilt arms, elevators
+    for (const sx of [-1, 1]) {
+      bx(0.07, 1.3, 0.09, "steel", sx * 0.62, -1.4, 0.35).rotation.x = 0.12;
+      bx(0.2, 0.25, 0.55, "dsteel", sx * 0.35, -2.05, 0.7);
+    }
+    bx(0.9, 0.12, 0.35, "yellow", 0, -2.2, 0.75);
+    // rotating stem under the gearbox: IBOP valve, saver sub, quill
+    cy(0.38, 0.5, "red", 0, -0.2, 0, 12, tdSpin);                            // upper IBOP actuator
+    cy(0.32, 0.4, "steel", 0, -0.62, 0, 10, tdSpin);                         // lower IBOP
+    cy(0.28, 0.3, "dsteel", 0, -0.98, 0, 10, tdSpin);                        // saver sub
+    cy(0.24, 0.15, "pipeband", 0, -1.2, 0, 10, tdSpin);                      // tool joint
   }
   const mkCable = (x: number) => {
     const c = MeshBuilder.CreateCylinder("cab", { diameter: 0.05, height: 1, tessellation: 4 }, scene);
@@ -569,9 +615,14 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.room({ x0: 5, z0: 94, x1: 8.4, z1: 98, y0: 0, h: 2.6, wall: "trailer", roof: "dsteel", floor: "dsteel",
     door: { side: "-x", c: 96, w: 1.1 } });
   b.slab("wood", 6.5, 0, 96.8, 8.2, 1.0, 97.8, true);
-  b.label("PPE REQUIRED\nHARD HAT • FRC\nGLASSES • GLOVES", 3.0, 2.2, 96, 2.2, 1.5, -Math.PI / 2, "#7a1a14", "#ffffff", 40);
-  b.label("AL DRILLING • RIG 107\nAUTHORIZED PERSONNEL", -3.2, 3.4, 96, 3.2, 1.0, Math.PI / 2, "#233a52", "#ffd24a", 40);
-  b.cyl("dsteel", -4.2, 1.6, 96, 0.18, 3.2, { tess: 6 });
+  // two signs on posts beside the entry road, facing the traffic coming in from +z
+  b.label("PPE REQUIRED\nHARD HAT • FRC\nGLASSES • GLOVES", 4.0, 2.25, 95.5, 2.2, 1.5, Math.PI, "#7a1a14", "#ffffff", 40);
+  for (const x of [3.05, 4.95]) b.cyl("dsteel", x, 1.5, 95.42, 0.12, 3.0, { tess: 6 });
+  b.beam("dsteel", v(2.9, 3.0, 95.42), v(5.1, 3.0, 95.42), 0.08);
+  b.label("AL DRILLING • RIG 107\nAUTHORIZED PERSONNEL", -4.4, 3.0, 95.5, 3.2, 1.0, Math.PI, "#233a52", "#ffd24a", 40);
+  for (const x of [-5.85, -2.95]) b.cyl("dsteel", x, 1.8, 95.42, 0.14, 3.6, { tess: 6 });
+  b.beam("dsteel", v(-6.0, 3.55, 95.42), v(-2.8, 3.55, 95.42), 0.08);
+  b.beam("dsteel", v(-6.0, 2.45, 95.42), v(-2.8, 2.45, 95.42), 0.08);
   spots.gate = v(6.9, 1.4, 96.4);
   // pad edge fence posts
   for (let i = -12; i <= 12; i++) { b.box("dsteel", i * 5, 0.8, 62, 0.1, 1.6, 0.1); b.box("dsteel", i * 5, 0.8, -66, 0.1, 1.6, 0.1); }
@@ -724,7 +775,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       : f.connecting ? F + 26 : F + 2.6 + (1 - into / 93) * 24;
     tdY += (targetY - tdY) * Math.min(1, dt * (f.connecting || f.tripping ? 2.5 : 8));
     td.position.y = tdY;
-    td.rotation.y += f.rotating ? dt * 5 : 0;
+    tdSpin.rotation.y += f.rotating ? dt * 5 : 0;
     rotMark.rotation.y += f.rotating ? dt * 5 : 0;
     const blockY = tdY + 3.1;
     cables.forEach((c, i) => {

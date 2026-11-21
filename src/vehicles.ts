@@ -130,7 +130,7 @@ export class Vehicles {
 
   private buildF250(x: number, z: number, yaw: number): Veh {
     const v = this.blank("f250", "Lifted F-250", "car", x, z, yaw), r = v.root;
-    Object.assign(v, { wheelbase: 3.9, maxFwd: 26, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0], camDist: 8.5, camHeight: 3.2, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
+    Object.assign(v, { wheelbase: 3.9, maxFwd: 26, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0], camDist: 14, camHeight: 4.6, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
       controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  V camera  ·  E get out" });
     const BODY = "#9c1c16", CH = "#c4c8ce";
     this.box(v, r, "#22262c", 1.5, 0.28, 5.6, 0, 1.05, 0);                       // frame rails
@@ -182,7 +182,7 @@ export class Vehicles {
   /** SkyTrak-style telehandler: side cab, pivoting telescopic boom, tilting fork carriage. */
   private buildForklift(x: number, z: number, yaw: number): Veh {
     const v = this.blank("forklift", "SkyTrak Telehandler", "forklift", x, z, yaw), r = v.root;
-    Object.assign(v, { wheelbase: 3.2, maxFwd: 9, maxRev: 5, accel: 3.6, radius: 1.2, pts: [1.8, 0, -1.8], camDist: 10.5, camHeight: 3.6, eye: { x: -0.75, y: 2.6, z: 0.45 }, boxH: 2.5,
+    Object.assign(v, { wheelbase: 3.2, maxFwd: 9, maxRev: 5, accel: 3.6, radius: 1.2, pts: [1.8, 0, -1.8], camDist: 16, camHeight: 5.0, eye: { x: -0.75, y: 2.6, z: 0.45 }, boxH: 2.5,
       controls: "W gas · S brake/reverse · A/D steer · R/F boom · T/G extend · Y/H tilt · SPACE pick up / set down · E get out" });
     const Y = "#f0b400", D = "#25282d", G = "#d4d7da";
     this.box(v, r, D, 2.0, 0.3, 5.2, 0, 0.7, 0);                                  // axle frame
@@ -258,7 +258,7 @@ export class Vehicles {
 
   private buildManlift(x: number, z: number, yaw: number): Veh {
     const v = this.blank("manlift", "Scissor Manlift", "lift", x, z, yaw), r = v.root;
-    Object.assign(v, { wheelbase: 2.4, maxFwd: 3.2, maxRev: 2.4, accel: 2.5, radius: 0.95, pts: [0.9, -0.9], camDist: 9, camHeight: 3.4, eye: { x: 0, y: 1.6, z: 0.1 }, boxH: 1.3,
+    Object.assign(v, { wheelbase: 2.4, maxFwd: 3.2, maxRev: 2.4, accel: 2.5, radius: 0.95, pts: [0.9, -0.9], camDist: 14, camHeight: 4.8, eye: { x: 0, y: 1.6, z: 0.1 }, boxH: 1.3,
       controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  V camera  ·  E get out" });
     const O = "#e07a10", D = "#3d434b";
     this.box(v, r, O, 1.7, 0.55, 3.0, 0, 0.62, 0);

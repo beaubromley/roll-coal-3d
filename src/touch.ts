@@ -87,6 +87,18 @@ export class TouchControls {
     });
     press($("tb-cam"), () => { this.player.third = !this.player.third; });
     press($("tb-pause"), () => this.game.togglePause(true));
+    // steering strip: slide the finger left and right, any position along the strip is the steering angle (centre = straight)
+    const steer = $("td-steer"), sknob = $("td-knob"); let steerId = -1;
+    const setSteer = (e: PointerEvent) => {
+      const r = steer.getBoundingClientRect(), half = r.width / 2 - 34;
+      let x = (e.clientX - (r.left + r.width / 2)) / half; x = Math.max(-1, Math.min(1, x));
+      if (Math.abs(x) < 0.06) x = 0;
+      this.player.touchMove.x = x; sknob.style.transform = `translateX(${x * half}px)`;
+    };
+    steer.addEventListener("pointerdown", (e) => { if (steerId !== -1) return; e.preventDefault(); e.stopPropagation(); steerId = e.pointerId; try { steer.setPointerCapture(e.pointerId); } catch { /* synthetic */ } steer.classList.add("on"); setSteer(e); });
+    steer.addEventListener("pointermove", (e) => { if (e.pointerId === steerId) setSteer(e); });
+    const steerEnd = (e: PointerEvent) => { if (e.pointerId !== steerId) return; steerId = -1; steer.classList.remove("on"); this.player.touchMove.x = 0; sknob.style.transform = "translateX(0)"; };
+    steer.addEventListener("pointerup", steerEnd); steer.addEventListener("pointercancel", steerEnd);
     // driving: each pedal / steer / boom button holds a key (the vehicle reads keys), released on lift-off
     document.querySelectorAll<HTMLButtonElement>("#drive .td").forEach((el) => {
       const code = el.dataset.key!;
@@ -98,6 +110,7 @@ export class TouchControls {
   /** Called every frame: the USE button lights up and shows a label when something is in reach. */
   update() {
     // got out of the vehicle (or it was taken away) while a button was down: let go of everything
+    if (!document.body.classList.contains("driving") && this.player.touchMove.x && this.joyId === -1) { this.player.touchMove.x = 0; document.getElementById("td-knob")!.style.transform = "translateX(0)"; }
     if (this.held.size && !document.body.classList.contains("driving")) {
       for (const code of this.held) window.dispatchEvent(new KeyboardEvent("keyup", { code }));
       this.held.clear(); document.querySelectorAll("#drive .td.on").forEach((e) => e.classList.remove("on"));

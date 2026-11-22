@@ -165,7 +165,7 @@ export class Human {
         const e = Vector3.TransformCoordinates(bp.end.getAbsolutePosition(), inv), k = Vector3.TransformCoordinates(bp.knee.getAbsolutePosition(), inv);
         const up = k.subtract(e); if (up.lengthSquared() < 1e-6) continue; up.normalize();
         const f = fwd.subtract(up.scale(Vector3.Dot(fwd, up))); if (f.lengthSquared() < 1e-6) continue; f.normalize();   // body-forward made perpendicular to the shin
-        Quaternion.FromLookDirectionLHToRef(f, up, q);
+        Quaternion.FromLookDirectionLHToRef(f.scale(-1), up, q);   // (this helper points -z along the look direction here, so give it the opposite)
         bp.node.position.copyFrom(e); bp.node.rotationQuaternion = q.clone();
       }
     });

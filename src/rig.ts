@@ -817,7 +817,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("red", WX + 1.75, 1.45, WZ + 1.9, WX + 2.45, 1.65, WZ + 1.95);
   b.blocker(WX + 1.7, 0, WZ + 1.5, WX + 2.5, 1.9, WZ + 1.9);
 
-  // ================= DEAD BIRDS: all over the ground, thickest around the windmill =================
+  // ================= DEAD BIRDS: only around the windmill, thickest at its base =================
   {
     b.defMat("bird1", "#5a5048"); b.defMat("bird2", "#8a8f94"); b.defMat("bird3", "#2e2a28"); b.defMat("bird4", "#c9c2b0"); b.defMat("birdw", "#463e38"); b.defMat("birdfeet", "#d9a441");
     let sd = 4242; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
@@ -833,9 +833,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       }
     };
     let placed = 0, tries = 0;
-    while (placed < 170 && tries++ < 2000) { const x = -120 + r() * 240, z = -75 + r() * 200; if (open(x, z)) { bird(x, z); placed++; } }
-    placed = 0; tries = 0;
-    while (placed < 90 && tries++ < 1000) { const a = r() * Math.PI * 2, d = 4 + r() * 26; const x = WX + Math.cos(a) * d, z = WZ + Math.sin(a) * d; if (open(x, z)) { bird(x, z); placed++; } }
+    while (placed < 130 && tries++ < 2000) { const a = r() * Math.PI * 2, d = 3 + Math.pow(r(), 1.3) * 28; const x = WX + Math.cos(a) * d, z = WZ + Math.sin(a) * d; if (open(x, z)) { bird(x, z); placed++; } }
   }
 
   const merged = b.finish();

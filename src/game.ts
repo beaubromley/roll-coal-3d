@@ -931,7 +931,7 @@ export class Game {
   beginMission(m: Mission) {
     this.active = { m, i: 0 }; this.missionNo++;
     m.start?.();
-    this.ui.setMission(m.title, m.steps[0].text, `Job ${this.missionNo} of ${this.missionTotal}`);
+    this.ui.setMission(m.title, m.steps[0].text, this.jobLabel(m));
     this.sfx.good(); this.ui.toast(m.title);
     m.steps[0].enter?.();
   }
@@ -946,13 +946,18 @@ export class Game {
       this.ui.setMission("", "", "");
       this.nextFromStack();
     } else {
-      this.ui.setMission(a.m.title, a.m.steps[a.i].text, `Job ${this.missionNo} of ${this.missionTotal}`);
+      this.ui.setMission(a.m.title, a.m.steps[a.i].text, this.jobLabel(a.m));
       a.m.steps[a.i].enter?.();
     }
   }
+  /** progress label: jobs finished so far, not the order they happened to start in (urgent ones interrupt the list) */
+  jobLabel(m: Mission): string {
+    const done = this.doneIds.size, total = this.missionTotal;
+    return m.priority ? `URGENT · ${done} of ${total} jobs done` : `Job ${Math.min(total, done + 1)} of ${total}`;
+  }
   nextFromStack() {
     const r = this.stack.pop();
-    if (r) { this.active = r; this.ui.setMission(r.m.title, r.m.steps[r.i].text, "Resumed"); }
+    if (r) { this.active = r; this.ui.setMission(r.m.title, r.m.steps[r.i].text, this.jobLabel(r.m)); }
   }
   updateMissions() {
     // priority missions can interrupt

@@ -152,6 +152,7 @@ export class Human {
       this.root.computeWorldMatrix(true); c.holder.computeWorldMatrix(true);
       for (const n of c.holder.getChildTransformNodes(false)) n.computeWorldMatrix(true);
       for (const m of c.meshes) m.computeWorldMatrix(true);
+      L.computeWorldMatrix(true); Rb.computeWorldMatrix(true);
       const bone = { L, R: Rb }, inv = { L: L.getWorldMatrix().clone().invert(), R: Rb.getWorldMatrix().clone().invert() };
       const lp = L.getAbsolutePosition().clone(), rp = Rb.getAbsolutePosition().clone(), axis = rp.subtract(lp).normalize(), mid = lp.add(rp).scale(0.5);
       for (const mesh of feet) {
@@ -200,6 +201,8 @@ export class Human {
       }
       return made;
     };
+    // whatever the animation system leaves behind, standing / sitting people always have their feet at the rest pose
+    sc.onAfterAnimationsObservable.add(() => { if (this.chState === "idle" || this.chState === "sit") c.restoreFeet(); });
     if (!rigidFeet()) for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(true);   // could not split them: keep the skinned feet
     if (band) tint(/^Red/, band);
     else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);

@@ -993,7 +993,8 @@ export class Game {
     if (!this.started || this.paused) return 0;
     if (this.ui.panelOpen && !this.live) return 0;
     if (this.sleeping) return 60;
-    if (s.kick.alarm || s.mode === "shutin" || s.mode === "killing") return 0.7;
+    if (s.mode === "killing") return 1.0;             // circulating out the kick: about a minute, still slow enough to work the choke
+    if (s.kick.alarm || s.mode === "shutin") return 0.7;
     if (s.mode === "tripping") return 8;
     if (s.mode === "casing") return 10;
     return 2;

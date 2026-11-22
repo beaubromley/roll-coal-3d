@@ -27,6 +27,8 @@ export interface Rig {
   setPortaLocked(locked: boolean): void;
   setBump(on: boolean): void;
   setCasingTruck(on: boolean): void;
+  /** the off-location windmill: spinning (true) or braked (false) */
+  setWindmill(on: boolean): void;
   heliState: { phase: "hidden" | "landing" | "landed" | "leaving"; node: TransformNode };
   deerNode: TransformNode;
   windsock: TransformNode;
@@ -79,13 +81,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   padMat.diffuseTexture = noiseTex(scene, "#c9b48f", ["#bba57e", "#d8c8a6", "#a68f68", "#e1d3b4"], 4000, 256, 14);
   padMat.specularColor = Color3.Black();
   const pad = MeshBuilder.CreateGround("padmesh", { width: 120, height: 130 }, scene);
-  pad.position.set(0, 0.02, 0); pad.material = padMat; pad.receiveShadows = true;
+  pad.position.set(0, 0.04, 0); padMat.zOffset = -2; pad.material = padMat; pad.receiveShadows = true;
 
   const road = MeshBuilder.CreateGround("road", { width: 7, height: 300 }, scene);
-  road.position.set(0, 0.03, 190);
+  road.position.set(0, 0.08, 190);
   const rm = new StandardMaterial("roadm", scene);
   rm.diffuseTexture = noiseTex(scene, "#5a5650", ["#4a463f", "#6a665e", "#3d3a34"], 2500, 256, 8);
-  rm.specularColor = Color3.Black(); road.material = rm; road.receiveShadows = true;
+  rm.specularColor = Color3.Black(); rm.zOffset = -4; road.material = rm; road.receiveShadows = true;
 
   b.defMat("steel", "#7b8087"); b.defMat("dsteel", "#3a3f45"); b.defMat("black", "#16181a");
   b.defMat("orange", "#e0701a"); b.defMat("white", "#e3e5e8"); b.defMat("blue", "#2c5d8a"); b.defMat("navy", "#233a52");
@@ -641,9 +643,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     sock.rotation.z = Math.PI / 2; sock.position.x = 0.9; sock.material = b.getMat("orange"); sock.parent = windsock;
   }
   // gate / guard shack
-  b.room({ x0: 5, z0: 94, x1: 8.4, z1: 98, y0: 0, h: 2.6, wall: "trailer", roof: "dsteel", floor: "dsteel",
+  b.room({ x0: 5, z0: 94, x1: 8.4, z1: 98, y0: 0.06, h: 2.6, wall: "trailer", roof: "dsteel", floor: "dsteel",
     door: { side: "-x", c: 96, w: 1.1 } });
-  b.slab("wood", 6.5, 0, 96.8, 8.2, 1.0, 97.8, true);
+  b.slab("wood", 6.5, 0.06, 96.8, 8.2, 1.0, 97.8, true);
   // two signs on posts beside the entry road, facing the traffic coming in from +z
   b.label("PPE REQUIRED\nHARD HAT • FRC\nGLASSES • GLOVES", 2.4, 2.25, 95.5, 2.2, 1.5, Math.PI, "#7a1a14", "#ffffff", 40);
   for (const x of [1.45, 3.35]) b.cyl("dsteel", x, 1.5, 95.42, 0.12, 3.0, { tess: 6 });
@@ -782,6 +784,60 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   addH("vp", 63, 0, 61, 0, { shirt: "#e9eef3", pants: "#1a1f2a", hat: null, skin: "#e0b48f" });
   humans.vp.root.setEnabled(false);
 
+  // ================= WINDMILL (off location, west of the pad) =================
+  const WX = -150, WZ = 40, WH = 34;
+  b.defMat("wmwhite", "#eef0f2", { spec: 0.25 }); b.defMat("wmgrey", "#b8bdc3");
+  {
+    for (let i = 0; i < 14; i++) {                                           // tapered tower, built from stacked cones' worth of tubes
+      const r0 = 1.5 - i * 0.07, r1 = 1.5 - (i + 1) * 0.07, y0 = i * (WH / 14), y1 = (i + 1) * (WH / 14);
+      b.cyl("wmwhite", WX, (y0 + y1) / 2, WZ, r0 * 2, y1 - y0 + 0.02, { tess: 12, dia2: r1 * 2 });
+    }
+    b.cyl("wmgrey", WX, 0.4, WZ, 3.6, 0.8, { tess: 14 });                       // foundation
+    b.slab("wmgrey", WX - 0.7, 0.8, WZ - 0.05, WX + 0.7, 2.6, WZ + 0.05);        // door
+    b.blocker(WX - 1.7, 0, WZ - 1.7, WX + 1.7, 3, WZ + 1.7);
+    b.slab("wmwhite", WX - 1.0, WH - 0.2, WZ - 2.4, WX + 1.0, WH + 1.5, WZ + 1.6);   // nacelle
+    b.slab("wmgrey", WX - 0.4, WH + 1.5, WZ - 1.8, WX + 0.4, WH + 1.9, WZ + 0.2);    // anemometer mount
+    b.cyl("black", WX, WH + 2.3, WZ - 1.5, 0.08, 0.9, { tess: 6 });
+    b.box("red", WX, WH + 2.9, WZ - 1.5, 0.35, 0.08, 0.08);
+  }
+  const wmRotor = node("wmrotor", scene, WX, WH + 0.6, WZ + 1.75);
+  {
+    const hub = MeshBuilder.CreateSphere("wmhub", { diameter: 1.6, segments: 10 }, scene); hub.material = b.getMat("wmwhite"); hub.parent = wmRotor; hub.scaling.z = 1.4;
+    for (let i = 0; i < 3; i++) {
+      const arm = node("wmblade" + i, scene); arm.parent = wmRotor; arm.rotation.z = (i * Math.PI * 2) / 3;
+      const bl = MeshBuilder.CreateBox("wmb", { width: 0.9, height: 17, depth: 0.12 }, scene); bl.material = b.getMat("wmwhite"); bl.parent = arm; bl.position.y = 9.4; bl.rotation.y = 0.18;
+      const tip = MeshBuilder.CreateBox("wmt", { width: 0.5, height: 2.2, depth: 0.13 }, scene); tip.material = b.getMat("red"); tip.parent = arm; tip.position.y = 17.4; tip.rotation.y = 0.18;
+    }
+  }
+  wmRotor.rotation.y = 0;
+  let wmSpin = 2.1, wmTarget = 2.1;
+  spots.windmill = v(WX + 3.4, 1.2, WZ + 2.4);
+  b.label("WIND TURBINE 7\nMAIN BRAKE / DISCONNECT", WX + 1.76, 1.8, WZ + 2.0, 1.9, 0.7, 0, "#7a1a14", "#ffffff", 30);
+  b.slab("steel", WX + 1.7, 0.9, WZ + 1.5, WX + 2.5, 1.9, WZ + 1.9);                 // brake cabinet
+  b.slab("red", WX + 1.75, 1.45, WZ + 1.9, WX + 2.45, 1.65, WZ + 1.95);
+  b.blocker(WX + 1.7, 0, WZ + 1.5, WX + 2.5, 1.9, WZ + 1.9);
+
+  // ================= DEAD BIRDS: all over the ground, thickest around the windmill =================
+  {
+    b.defMat("bird1", "#5a5048"); b.defMat("bird2", "#8a8f94"); b.defMat("bird3", "#2e2a28"); b.defMat("bird4", "#c9c2b0"); b.defMat("birdw", "#463e38"); b.defMat("birdfeet", "#d9a441");
+    let sd = 4242; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const open = (x: number, z: number) => !b.colliders.some((c) => c.y1 > 0.25 && x > c.x0 - 0.5 && x < c.x1 + 0.5 && z > c.z0 - 0.5 && z < c.z1 + 0.5);
+    const bird = (x: number, z: number) => {
+      const body = ["bird1", "bird2", "bird3", "bird4"][(r() * 4) | 0], rot = r() * Math.PI * 2, y = 0.09;
+      const dx = Math.sin(rot), dz = Math.cos(rot), px = Math.cos(rot), pz = -Math.sin(rot);
+      b.box(body, x, y, z, 0.1, 0.07, 0.2, false, rot);                                 // body, belly up
+      b.box(body, x + dx * 0.13, y, z + dz * 0.13, 0.06, 0.05, 0.07, false, rot);       // head
+      for (const s of [-1, 1]) {
+        b.box("birdw", x + px * s * 0.12, y - 0.01, z + pz * s * 0.12, 0.16, 0.015, 0.14, false, rot + s * 0.5);   // wings splayed
+        b.box("birdfeet", x - px * s * 0.03 - dx * 0.02, y + 0.07, z - pz * s * 0.03 - dz * 0.02, 0.012, 0.09, 0.012, false, rot); // legs pointing at the sky
+      }
+    };
+    let placed = 0, tries = 0;
+    while (placed < 170 && tries++ < 2000) { const x = -120 + r() * 240, z = -75 + r() * 200; if (open(x, z)) { bird(x, z); placed++; } }
+    placed = 0; tries = 0;
+    while (placed < 90 && tries++ < 1000) { const a = r() * Math.PI * 2, d = 4 + r() * 26; const x = WX + Math.cos(a) * d, z = WZ + Math.sin(a) * d; if (open(x, z)) { bird(x, z); placed++; } }
+  }
+
   const merged = b.finish();
 
   // porta-john helpers
@@ -830,6 +886,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     const dir = c2.subtract(a), len = dir.length();
     hose.position.copyFrom(a.add(c2).scale(0.5)); hose.scaling.y = len;
     Quaternion.FromUnitVectorsToRef(Vector3.Up(), dir.scale(1 / len), tmpQ); hose.rotationQuaternion = tmpQ.clone();
+    wmSpin += (wmTarget - wmSpin) * Math.min(1, dt * (wmTarget ? 0.5 : 0.35));   // spins down slowly after the brake is pulled
+    wmRotor.rotation.z += wmSpin * dt;
     // cabin monitors: live data, redrawn about three times a second and only when someone is near
     scrT -= dt; if (scrT <= 0 && f.near && f.screens) { scrT = 0.33; screens.update(f.screens); }
     // iron roughneck swings in on connection
@@ -870,7 +928,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   return {
     spots, colliders: b.colliders, merged, humans, update,
-    setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); },
+    setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); }, setWindmill: (on) => { wmTarget = on ? 2.1 : 0; },
     heliState, deerNode, windsock,
   };
 }

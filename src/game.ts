@@ -743,6 +743,7 @@ export class Game {
       this.doneIds = new Set<string>(d.done ?? []); this.depthLog = d.depthLog ?? [];
       this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));
       this.missionNo = this.doneIds.size;
+      this.rig.setWindmill(!this.doneIds.has("windmill"));
       this.player.body.setPPE(!!d.ppe);
       if (d.pos) this.player.teleport(d.pos[0], d.pos[1], d.pos[2], d.pos[3]);
       return true;

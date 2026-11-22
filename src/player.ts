@@ -45,7 +45,7 @@ export class Player {
 
   constructor(private scene: Scene, private canvas: HTMLCanvasElement, public colliders: AABB[]) {
     this.cam = new FreeCamera("cam", new Vector3(0, 2, 100), scene);
-    this.cam.minZ = 0.08; this.cam.maxZ = 1800; this.cam.fov = 0.95;
+    this.cam.minZ = 0.2; this.cam.maxZ = 1400; this.cam.fov = 0.95;
     this.cam.inputs.clear();
     scene.activeCamera = this.cam;
     this.body = new Human(scene, { shirt: "#2f5f8f", pants: "#8a7a5a", hat: "#f4f4f4", skin: "#e0b48f", detail: true, hair: "#2a1c10", band: false, height: 1.0 });
@@ -172,10 +172,16 @@ export class Player {
     if (this.enabled && this.grounded && this.keys.has("Space")) { this.vel.y = 5.0; this.grounded = false; this.fallStart = this.pos.y; this.onJump(); }
     this.vel.y -= G * this.gScale * dt;
 
-    const feet = this.pos.y;
-    // axis-separated horizontal motion + resolve
-    this.pos.x += vx * dt; this.pos.z += vz * dt;
-    this.resolveXZ(feet);
+    const feet0 = this.pos.y;
+    // horizontal motion in substeps of at most ~10 cm: at run speed one frame can cross several stair treads, which used to hit the
+    // tread two or three steps up as a wall. Each substep resolves collisions and steps up onto the tread under it.
+    const nSub = Math.max(1, Math.ceil(Math.hypot(vx, vz) * dt / 0.1));
+    for (let i = 0; i < nSub; i++) {
+      this.pos.x += (vx * dt) / nSub; this.pos.z += (vz * dt) / nSub;
+      this.resolveXZ(this.pos.y);
+      if (this.grounded && this.vel.y <= 0) { const up = this.support(this.pos.x, this.pos.z, this.pos.y); if (up > this.pos.y + 0.001 && up - this.pos.y <= STEP) this.pos.y = up; }
+    }
+    const feet = feet0; void feet;
     // walking down stairs: stay glued to the next tread instead of free-falling onto it (no bouncing)
     let snapped = false;
     if (this.grounded && this.vel.y <= 0) {

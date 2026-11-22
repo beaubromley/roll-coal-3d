@@ -99,6 +99,7 @@ if (isTouch) {
 }
 
 // ---- start / intro ----
+$("buildid").textContent = (import.meta.env.VITE_BUILD ?? "dev");
 $("loading").style.display = "none";
 $("intro").style.display = "grid";
 const fx = new TitleFx($("titleFx") as HTMLCanvasElement);
@@ -125,7 +126,6 @@ const begin = (cont: boolean) => {
   $("intro").style.display = "none";
   $("hud").style.display = "block";
   game.started = true;
-  if (isTouch) { try { (document.documentElement as any).requestFullscreen?.({ navigationUI: "hide" })?.catch?.(() => {}); } catch { /* not supported (iOS) */ } }
   player.lock();
   ui.toast(cont ? "WELCOME BACK" : "ROLL COAL, MAKE HOLE 2", cont ? "Progress restored. Pick up where you left off." : isTouch ? "Stick to move, drag to look. Walk to the gate shack." : "Walk to the gate shack and sign in.");
   if (!cont) tutorial.start();

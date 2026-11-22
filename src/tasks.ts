@@ -280,5 +280,17 @@ export function defineMissions(g: Game) {
       { text: "Plant the bomb and detonate", at: () => g.arm.console, label: "Detonate", r: 4, act: () => g.openArm() },
     ] });
 
+  // ================================================================ 17. windmill off location
+  M({ id: "windmill", title: "Windmill Shutdown", sub: "A wind turbine off the lease is shredding birds and the EPA has noticed. It's the company's windmill. Of course it is.", trigger: gap(5), a: 0.3, m: 4,
+    start: () => { g.radio("earl", "Environmental called. There's a wind turbine out west of the lease and the ground under it is… feathers. Take the pickup, drive out there, and shut it off. The truck's by the company man trailer.", 12000); },
+    steps: [
+      { text: "Drive out to the wind turbine west of the lease (use the pickup)", at: sy(S.windmill), label: "Shut off the windmill", r: 6, act: (done) => g.mini.mash({ eyebrow: "Wind Turbine 7", title: "Main Brake", intro: "The brake lever is stiff and the blades are still turning. Heave it over, alternating left and right, before the next bird flies in.", seconds: 10, label: "pull the brake lever" }, (r) => {
+        const off = () => { g.rig.setWindmill(false); };
+        if (r.skipped) { off(); g.shortcutToast("You hit the E-stop and walked away."); g.radio("earl", "You just slammed a 1.5 megawatt generator to a stop with the emergency button. Somebody will hear about that.", 9000); g.addDebt({ id: "wmgear", afterMin: 60, chance: 0.5, run: () => { g.radio("brent", "The turbine's gearbox is toast. Our name is on the work order.", 9000); sim.addCost(35000); } }); g.gain(-0.05, 0); }
+        else if (r.score > 0.35) { off(); g.gain(0.3, 5); g.radio("earl", "Blades are coasting down. Good. Nobody tell the birds, they're past caring.", 8000); }
+        else { off(); g.gain(0.05, 1); g.radio("earl", "It took you ten minutes and a lot of swearing, but it's stopped.", 7000); }
+        done(); }) },
+    ] });
+
   g.missionTotal = g.queue.length;
 }

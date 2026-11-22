@@ -67,6 +67,7 @@ export class Vehicles {
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0;
+  private liftSpace = true;
   /** get-in / get-out animation: eased camera, plus the body walking to / from the vehicle */
   private blend: { t: number; dur: number; fromPos: Vector3; fromTgt: Vector3; body?: { from: Vector3; to: Vector3; mode: "in" | "out" } } | null = null;
   private uiKind = "";
@@ -298,7 +299,7 @@ export class Vehicles {
   private buildManlift(x: number, z: number, yaw: number): Veh {
     const v = this.blank("manlift", "Scissor Manlift", "lift", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 2.4, maxFwd: 3.2, maxRev: 2.4, accel: 2.5, radius: 0.95, pts: [0.9, -0.9], camDist: 14, camHeight: 4.8, eye: { x: 0, y: 1.6, z: 0.1 }, boxH: 1.3,
-      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  V camera  ·  E get out" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  SPACE jump out  ·  E get out (basket down)" });
     const O = "#e07a10", D = "#3d434b";
     this.box(v, r, O, 1.7, 0.55, 3.0, 0, 0.62, 0);
     this.box(v, r, D, 1.5, 0.1, 2.8, 0, 0.92, 0);
@@ -390,7 +391,19 @@ export class Vehicles {
     if (!this.blend) this.player.body.root.setEnabled(false);
     this.hud.style.display = "block";
     this.game.sfx.click();
-    this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W forward, A/D turn, R/F up and down. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. It reaches the drill floor." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
+    this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W forward, A/D turn, R/F up and down. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. SPACE jumps you out." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
+  }
+
+  /** manlift: leap out of the basket in the direction you are looking. Only a jump gets you out up high, and a long fall is on you. */
+  private jumpOut(v: Veh) {
+    const p = this.player, dir = new Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
+    const from = new Vector3(v.x, v.platformY + 0.05, v.z).add(dir.scale(1.0));
+    this.active = null; this.setSolid(v, true); v.speed = 0;
+    p.ride = false; p.third = this.wasThird; this.hud.style.display = "none";
+    p.teleport(from.x, from.y, from.z, p.yaw);
+    p.vel.set(dir.x * 3.2, 3.2, dir.z * 3.2); p.grounded = false;
+    this.startBlend(0.45); this.game.sfx.click();
+    if (v.platformY > 3) this.game.radio("earl", "You JUMPED out of the manlift. From " + Math.round(v.platformY * 3.28) + " feet. Tell me that wasn't on the JSA.", 7000);
   }
 
   /** the drone flies itself home; the pilot stands at the dock */
@@ -421,22 +434,19 @@ export class Vehicles {
     const v = this.active; if (!v) return;
     if (v.kind === "drone") { this.dockDrone(v); return; }
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw), rx = Math.cos(v.yaw), rz = -Math.sin(v.yaw);
-    const high = v.kind === "lift" && v.platformY > 1.2, base = high ? v.platformY : 0, off = v.kind === "lift" ? 1.9 : 2.4;
-    // candidate exits as world offsets: sides first for cars, front / back / sides for the basket
+    const high = v.kind === "lift" && v.platformY > 1.2;
+    if (high) { this.game.ui.toast("YOU'RE IN THE BASKET", "Lower it to the ground to step out, or press SPACE to jump out."); return; }
+    const off = v.kind === "lift" ? 1.9 : 2.4;
     const tries: [number, number][] = v.kind === "lift"
       ? [[fx * off, fz * off], [-fx * off, -fz * off], [rx * 1.7, rz * 1.7], [-rx * 1.7, -rz * 1.7]]
       : [[-rx * off, -rz * off], [rx * off, rz * off], [-fx * 3.2, -fz * 3.2], [fx * 3.2, fz * 3.2]];
     let spot: Vector3 | null = null;
     for (const [dx, dz] of tries) {
-      const px = v.x + dx, pz = v.z + dz, sup = this.player.support(px, pz, base + 0.2);
+      const px = v.x + dx, pz = v.z + dz, sup = this.player.support(px, pz, 0.2);
       if (pushOutXZ(this.world, { x: px, z: pz }, sup, 0.4, 0.5, 1.75)) continue;     // inside something
-      if (high && Math.abs(sup - base) > 0.7) continue;                                 // nothing to step onto up here
       spot = new Vector3(px, sup, pz); break;
     }
-    if (!spot) {
-      if (high) { this.game.ui.toast("LOWER THE BASKET", "Nothing to step onto up here. Hold F, or line up with the drill floor."); return; }
-      spot = new Vector3(v.x - rx * off, 0, v.z - rz * off);
-    }
+    if (!spot) spot = new Vector3(v.x - rx * off, 0, v.z - rz * off);
     this.active = null; this.setSolid(v, true); v.speed = 0;
     this.player.ride = false; this.player.third = this.wasThird;
     this.startBlend(0.55, { from: new Vector3(v.x, spot.y, v.z), to: spot, mode: "out" });
@@ -595,7 +605,10 @@ export class Vehicles {
     v.yaw += yawRate * dt;
     v.x += Math.sin(v.yaw) * v.speed * dt; v.z += Math.cos(v.yaw) * v.speed * dt;
     // lift controls
-    if (v.kind === "lift") { const d = (this.k("KeyR") ? 1 : 0) - (this.k("KeyF") ? 1 : 0); if (d) this.setLift(v, v.lift + d * dt * 0.11); }
+    if (v.kind === "lift") {
+      const d = (this.k("KeyR") ? 1 : 0) - (this.k("KeyF") ? 1 : 0); if (d) this.setLift(v, v.lift + d * dt * 0.11);
+      const sp = this.k("Space"); if (sp && !this.liftSpace) { this.liftSpace = true; this.jumpOut(v); return; } this.liftSpace = sp;
+    }
     if (v.kind === "forklift") {
       const d = (this.k("KeyR") ? 1 : 0) - (this.k("KeyF") ? 1 : 0), e = (this.k("KeyT") ? 1 : 0) - (this.k("KeyG") ? 1 : 0), t = (this.k("KeyY") ? 1 : 0) - (this.k("KeyH") ? 1 : 0);
       if (d || e || t) {

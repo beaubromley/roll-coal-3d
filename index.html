@@ -232,6 +232,7 @@
   #tlift .td { position: static; height: 40px; font-size: 12px; border-radius: 8px; border-width: 2px; }
   #tlift .wide { grid-column: 1 / 3; }
   body[data-veh="lift"] #tlift .fk { display: none; }
+  #tlift .lo { display: none; border-color: #e5483b; } body[data-veh="lift"] #tlift .lo { display: grid; }
   body[data-veh="drone"] #joyzone { display: block; } body[data-veh="drone"] #td-steer { display: none; }
 
   body.touch { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -341,6 +342,7 @@
       <button class="td sm fk" data-key="KeyT">OUT</button><button class="td sm fk" data-key="KeyG">IN</button>
       <button class="td sm fk" data-key="KeyY">TILT &#9650;</button><button class="td sm fk" data-key="KeyH">TILT &#9660;</button>
       <button class="td sm fk wide" data-key="Space">PICK UP / SET DOWN</button>
+      <button class="td sm lo wide" data-key="Space">JUMP OUT</button>
     </div>
   </div>
   <button class="tb" id="tb-use">USE</button>

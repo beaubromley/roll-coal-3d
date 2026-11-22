@@ -143,13 +143,14 @@ export class Human {
     tint(/^Brown2/, boots); tint(/^Brown(?!2)/, o.shirt); tint(/^Beige/, o.shirt); tint(/^LightBlue/, o.pants); tint(/^Skin/, o.skin); tint(/^Eyebrows/, hair);
     // boots: the model's own feet are hidden (they rendered stretched on some devices) and replaced by simple boots that ride the foot bones
     for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(false);
+    sc.onAfterAnimationsObservable.add(this.solveBoots);
     for (const side of ["Left", "Right"]) {
       const node = new TransformNode("boot", sc); node.parent = this.root;
       const upper = MeshBuilder.CreateBox("bu", { width: 0.12, height: 0.15, depth: 0.31 }, sc); upper.position.set(0, 0.085, 0.07); upper.parent = node; upper.material = m(sc, boots);
       const toe = MeshBuilder.CreateSphere("bt", { diameter: 0.13, segments: 8 }, sc); toe.position.set(0, 0.06, 0.2); toe.scaling.set(0.95, 0.8, 1.1); toe.parent = node; toe.material = m(sc, boots);
       const sole = MeshBuilder.CreateBox("bs", { width: 0.125, height: 0.035, depth: 0.36 }, sc); sole.position.set(0, 0.018, 0.09); sole.parent = node; sole.material = m(sc, "#0c0b0a");
       this.meshes.push(upper, toe, sole);
-      this.bootNodes.push({ node, foot: this.bones[side + "Foot"], end: this.bones[side + "FootEnd"] });
+      this.bootNodes.push({ node, foot: this.bones[side + "Foot"], end: this.bones[side + "FootEnd"], knee: this.bones[side + "Leg"] });
     }
     if (band) tint(/^Red/, band);
     else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
@@ -181,7 +182,23 @@ export class Human {
   }
   static count = 0;
   private chBuild = new Vector3(1, 1, 1);
-  private bootNodes: { node: TransformNode; foot: TransformNode | null | undefined; end: TransformNode | null | undefined }[] = [];
+  private bootNodes: { node: TransformNode; foot: TransformNode | null | undefined; end: TransformNode | null | undefined; knee: TransformNode | null | undefined }[] = [];
+  /** runs after the animation groups have posed the skeleton this frame, so the boots never trail behind the feet */
+  private solveBoots = () => {
+    if (!this.root.isEnabled()) return;
+    this.root.computeWorldMatrix(true);
+    const inv0 = this.root.getWorldMatrix().clone().invert(), q = new Quaternion();
+    for (const b of this.bootNodes) {
+      if (!b.foot || !b.end || !b.knee) continue;
+      b.knee.computeWorldMatrix(true); b.foot.computeWorldMatrix(true); b.end.computeWorldMatrix(true);
+      const a = Vector3.TransformCoordinates(b.foot.getAbsolutePosition(), inv0), e = Vector3.TransformCoordinates(b.end.getAbsolutePosition(), inv0), k = Vector3.TransformCoordinates(b.knee.getAbsolutePosition(), inv0);
+      const fwd = e.subtract(a); if (fwd.lengthSquared() < 1e-6) continue; fwd.normalize();
+      const up = k.subtract(a); up.subtractInPlace(fwd.scale(Vector3.Dot(up, fwd)));            // shin direction made perpendicular to the foot
+      if (up.lengthSquared() < 1e-6) continue; up.normalize();
+      Quaternion.FromLookDirectionLHToRef(fwd, up, q);
+      b.node.position.copyFrom(a); b.node.rotationQuaternion = q.clone();
+    }
+  };
   private chParts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
   private ppeLocal!: Vector3;
 
@@ -226,18 +243,6 @@ export class Human {
         this.aim(this.bones[side + "ForeArm"], this.bones[side + "Hand"], fwd.scale(0.95).add(down.scale(0.3)).normalize());
       }
       this.chSat = true;
-    }
-    // boots follow the foot bones: placed at the ankle and pointed along the foot
-    if (this.bootNodes.length) {
-      this.root.computeWorldMatrix(true);
-      const inv0 = this.root.getWorldMatrix().clone().invert(), q = new Quaternion();
-      for (const b of this.bootNodes) {
-        if (!b.foot || !b.end) continue;
-        const a = Vector3.TransformCoordinates(b.foot.getAbsolutePosition(), inv0), e = Vector3.TransformCoordinates(b.end.getAbsolutePosition(), inv0);
-        const d = e.subtract(a); if (d.lengthSquared() < 1e-6) continue; d.normalize();
-        Quaternion.FromUnitVectorsToRef(Vector3.Forward(), d, q);
-        b.node.position.copyFrom(a); b.node.rotationQuaternion = q.clone();
-      }
     }
     // PPE follows the bones (positions taken in this person's local space)
     if (this.chParts.length) {

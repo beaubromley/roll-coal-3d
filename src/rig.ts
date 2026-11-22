@@ -681,7 +681,15 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     }
   }
   casingTruck.setEnabled(false);
-  spots.casing = v(-17, 2.0, 36);
+  // solid only while the truck is on location (collider boxes along its length: trailer, cab)
+  const truckBoxes: AABB[] = [
+    { x0: -18.45, x1: -15.55, y0: 0, y1: 0, z0: 32.8, z1: 46.0 },
+    { x0: -18.4, x1: -15.6, y0: 0, y1: 0, z0: 46.0, z1: 49.0 },
+  ];
+  b.colliders.push(...truckBoxes);
+  const setTruckSolid = (on: boolean) => { truckBoxes[0].y1 = on ? 3.2 : 0; truckBoxes[1].y1 = on ? 3.4 : 0; };
+  // the tally spot sits beside the truck, not inside it
+  spots.casing = v(-14.3, 1.6, 39);
 
   // ================= far-field =================
   // flare stack
@@ -859,7 +867,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   return {
     spots, colliders: b.colliders, merged, humans, update,
-    setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => casingTruck.setEnabled(on),
+    setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); },
     heliState, deerNode, windsock,
   };
 }

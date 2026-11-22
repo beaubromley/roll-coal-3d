@@ -34,7 +34,7 @@ export class Tutorial {
     return [
       { text: () => t ? "LOOK: drag your finger on the right side of the screen" : "LOOK: move the mouse (click the game first)", done: () => this.lookAcc > 1.0 },
       { text: () => t ? "WALK: hold the left thumb stick" : "WALK: W A S D", done: () => this.walkAcc > 8 },
-      { text: () => t ? "RUN: tap RUN, or push the stick all the way out" : "RUN: hold SHIFT while you walk", done: () => this.runT > 1.2 },
+      { text: () => t ? "RUN: tap the RUN button (it lights up while on)" : "RUN: hold SHIFT while you walk", done: () => this.runT > 1.2 },
       { text: () => `GO TO THE GATE: follow the gold arrow and beam, ${dist()} ft`, done: () => dist() < 22 },
       { text: () => t ? "USE: tap the glowing gold USE button" : "USE: press E when the gold prompt shows up", done: () => this.used },
       { text: () => "NICE. Your job card is top-left. Gold pins show where each job is. Good luck, Company Man.", done: () => this.doneT > 8 },

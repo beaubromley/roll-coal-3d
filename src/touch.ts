@@ -49,7 +49,7 @@ export class TouchControls {
       if (m < 0.14) { x = 0; y = 0; }       // dead zone
       this.player.touchMove.x = x; this.player.touchMove.y = y;
       // pushing the stick all the way out auto-sprints
-      this.player.stickSprint = m > 0.86;
+      this.player.stickSprint = false;   // running is only the RUN button (or Shift): pushing the stick all the way out just walks
     });
     const joyEnd = (e: PointerEvent) => {
       if (e.pointerId !== this.joyId) return;

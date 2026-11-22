@@ -911,7 +911,7 @@ export class Game {
     $("fade").style.transition = "opacity .15s"; $("fade").style.background = "#fff"; $("fade").style.opacity = "1";
     this.sfx.thud(); this.sfx.horn();
     setTimeout(() => {
-      this.ui.panel(`<div class="eyebrow">Victory</div><div class="who"><img src="/portraits/nasa.jpg" alt=""/><div><h2 style="font-size:26px">BEN AFFLECK</h2><p>“I asked Michael why it was easier to train oil drillers to become astronauts than it was to train astronauts to become oil drillers, and he told me to shut the %$&! up. So that was the end of that talk.”</p></div></div><div class="btns"><button class="b" id="vc">Continue</button></div>`, { closable: false });
+      this.ui.panel(`<div class="eyebrow">Victory</div><div class="who"><img src="${import.meta.env.BASE_URL}portraits/nasa.jpg" alt=""/><div><h2 style="font-size:26px">BEN AFFLECK</h2><p>“I asked Michael why it was easier to train oil drillers to become astronauts than it was to train astronauts to become oil drillers, and he told me to shut the %$&! up. So that was the end of that talk.”</p></div></div><div class="btns"><button class="b" id="vc">Continue</button></div>`, { closable: false });
       $("fade").style.opacity = "0"; $("fade").style.background = "#000"; $("fade").style.transition = "opacity .5s";
       $("vc").onclick = () => { this.ui.closePanel(); this.showEnd(); };
     }, 1500);

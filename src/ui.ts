@@ -59,7 +59,7 @@ export class UI {
     const c = CAST[who];
     const el = document.createElement("div");
     el.className = "rmsg";
-    el.innerHTML = `<img src="/portraits/${c.img}.jpg" alt=""/><div><div class="who">${c.name}</div><div class="txt">${text}</div></div>`;
+    el.innerHTML = `<img src="${import.meta.env.BASE_URL}portraits/${c.img}.jpg" alt=""/><div><div class="who">${c.name}</div><div class="txt">${text}</div></div>`;
     $("radio").appendChild(el);
     this.radioQ.push(el);
     while (this.radioQ.length > 4) this.radioQ.shift()!.remove();
@@ -89,7 +89,7 @@ export class UI {
     const c = CAST[who];
     const p = this.panel(`
       ${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ""}
-      <div class="who"><img src="/portraits/${c.img}.jpg" alt=""/><div><h2 style="font-size:26px">${c.name}</h2><p>${text}</p></div></div>
+      <div class="who"><img src="${import.meta.env.BASE_URL}portraits/${c.img}.jpg" alt=""/><div><h2 style="font-size:26px">${c.name}</h2><p>${text}</p></div></div>
       <div class="btns">${choices.map((ch, i) => `<button class="b ${ch.cls ?? ""}" data-i="${i}" ${ch.disabled ? "disabled" : ""}>${ch.label}</button>`).join("")}</div>`,
       { closable: o.closable ?? false });
     p.querySelectorAll<HTMLButtonElement>("button[data-i]").forEach((btn) => {

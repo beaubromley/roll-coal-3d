@@ -161,7 +161,7 @@ export class UI {
   }
 
   drawMap(px: number, pz: number, yaw: number, targets: MapTarget[]) {
-    const c = this.mctx, S = 260, scale = 1.36; // px per metre
+    const c = this.mctx, S = 300, scale = 1.57; // px per metre
     c.save(); c.clearRect(0, 0, S, S);
     c.fillStyle = "#cdb98f"; c.fillRect(0, 0, S, S);
     c.translate(S / 2, S / 2); c.rotate(-yaw); // heading-up

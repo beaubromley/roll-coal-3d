@@ -77,6 +77,16 @@ $("pGfx").addEventListener("click", () => { gfx.cycle(); gfxLabel(); });
 // spawn at the lease-road gate looking at the rig
 player.teleport(0, 0.5, 112, Math.PI);
 
+// ---- block page zoom (iOS Safari ignores user-scalable=no): pinch, double-tap zoom and multi-touch page gestures ----
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false } as any);
+let lastTap = 0;
+document.addEventListener("touchend", (e) => { const n = Date.now(); if (n - lastTap < 320 && !(e.target as HTMLElement).closest("input, textarea")) e.preventDefault(); lastTap = n; }, { passive: false });
+document.addEventListener("touchmove", (e) => { if ((e as TouchEvent).touches.length > 1) e.preventDefault(); }, { passive: false });
+/** if the page did get zoomed (e.g. text-field focus), snap it back by re-applying the viewport */
+const resetZoom = () => { const m = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null; if (!m) return; const c = m.content; m.content = c + ", minimum-scale=1"; setTimeout(() => { m.content = c; }, 60); };
+window.visualViewport?.addEventListener("resize", () => { if (window.visualViewport && window.visualViewport.scale > 1.02) resetZoom(); });
+resetZoom();
+
 // ---- touch controls ----
 let touch: TouchControls | null = null;
 if (isTouch) {

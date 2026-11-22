@@ -202,7 +202,6 @@ export class Human {
       return made;
     };
     // whatever the animation system leaves behind, standing / sitting people always have their feet at the rest pose
-    sc.onAfterAnimationsObservable.add(() => { if (this.chState === "idle" || this.chState === "sit") c.restoreFeet(); });
     if (!rigidFeet()) for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(true);   // could not split them: keep the skinned feet
     if (band) tint(/^Red/, band);
     else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
@@ -258,7 +257,7 @@ export class Human {
     const grp = { idle: c.idle, walk: c.walk ?? c.idle, run: c.run ?? c.walk, sit: c.idle } as Record<string, any>;
     if (next !== this.chState) {
       for (const g of [c.idle, c.walk, c.run]) g?.stop();
-      if (next === "idle" || next === "sit") c.restoreFeet();   // Idle never writes the foot bones; without this they stay frozen in the last stride
+
       this.chState = next;
       const g = grp[next]; g?.start(true, 1, g.from, g.to, false);
       if (next === "idle" && !c.idle && c.walk) { c.walk.start(true); c.walk.goToFrame(c.walk.from); c.walk.pause(); }

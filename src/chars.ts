@@ -52,7 +52,8 @@ export class CharKit {
     holder.scaling.setAll(target / this.height);
     const meshes = roots.flatMap((r) => r.getChildMeshes(false)) as AbstractMesh[];
     const find = (re: RegExp) => inst.animationGroups.find((g) => new RegExp("(^|[|:_ ])" + re.source + "$", "i").test(g.name)) ?? inst.animationGroups.find((g) => re.test(g.name)) ?? null;
-    const idle = find(/idle/i), walk = find(/walk/i) ?? (inst.animationGroups.length === 1 ? inst.animationGroups[0] : null), run = find(/run/i);
+    // "Idle_Neutral" is the idle that also animates the foot bones, so the feet match the legs; plain "Idle" leaves them at their bind pose (splayed boots)
+    const idle = find(/idle_neutral/i) ?? find(/idle/i), walk = find(/walk/i) ?? (inst.animationGroups.length === 1 ? inst.animationGroups[0] : null), run = find(/run/i);
     const rest = [...roots.flatMap((r) => r.getChildTransformNodes(false))].filter((n) => /^(Foot|PT)\./.test(n.name.replace(id, "").replace(/^.*:/, "")))
       .map((n) => ({ n, p: n.position.clone(), q: (n.rotationQuaternion ?? Quaternion.FromEulerVector(n.rotation)).clone(), s: n.scaling.clone() }));
     inst.animationGroups.forEach((g) => { g.stop(); g.enableBlending = true; g.blendingSpeed = 0.07; g.loopAnimation = true; });

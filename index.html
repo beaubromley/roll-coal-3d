@@ -55,7 +55,7 @@
 
   #mapwrap { position: absolute; left: 22px; bottom: 22px; width: 172px; height: 172px; border-radius: 50%; border: 4px solid #0b0f14; box-shadow: 0 0 0 2px rgba(255,255,255,.35), 0 4px 16px rgba(0,0,0,.6); overflow: hidden; background: #cdb98f; }
   #map { width: 100%; height: 100%; display: block; }
-  #district { position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%); font-family: var(--display); font-size: clamp(30px, 5.5vw, 70px); text-transform: uppercase; color: #fff; letter-spacing: 4px; opacity: 0; white-space: nowrap; text-shadow: 0 3px 0 #000, 0 0 24px rgba(0,0,0,.8); pointer-events: none; }
+  #district { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); font-family: var(--display); font-size: clamp(30px, 5.5vw, 70px); text-transform: uppercase; color: #fff; letter-spacing: 4px; opacity: 0; white-space: nowrap; text-shadow: 0 3px 0 #000, 0 0 24px rgba(0,0,0,.8); pointer-events: none; }
   #district.show { animation: distShow 3.6s ease-out forwards; }
   #district::after { content: ""; display: block; height: 3px; margin: 6px auto 0; background: var(--gold); transform-origin: center; animation: none; width: 100%; }
   #district.show::after { animation: distLine 3.6s ease-out forwards; }
@@ -248,7 +248,7 @@
   body.touch #strip div { padding: 2px 6px; min-width: 44px; } body.touch #strip span { font-size: 12px; } body.touch #strip small { font-size: 7px; }
   body.touch #mapwrap { left: 50%; transform: translateX(-50%); top: 8px; bottom: auto; width: 88px; height: 88px; border-width: 3px; }
   body.touch #map { width: 100%; height: 100%; }
-  body.touch #district { bottom: 30%; font-size: 26px; }
+  body.touch #district { bottom: 11%; font-size: 26px; }
   body.touch #radio { left: max(12px, env(safe-area-inset-left)); top: 112px; bottom: auto; width: 40vw; max-width: 330px; }
   body.touch #radio .rmsg:nth-last-child(n+3) { display: none; }
   body.touch .rmsg img { width: 30px; height: 30px; } body.touch .rmsg .txt { font-size: 11px; } body.touch .rmsg .who { font-size: 9px; }

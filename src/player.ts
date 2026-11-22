@@ -33,6 +33,10 @@ export class Player {
   moved = 0;
   private fallStart = 0;
   onFall: (m: number) => void = () => {};
+  /** the V-door ramp is greased: you cannot walk up it, you slide down, and sliding down from height is an incident */
+  slick = { x0: -1.0, x1: 1.0, z0: 6.4, z1: 18.0 };
+  slideV = 0; private slipTop = 0; private sliding = false;
+  onRampFall: (heightFt: number) => void = () => {};
   onJump: () => void = () => {};
   stepAcc = 0;
   onStep: () => void = () => {};
@@ -150,6 +154,17 @@ export class Player {
       ix /= len; iz /= len;
       const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
       vx = (fz * ix + fx * iz) * speed; vz = (-fx * ix + fz * iz) * speed;
+    }
+    // slippery ramp
+    const k = this.slick, onRamp = this.pos.y > 0.3 && this.pos.x > k.x0 - 0.2 && this.pos.x < k.x1 + 0.2 && this.pos.z > k.z0 && this.pos.z < k.z1 && this.grounded;
+    if (onRamp) {
+      this.slideV = Math.min(7.5, this.slideV + 9 * dt);
+      vz = Math.max(vz, 0) * 0.4 + this.slideV; vx *= 0.5;                        // any uphill effort is lost; the grease takes you down
+      this.sliding = true; this.slipTop = Math.max(this.slipTop, this.pos.y);
+    } else {
+      this.slideV = Math.max(0, this.slideV - 20 * dt);
+      if (this.sliding && (this.pos.y < 0.6 || this.pos.z >= k.z1 - 0.05)) { const h = this.slipTop; this.sliding = false; this.slipTop = 0; if (h > 1.5) this.onRampFall(h); }
+      else if (this.sliding && !this.grounded) { /* airborne off the side: let the fall logic judge it */ this.sliding = false; this.slipTop = 0; }
     }
     // jump
     if (this.enabled && this.grounded && this.keys.has("Space")) { this.vel.y = 5.0; this.grounded = false; this.fallStart = this.pos.y; this.onJump(); }

@@ -196,6 +196,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.beam("yellow", v(1.05, F + 0.9, FZ), v(1.05, 0.9, FZ + n * run), 0.06);
     b.blocker(-1.2, 0, FZ, -1.0, F + 1.8, FZ + n * run); b.blocker(1.0, 0, FZ, 1.2, F + 1.8, FZ + n * run);
     b.label("V-DOOR", 0, F + 2.4, 5.9, 2.0, 0.6, Math.PI, "#7a1a14", "#ffffff", 64);
+    b.label("SLICK RAMP\nNO WALKING", 1.25, F + 1.2, 6.2, 1.0, 0.8, Math.PI, "#e8b923", "#111111", 38);
   }
 
   // ---- driller's cabin (glass, enterable): driller's console on the west glass, directional drillers' desk on the north wall ----

@@ -62,6 +62,10 @@ export class Game {
     this.env = env;
     this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
+    this.player.onRampFall = (h) => {
+      this.sfx.thud(); this.sim.addCost(3000); this.inc(1, "SLIP ON V-DOOR RAMP");
+      this.radio("earl", `You slid ${Math.round(h * 3.28)} feet down the V-door on your backside. That's a recordable. The ramp is greased on purpose, boss. The sign says so.`, 8000);
+    };
     this.player.onStep = () => this.sfx.step();
     this.buildAmbient();
     this.buildMissions();
@@ -122,6 +126,27 @@ export class Game {
     $("pSound").addEventListener("click", () => { this.sfx.init(); this.sfx.setMuted(!this.sfx.muted); this.refreshPause(); });
     $("pQuit").addEventListener("click", () => location.reload());
   }
+  // bouncing logo while paused (the classic DVD screensaver; hit a corner for a surprise)
+  private dvd = { x: 40, y: 40, vx: 150, vy: 110, raf: 0, last: 0, hue: 0, corners: 0 };
+  private dvdStart() {
+    const el = $("dvd"), msg = $("dvdmsg"), d = this.dvd;
+    cancelAnimationFrame(d.raf); d.last = performance.now();
+    const cols = ["#76ff03", "#ffd24a", "#4aa3e8", "#ff5a5a", "#c77dff", "#ff9a1f", "#3dd9c1"];
+    const step = (now: number) => {
+      const dt = Math.min(0.05, (now - d.last) / 1000); d.last = now;
+      const W = window.innerWidth, H = window.innerHeight, w = el.offsetWidth, h = el.offsetHeight;
+      d.x += d.vx * dt; d.y += d.vy * dt;
+      let hx = false, hy = false;
+      if (d.x <= 0) { d.x = 0; d.vx = Math.abs(d.vx); hx = true; } else if (d.x >= W - w) { d.x = W - w; d.vx = -Math.abs(d.vx); hx = true; }
+      if (d.y <= 0) { d.y = 0; d.vy = Math.abs(d.vy); hy = true; } else if (d.y >= H - h) { d.y = H - h; d.vy = -Math.abs(d.vy); hy = true; }
+      if (hx || hy) { d.hue = (d.hue + 1) % cols.length; el.style.setProperty("--c", cols[d.hue]); }
+      if (hx && hy) { d.corners++; msg.textContent = d.corners > 1 ? `CORNER! x${d.corners}` : "CORNER!"; msg.style.opacity = "1"; window.setTimeout(() => { msg.style.opacity = "0"; }, 1400); }
+      el.style.transform = `translate(${d.x}px, ${d.y}px)`;
+      d.raf = requestAnimationFrame(step);
+    };
+    d.raf = requestAnimationFrame(step);
+  }
+  private dvdStop() { cancelAnimationFrame(this.dvd.raf); }
   private refreshPause() {
     const s = this.sim.s, c = clockString(s.t);
     $("pstat").innerHTML = `DAY ${c.day} · ${c.hhmm}<br/>${fmt(s.depth)} FT · ${money(s.cost)} / ${money(WELL.afe)}`;
@@ -138,11 +163,11 @@ export class Game {
     this.paused = want;
     document.body.classList.toggle("paused", want);
     if (want) {
-      this.refreshPause(); $("pctrlbox").style.display = "none"; $("pause").style.display = "grid";
+      this.refreshPause(); $("pctrlbox").style.display = "none"; $("pause").style.display = "grid"; this.dvdStart();
       this.player.enabled = false; this.player.unlock();
       try { this.sfx.ctx?.suspend(); } catch { /* ignore */ }
     } else {
-      $("pause").style.display = "none";
+      $("pause").style.display = "none"; this.dvdStop();
       this.player.enabled = !this.ui.panelOpen; this.player.lock();
       try { this.sfx.ctx?.resume(); } catch { /* ignore */ }
     }

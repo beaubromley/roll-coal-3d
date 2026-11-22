@@ -197,7 +197,7 @@ export class Human {
 
   private animateChar(dt: number, speed: number) {
     const c = this.ch!;
-    const next = this.seated ? "sit" : speed < 0.15 ? "idle" : speed < 2.6 ? "walk" : "run";
+    const next = this.seated ? "sit" : speed < 0.15 ? "idle" : speed < 4.4 ? "walk" : "run";
     const grp = { idle: c.idle, walk: c.walk ?? c.idle, run: c.run ?? c.walk, sit: c.idle } as Record<string, any>;
     if (next !== this.chState) {
       for (const g of [c.idle, c.walk, c.run]) g?.stop();
@@ -206,8 +206,8 @@ export class Human {
       if (next === "idle" && !c.idle && c.walk) { c.walk.start(true); c.walk.goToFrame(c.walk.from); c.walk.pause(); }
       if (next === "sit") { g?.goToFrame(g.from); g?.pause(); this.chSat = false; }
     }
-    if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.5, speed / 2.0);
-    if (next === "run" && grp.run) grp.run.speedRatio = Math.max(0.6, speed / 5);
+    if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.5, speed / 1.9);
+    if (next === "run" && grp.run) grp.run.speedRatio = Math.max(0.7, speed / 5.2);
     if (next === "sit" && !this.chSat) {
       // freeze the idle pose, then aim each limb segment in world space (bone axes differ between rigs, so no hard-coded axes):
       // thighs point forward, shins straight down, upper arms forward-down, forearms forward

@@ -142,7 +142,7 @@ export class Player {
     if (joy) { ix += this.touchMove.x; iz += this.touchMove.y; }
     const len = Math.hypot(ix, iz);
     const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
-    const speed = (sprint ? 6.2 : 3.6) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
+    const speed = (sprint ? 6.8 : 3.4) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
     let vx = 0, vz = 0;
     if (len > 0) {
       ix /= len; iz /= len;
@@ -185,6 +185,8 @@ export class Player {
     const moving = len > 0 && this.grounded;
     if (moving) { this.stepAcc += dt * speed; if (this.stepAcc > 1.9) { this.stepAcc = 0; this.onStep(); } }
     this.moved = moving ? speed : 0;
+    // sprinting widens the view a little so it reads as running
+    this.cam.fov += ((sprint && moving ? 1.1 : 0.95) - this.cam.fov) * Math.min(1, dt * 6);
 
     // smoothed height for the camera so steps don't jolt the view
     if (this.camY === null || Math.abs(this.pos.y - this.camY) > 2.5) this.camY = this.pos.y;

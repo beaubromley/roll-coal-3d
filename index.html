@@ -248,11 +248,11 @@
   body.touch #strip div { padding: 2px 6px; min-width: 44px; } body.touch #strip span { font-size: 12px; } body.touch #strip small { font-size: 7px; }
   body.touch #mapwrap { left: 50%; transform: translateX(-50%); top: 8px; bottom: auto; width: 88px; height: 88px; border-width: 3px; }
   body.touch #map { width: 100%; height: 100%; }
-  body.touch #district { bottom: 11%; font-size: 26px; }
+  body.touch #district { bottom: 70px; font-size: 26px; }   /* where the centre action prompt used to be */
   body.touch #radio { left: max(12px, env(safe-area-inset-left)); top: 112px; bottom: auto; width: 40vw; max-width: 330px; }
   body.touch #radio .rmsg:nth-last-child(n+3) { display: none; }
   body.touch .rmsg img { width: 30px; height: 30px; } body.touch .rmsg .txt { font-size: 11px; } body.touch .rmsg .who { font-size: 9px; }
-  body.touch #prompt { bottom: 70px; left: 50%; } body.touch #prompt .key { display: none; } body.touch #prompt .lab { font-size: 18px; }
+  body.touch #prompt { display: none !important; }   /* on touch the action label lives only on the right, above the USE button */
   body.touch #alert { top: 104px; font-size: 16px; padding: 5px 12px; }
   body.touch #toast { top: 18%; }
   body.touch #crosshair { display: none !important; }

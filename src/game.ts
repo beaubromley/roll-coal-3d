@@ -126,27 +126,44 @@ export class Game {
     $("pSound").addEventListener("click", () => { this.sfx.init(); this.sfx.setMuted(!this.sfx.muted); this.refreshPause(); });
     $("pQuit").addEventListener("click", () => location.reload());
   }
-  // bouncing logo while paused (the classic DVD screensaver; hit a corner for a surprise)
-  private dvd = { x: 40, y: 40, vx: 150, vy: 110, raf: 0, last: 0, hue: 0, corners: 0 };
-  private dvdStart() {
-    const el = $("dvd"), msg = $("dvdmsg"), d = this.dvd;
-    cancelAnimationFrame(d.raf); d.last = performance.now();
-    const cols = ["#76ff03", "#ffd24a", "#4aa3e8", "#ff5a5a", "#c77dff", "#ff9a1f", "#3dd9c1"];
-    const step = (now: number) => {
-      const dt = Math.min(0.05, (now - d.last) / 1000); d.last = now;
-      const W = window.innerWidth, H = window.innerHeight, w = el.offsetWidth, h = el.offsetHeight;
-      d.x += d.vx * dt; d.y += d.vy * dt;
-      let hx = false, hy = false;
-      if (d.x <= 0) { d.x = 0; d.vx = Math.abs(d.vx); hx = true; } else if (d.x >= W - w) { d.x = W - w; d.vx = -Math.abs(d.vx); hx = true; }
-      if (d.y <= 0) { d.y = 0; d.vy = Math.abs(d.vy); hy = true; } else if (d.y >= H - h) { d.y = H - h; d.vy = -Math.abs(d.vy); hy = true; }
-      if (hx || hy) { d.hue = (d.hue + 1) % cols.length; el.style.setProperty("--c", cols[d.hue]); }
-      if (hx && hy) { d.corners++; msg.textContent = d.corners > 1 ? `CORNER! x${d.corners}` : "CORNER!"; msg.style.opacity = "1"; window.setTimeout(() => { msg.style.opacity = "0"; }, 1400); }
-      el.style.transform = `translate(${d.x}px, ${d.y}px)`;
-      d.raf = requestAnimationFrame(step);
-    };
-    d.raf = requestAnimationFrame(step);
+  // ---------- days vs depth curve (shown while paused) ----------
+  depthLog: [number, number][] = [];            // [sim minutes, depth ft]
+  private logT = -1;
+  private sampleDepth() {
+    const s = this.sim.s, last = this.depthLog[this.depthLog.length - 1];
+    if (!last || s.t - last[0] >= 20 || Math.abs(s.depth - last[1]) >= 25) this.depthLog.push([s.t, s.depth]);
+    if (this.depthLog.length > 4000) this.depthLog.splice(1, 2);
   }
-  private dvdStop() { cancelAnimationFrame(this.dvd.raf); }
+  private drawCurve() {
+    const cv = $("curve") as HTMLCanvasElement, c = cv.getContext("2d")!, dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = 560, H = 250, L = 56, T = 30, Rr = 14, B = 14;
+    cv.width = W * dpr; cv.height = H * dpr; c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const s = this.sim.s, pts = this.depthLog.length ? [...this.depthLog, [s.t, s.depth] as [number, number]] : [[0, s.depth] as [number, number]];
+    const daysNow = s.t / 1440, maxDays = Math.max(3, Math.ceil(daysNow * 1.15 + 0.5));
+    const d0 = WELL.startDepth, d1 = WELL.td + 300;
+    const X = (days: number) => L + (days / maxDays) * (W - L - Rr), Y = (d: number) => T + ((d - 0) / d1) * (H - T - B);   // depth increases DOWN the page
+    c.clearRect(0, 0, W, H); c.fillStyle = "rgba(255,255,255,0.03)"; c.fillRect(L, T, W - L - Rr, H - T - B);
+    c.font = "9px 'Press Start 2P', monospace"; c.textBaseline = "middle";
+    // depth grid every 2,000 ft, labels on the left
+    c.strokeStyle = "rgba(255,255,255,0.12)"; c.lineWidth = 1;
+    for (let d = 0; d <= d1; d += 2000) { const y = Y(d); c.beginPath(); c.moveTo(L, y); c.lineTo(W - Rr, y); c.stroke(); c.fillStyle = "#93a4b5"; c.textAlign = "right"; c.fillText(d.toLocaleString("en-US"), L - 6, y); }
+    // day grid, labels along the TOP (the way a drilling curve is drawn)
+    const step = maxDays > 12 ? 2 : 1; c.textAlign = "center";
+    for (let d = 0; d <= maxDays; d += step) { const x = X(d); c.strokeStyle = "rgba(255,255,255,0.1)"; c.beginPath(); c.moveTo(x, T); c.lineTo(x, H - B); c.stroke(); c.fillStyle = "#93a4b5"; c.fillText(String(d), x, T - 12); }
+    c.fillStyle = "#ffd24a"; c.textAlign = "left"; c.fillText("DAYS", L, 8); c.save(); c.translate(10, H / 2); c.rotate(-Math.PI / 2); c.textAlign = "center"; c.fillText("DEPTH (FT)", 0, 0); c.restore();
+    // planned curve (dashed): spud to TD in 4 days
+    c.setLineDash([5, 4]); c.strokeStyle = "rgba(122,215,255,0.8)"; c.lineWidth = 1.6; c.beginPath(); c.moveTo(X(0), Y(d0)); c.lineTo(X(4), Y(WELL.td)); c.stroke(); c.setLineDash([]);
+    c.fillStyle = "rgba(122,215,255,0.9)"; c.textAlign = "left"; c.fillText("PLAN", X(4) + 6 > W - 56 ? W - 56 : X(4) + 6, Y(WELL.td) - 8);
+    // TD line
+    c.strokeStyle = "rgba(229,72,59,0.7)"; c.lineWidth = 1.5; c.beginPath(); c.moveTo(L, Y(WELL.td)); c.lineTo(W - Rr, Y(WELL.td)); c.stroke();
+    c.fillStyle = "#e5483b"; c.textAlign = "right"; c.fillText("TD", W - Rr - 2, Y(WELL.td) + 9);
+    // actual curve: flat stretches are connections, trips and well control
+    c.strokeStyle = "#76ff03"; c.lineWidth = 2.6; c.lineJoin = "round"; c.beginPath();
+    pts.forEach((p, i) => { const x = X(p[0] / 1440), y = Y(p[1]); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke();
+    const last = pts[pts.length - 1], lx = X(last[0] / 1440), ly = Y(last[1]);
+    c.fillStyle = "#fff"; c.beginPath(); c.arc(lx, ly, 4.5, 0, 6.3); c.fill(); c.strokeStyle = "#76ff03"; c.lineWidth = 2; c.stroke();
+    c.fillStyle = "#76ff03"; c.textAlign = lx > W - 150 ? "right" : "left"; c.fillText(`${Math.round(last[1]).toLocaleString("en-US")} FT`, lx + (lx > W - 150 ? -9 : 9), ly - 11);
+  }
   private refreshPause() {
     const s = this.sim.s, c = clockString(s.t);
     $("pstat").innerHTML = `DAY ${c.day} · ${c.hhmm}<br/>${fmt(s.depth)} FT · ${money(s.cost)} / ${money(WELL.afe)}`;
@@ -163,11 +180,11 @@ export class Game {
     this.paused = want;
     document.body.classList.toggle("paused", want);
     if (want) {
-      this.refreshPause(); $("pctrlbox").style.display = "none"; $("pause").style.display = "grid"; this.dvdStart();
+      this.refreshPause(); $("pctrlbox").style.display = "none"; $("pause").style.display = "grid"; this.drawCurve();
       this.player.enabled = false; this.player.unlock();
       try { this.sfx.ctx?.suspend(); } catch { /* ignore */ }
     } else {
-      $("pause").style.display = "none"; this.dvdStop();
+      $("pause").style.display = "none";
       this.player.enabled = !this.ui.panelOpen; this.player.lock();
       try { this.sfx.ctx?.resume(); } catch { /* ignore */ }
     }
@@ -706,7 +723,7 @@ export class Game {
       for (const [k, v] of Object.entries(this.flags)) { try { JSON.stringify(v); flags[k] = v; } catch { /* skip things that can't be saved */ } }
       const p = this.player, onFoot = !this.veh.riding;
       localStorage.setItem(Game.SAVE_KEY, JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
-        approval: this.approval, morale: this.morale, incidents: this.incidents, flags, done: [...this.doneIds], realT: this.realT,
+        approval: this.approval, morale: this.morale, incidents: this.incidents, flags, depthLog: this.depthLog, done: [...this.doneIds], realT: this.realT,
         ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled() : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null }));
     } catch { /* storage full or blocked */ }
   }
@@ -716,7 +733,7 @@ export class Game {
       const d = JSON.parse(raw); if (d.v !== 1) return false;
       this.sim.s = d.s; this.sim.hold = d.hold ?? null; this.sim.accumDead = !!d.accumDead;
       this.approval = d.approval; this.morale = d.morale; this.incidents = d.incidents; this.flags = d.flags ?? {}; this.realT = d.realT ?? 0;
-      this.doneIds = new Set<string>(d.done ?? []);
+      this.doneIds = new Set<string>(d.done ?? []); this.depthLog = d.depthLog ?? [];
       this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));
       this.missionNo = this.doneIds.size;
       this.player.body.setPPE(!!d.ppe);
@@ -1032,6 +1049,7 @@ export class Game {
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0));
     if (this.asteroid) { this.asteroidT += realDt; this.asteroid.position.y = 420 - this.asteroidT * 30; this.asteroid.position.x = 120 - this.asteroidT * 4; this.asteroid.rotation.y += realDt * 0.05; }
     this.updateEnv();
+    this.sampleDepth();
     this.saveT += realDt; if (this.saveT > 12) { this.saveT = 0; this.save(); }
     this.updateHud(realDt);
   }

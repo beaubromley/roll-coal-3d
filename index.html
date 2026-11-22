@@ -160,9 +160,7 @@
   @keyframes shake { 0% { transform: translate(0, 0); } 25% { transform: translate(-.35%, .25%); } 50% { transform: translate(.3%, -.2%); } 75% { transform: translate(-.2%, .15%); } 100% { transform: translate(0, 0); } }
 
   /* ---- Pause screen (matches the retro title) ---- */
-  #dvd { z-index: 2; position: absolute; left: 0; top: 0; width: 150px; height: 88px; display: grid; place-content: center; text-align: center; border: 4px solid var(--c, #76ff03); border-radius: 50% / 40%; color: var(--c, #76ff03); font-family: 'Press Start 2P', ui-monospace, monospace; text-shadow: 0 0 10px var(--c, #76ff03); box-shadow: 0 0 22px var(--c, #76ff03), inset 0 0 18px rgba(0,0,0,.4); pointer-events: none; will-change: transform; }
-  #dvd span { font-size: 17px; line-height: 1.15; } #dvd small { font-size: 7px; letter-spacing: 3px; margin-top: 4px; }
-  #dvdmsg { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); font-family: 'Press Start 2P', monospace; font-size: 22px; color: #ffd24a; text-shadow: 0 0 14px #ffd24a; opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap; }
+  #curvewrap { margin: 10px 0 4px; } #curve { width: 100%; max-width: 560px; aspect-ratio: 560 / 250; display: block; margin: 0 auto; background: rgba(0,0,0,.35); border: 2px solid #2a3550; border-radius: 6px; }
   .pbox { position: relative; z-index: 1; }
   #pause { position: fixed; inset: 0; z-index: 25; display: none; place-items: center; background: rgba(4,2,8,.78); backdrop-filter: blur(3px); font-family: 'Press Start 2P', ui-monospace, Consolas, monospace; }
   .pbox { width: min(92vw, 560px); max-height: 92vh; overflow: auto; text-align: center; background: rgba(8,6,16,.96); border: 4px solid #76ff03; box-shadow: 0 0 28px rgba(118,255,3,.35), inset 0 0 14px rgba(0,0,0,.8); padding: 26px 22px 22px; }
@@ -353,12 +351,11 @@
 </div>
 
 <div id="pause" style="display:none">
-  <div id="dvd"><span>ROLL<br/>COAL</span><small>MAKE HOLE</small></div>
-  <div id="dvdmsg"></div>
   <div class="pbox">
     <div class="ptitle2">PAUSED</div>
     <div class="pstat" id="pstat"></div>
     <div class="pjob" id="pjob"></div>
+    <div id="curvewrap"><canvas id="curve" width="560" height="250"></canvas></div>
     <div class="pbtns">
       <button class="pbtn" id="pResume">RESUME</button>
       <button class="pbtn" id="pCtrl">CONTROLS</button>

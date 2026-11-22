@@ -58,12 +58,12 @@ export class Vehicles {
   private chair = { on: false, hidden: false, idx: 0 };
   /** 0 = driller's chair, 1 / 2 = the directional drillers' seats */
   private seats = [
-    { name: "Driller's chair", pos: new Vector3(4.75, F + 0.5, -3.25), yaw: -0.97, npc: "driller", off: new Vector3(4.3, F, -1.7) },
-    { name: "Directional driller's seat", pos: new Vector3(4.8, F + 0.5, -4.62), yaw: Math.PI, npc: "dd1", off: new Vector3(4.8, F, -3.4) },
-    { name: "MWD seat", pos: new Vector3(5.6, F + 0.5, -4.62), yaw: Math.PI, npc: "dd2", off: new Vector3(5.6, F, -3.4) },
+    { name: "Driller's chair", pos: new Vector3(4.5, F + 0.5, -3.2), yaw: -Math.PI / 2, npc: "driller", off: new Vector3(4.8, F, -1.1) },
+    { name: "Directional driller's seat", pos: new Vector3(5.4, F + 0.5, -4.7), yaw: Math.PI / 2, npc: "dd1", off: new Vector3(4.9, F, -3.75) },
+    { name: "MWD seat", pos: new Vector3(5.4, F + 0.5, -2.8), yaw: Math.PI / 2, npc: "dd2", off: new Vector3(4.9, F, -3.75) },
   ];
   /** steering the well from the DD seat */
-  private dd = { inc: 2.1, azi: 270, tf: 0, sliding: false, warned: 0 };
+  dd = { inc: 2.1, azi: 270, tf: 0, sliding: false, warned: 0 };
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0;
@@ -342,10 +342,10 @@ export class Vehicles {
   interacts() {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning });
-    out.push({ pos: () => new Vector3(-5.0, FB + 1.0, 5.1), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
+    out.push({ pos: () => new Vector3(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : i === 1 ? "Sit in the directional driller's seat" : "Sit in the MWD seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
-    out.push({ pos: () => new Vector3(-4.0, F + 1.2, -0.3), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
-    out.push({ pos: () => new Vector3(-4.0, FB + 1.2, 0.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
+    out.push({ pos: () => new Vector3(0, F + 1.2, 2.1), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
+    out.push({ pos: () => new Vector3(0, FB + 1.2, 0.9), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
   }
 
@@ -500,15 +500,15 @@ export class Vehicles {
   }
   private updateZip(dt: number) {
     const z = this.zip, p = this.player; z.t = Math.min(1, z.t + dt / 9);
-    const e = Math.pow(z.t, 1.35), zz = 5.5 + (46 - 5.5) * e, lineY = (FB + 2.6) + (0.55 - (FB + 2.6)) * ((zz - 5.5) / (46 - 5.5));
+    const e = Math.pow(z.t, 1.35), zz = 5.7 + (38.6 - 5.7) * e, lineY = (FB + 2.6) + (0.55 - (FB + 2.6)) * ((zz - 5.7) / (38.6 - 5.7));
     const y = Math.max(0.4, lineY - 1.7);
-    p.pos.set(-5.0, y, zz); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(-5.0, y + 1.45, zz);
+    p.pos.set(0, y, zz); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(0, y + 1.45, zz);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     this.hud.textContent = `GERONIMO LINE   ${Math.max(0, Math.round((y) * 3.281))} FT   HOLD ON\nlook around with the mouse / drag`;
     if (z.t >= 1) {
       z.on = false; this.hud.style.display = "none"; p.ride = false; p.third = this.wasThird;
-      p.teleport(-5.0, 0.4, 43.4, Math.PI);
+      p.teleport(0, 0.4, 36.9, 0);
       this.game.ui.toast("TOUCHDOWN", "The Geronimo line works. Now walk back up the ladder.");
       this.game.gain(0.05, 2);
     }
@@ -519,14 +519,14 @@ export class Vehicles {
     if (this.riding) return;
     this.climb.on = true; this.climb.y = y;
     this.wasThird = this.player.third; this.player.third = false; this.player.ride = true;
-    this.player.yaw = 0; this.player.pitch = 0;
+    this.player.yaw = Math.PI; this.player.pitch = 0;
     this.hud.style.display = "block";
     this.game.sfx.click();
   }
   private finishClimb(top: boolean) {
     this.climb.on = false; this.hud.style.display = "none";
     this.player.ride = false; this.player.third = this.wasThird;
-    if (top) this.player.teleport(-4.0, FB + 0.12, 0.55, 0); else this.player.teleport(-4.0, F, -0.75, Math.PI);
+    if (top) this.player.teleport(0, FB + 0.12, 0.8, 0); else this.player.teleport(0, F, 2.35, 0);
   }
   private updateClimb(dt: number) {
     const p = this.player, c = this.climb, joy = p.touchMove;
@@ -535,8 +535,8 @@ export class Vehicles {
     if (c.y >= FB - 0.01 && dir > 0.2) { this.finishClimb(true); return; }
     if (c.y <= F + 0.01 && dir < -0.2) { this.finishClimb(false); return; }
     c.y = Math.max(F, Math.min(FB, c.y));
-    p.pos.set(-4.0, c.y, -0.4); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(-4.0, c.y + 1.5, -0.42);
+    p.pos.set(0, c.y, 1.95); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(0, c.y + 1.5, 1.93);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     this.hud.textContent = `CLIMBING   ${Math.round(c.y * 3.281)} FT\nW/S climb  ·  SHIFT climb faster  ·  keep going to the top or bottom`;
   }

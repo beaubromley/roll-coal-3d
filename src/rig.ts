@@ -6,6 +6,7 @@ import { Builder, AABB, node, pushOutXZ } from "./builder";
 import { Human } from "./npcs";
 import type { Kit } from "./models";
 import { corrugated, woodGrain, DetailTex } from "./textures";
+import { Screens, ScreenKind } from "./screens";
 
 export const F = 7.8; // drill floor height above ground (m) - 25.5 ft standard FlexRig-class floor
 export const STAND_M = 28.35; // 93 ft stand
@@ -13,6 +14,8 @@ export const STAND_M = 28.35; // 93 ft stand
 export interface RigFrame {
   depth: number; startDepth: number; rotating: boolean; connecting: boolean; tripping: boolean;
   tripFrac: number; standsRacked: number; night: number; t: number; pumpsOn: boolean; flaring: boolean;
+  /** live data for the cabin monitors; `near` = the player is close enough for them to be worth redrawing */
+  screens?: import("./screens").ScreenData; near?: boolean;
 }
 
 export interface Rig {
@@ -180,7 +183,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const R = (x0: number, z0: number, x1: number, z1: number) => b.rail("yellow", x0, z0, x1, z1, F);
   R(-FX, -FZ, FX, -FZ);
   R(-FX, FZ, -2.2, FZ); R(2.2, FZ, FX, FZ);
-  R(FX, -FZ, FX, 3.1); R(FX, 4.5, FX, FZ);
+  R(FX, -0.2, FX, 3.1); R(FX, 4.5, FX, FZ);
   R(-FX, -FZ, -FX, -1.6); R(-FX, -0.2, -FX, FZ);
   // stairs: east (to ground) and west
   b.stairs("dsteel", "yellow", FX, 3.8, "+x", F, 1.5);
@@ -201,49 +204,52 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.label("SLICK RAMP\nNO WALKING", 1.25, F + 1.2, 6.2, 1.0, 0.8, Math.PI, "#e8b923", "#111111", 38);
   }
 
-  // ---- driller's cabin (glass, enterable): driller's console on the west glass, directional drillers' desk on the north wall ----
-  b.room({ x0: 3.0, z0: -5.9, x1: 6.3, z1: -0.8, y0: F, h: 2.8, wall: "cabinwall", roof: "dsteel", floor: "dsteel", glass: "glass",
-    door: { side: "+z", c: 4.65, w: 1.2 } });
-  const SCR = ["screen", "screenb", "screena", "screenr"];
-  // monitor: bezel + glowing screen. face = direction the screen looks
-  const monitor = (face: "+x" | "-x" | "+z", cx: number, cy: number, cz: number, w: number, h: number, mat: string) => {
-    if (face === "+z") { b.slab("black", cx - w / 2, cy - h / 2, cz - 0.04, cx + w / 2, cy + h / 2, cz + 0.04); b.slab(mat, cx - w / 2 + 0.03, cy - h / 2 + 0.03, cz + 0.04, cx + w / 2 - 0.03, cy + h / 2 - 0.03, cz + 0.05); }
-    else { const d = face === "+x" ? 1 : -1; b.slab("black", cx - 0.04, cy - h / 2, cz - w / 2, cx + 0.04, cy + h / 2, cz + w / 2); b.slab(mat, d > 0 ? cx + 0.04 : cx - 0.05, cy - h / 2 + 0.03, cz - w / 2 + 0.03, d > 0 ? cx + 0.05 : cx - 0.04, cy + h / 2 - 0.03, cz + w / 2 - 0.03); }
+  // ---- driller's cabin (glass, enterable, 4.2 x 5.7 m): the driller sits at the west glass facing the rotary; the directional driller
+  //      and MWD hand sit back-to-back with him at a desk along the east wall ----
+  const screens = new Screens(scene);
+  b.slab("deck", 6.5, F - 0.25, -5.9, 6.95, F, -0.2, true);                     // floor carried out under the cabin's east end
+  b.room({ x0: 2.7, z0: -5.9, x1: 6.9, z1: -0.2, y0: F, h: 3.0, wall: "cabinwall", roof: "dsteel", floor: "dsteel", glass: "glass",
+    door: { side: "+z", c: 4.8, w: 1.3 } });
+  let scrN = 0;
+  /** a live monitor: black bezel and a unique emissive material whose canvas texture is redrawn from the sim */
+  const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind) => {
+    const key = "scr" + scrN++, tex = screens.make(kind, false);
+    tex.wAng = Math.PI / 2;   // the box side faces map the canvas turned a quarter turn
+    const m = b.defMat(key, "#000000"); m.emissiveTexture = tex; m.diffuseTexture = tex; m.diffuseColor.set(0.4, 0.4, 0.4); m.emissiveColor.set(0.85, 0.85, 0.85); m.specularColor.set(0, 0, 0);
+    b.slab("black", cx - 0.04, cy - h / 2 - 0.03, cz - w / 2 - 0.03, cx + 0.04, cy + h / 2 + 0.03, cz + w / 2 + 0.03);
+    if (face === "+x") b.slab(key, cx + 0.04, cy - h / 2, cz - w / 2, cx + 0.05, cy + h / 2, cz + w / 2);
+    else b.slab(key, cx - 0.05, cy - h / 2, cz - w / 2, cx - 0.04, cy + h / 2, cz + w / 2);
+    b.slab("dsteel", cx - 0.03, cy - h / 2 - 0.2, cz - 0.04, cx + 0.03, cy - h / 2 - 0.03, cz + 0.04);   // stand
   };
-  // driller's desk along the west glass, with a monitor bank low enough to see the mast over, plus an overhead row
-  b.slab("dsteel", 3.1, F, -4.9, 3.95, F + 0.95, -1.7, true);
-  b.slab("steel", 3.1, F + 0.95, -4.9, 3.95, F + 0.99, -1.7);
-  for (let i = 0; i < 5; i++) monitor("+x", 3.55, F + 1.2, -4.55 + i * 0.6, 0.5, 0.32, SCR[(i * 3) % 4]);
-  for (let i = 0; i < 4; i++) monitor("+x", 3.2, F + 2.25, -4.4 + i * 0.75, 0.62, 0.38, SCR[(i + 1) % 4]);
-  b.slab("black", 3.9, F + 0.99, -3.6, 4.2, F + 1.03, -2.9);                  // keyboard / panel
-  // driller's chair (faces the rotary through the glass)
-  b.cyl("black", 4.75, F + 0.25, -3.25, 0.14, 0.5, { tess: 8 });
-  b.slab("black", 4.35, F, -3.65, 5.15, F + 0.07, -2.85);                       // base star
-  b.slab("black", 4.45, F + 0.5, -3.55, 5.05, F + 0.6, -2.95);                  // seat
-  b.slab("black", 5.0, F + 0.6, -3.55, 5.1, F + 1.35, -2.95);                   // back
-  b.slab("dsteel", 4.4, F + 0.75, -3.75, 4.9, F + 0.82, -3.6); b.slab("dsteel", 4.4, F + 0.75, -2.9, 4.9, F + 0.82, -2.75);   // arm rests
-  b.cyl("steel", 4.55, F + 0.95, -3.68, 0.04, 0.25, { tess: 6 }); b.cyl("red", 4.55, F + 1.1, -3.68, 0.07, 0.07, { tess: 8 });   // brake / throttle
-  b.cyl("steel", 4.55, F + 0.95, -2.82, 0.04, 0.25, { tess: 6 });
-  spots.cabin = v(3.7, F + 1.3, -3.25);
-  // directional drillers' desk on the north wall: two seats, two rows of screens
-  b.slab("dsteel", 4.2, F, -5.85, 6.2, F + 0.95, -5.15, true);
-  b.slab("steel", 4.2, F + 0.95, -5.85, 6.2, F + 0.99, -5.15);
-  for (let i = 0; i < 4; i++) monitor("+z", 4.45 + i * 0.52, F + 1.25, -5.55, 0.46, 0.34, SCR[(i * 2 + 1) % 4]);
-  for (let i = 0; i < 4; i++) monitor("+z", 4.45 + i * 0.52, F + 1.68, -5.55, 0.46, 0.3, SCR[(i + 2) % 4]);
-  monitor("+z", 5.2, F + 2.15, -5.78, 1.7, 0.32, "screenb");                    // overhead survey / gamma strip
-  for (const cx of [4.8, 5.6]) {
-    b.cyl("black", cx, F + 0.25, -4.7, 0.12, 0.5, { tess: 8 });
-    b.slab("black", cx - 0.4, F, -5.1, cx + 0.4, F + 0.07, -4.3);                // star base
-    b.slab("black", cx - 0.28, F + 0.5, -4.98, cx + 0.28, F + 0.58, -4.42);      // seat
-    b.slab("black", cx - 0.28, F + 0.58, -4.5, cx + 0.28, F + 1.3, -4.42);       // back (they face the desk, -z)
+  // ---- driller's desk on the west glass: four live monitors low enough to see the rotary over, plus overhead displays ----
+  b.slab("dsteel", 2.8, F, -5.0, 3.6, F + 0.95, -1.4, true);
+  b.slab("steel", 2.8, F + 0.95, -5.0, 3.6, F + 0.99, -1.4);
+  (["params", "trends", "pits", "alarms"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, -4.5 + i * 0.95, 0.85, 0.54, k));
+  (["pumps", "hookload", "steer"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.0, F + 2.35, -4.3 + i * 1.3, 0.85, 0.52, k));
+  for (let i = 0; i < 4; i++) { b.slab("black", 3.55, F + 0.99, -4.7 + i * 0.95, 3.85, F + 1.03, -4.2 + i * 0.95); }   // keyboards / panels
+  // driller's chair at (4.5, -3.2) facing west: joystick arms, throttle and brake
+  b.cyl("black", 4.5, F + 0.25, -3.2, 0.14, 0.5, { tess: 8 }); b.slab("black", 4.1, F, -3.6, 4.9, F + 0.07, -2.8);
+  b.slab("black", 4.2, F + 0.5, -3.5, 4.8, F + 0.6, -2.9); b.slab("black", 4.75, F + 0.6, -3.5, 4.85, F + 1.4, -2.9);
+  b.slab("dsteel", 3.95, F + 0.75, -3.62, 4.4, F + 0.82, -3.5); b.slab("dsteel", 3.95, F + 0.75, -2.9, 4.4, F + 0.82, -2.78);
+  b.cyl("steel", 4.0, F + 0.95, -3.56, 0.04, 0.25, { tess: 6 }); b.cyl("red", 4.0, F + 1.1, -3.56, 0.07, 0.07, { tess: 8 }); b.cyl("steel", 4.0, F + 0.95, -2.84, 0.04, 0.25, { tess: 6 });
+  spots.cabin = v(3.7, F + 1.3, -3.2);
+  // ---- directional driller / MWD desk along the east wall: they face east, back to the driller ----
+  b.slab("dsteel", 6.0, F, -5.7, 6.8, F + 0.95, -1.6, true);
+  b.slab("steel", 6.0, F + 0.95, -5.7, 6.8, F + 0.99, -1.6);
+  ([["survey", -5.2], ["toolface", -4.4], ["gamma", -3.2], ["mwd", -2.4]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.45, F + 1.32, z, 0.74, 0.5, k));
+  ([["plan", -4.8], ["steer", -2.8]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k));
+  for (const z of [-5.0, -3.3, -2.6]) b.slab("black", 6.15, F + 0.99, z - 0.25, 6.4, F + 1.03, z + 0.25);
+  for (const cz of [-4.7, -2.8]) {                                               // two chairs facing the desk
+    b.cyl("black", 5.4, F + 0.25, cz, 0.12, 0.5, { tess: 8 }); b.slab("black", 5.0, F, cz - 0.4, 5.8, F + 0.07, cz + 0.4);
+    b.slab("black", 5.1, F + 0.5, cz - 0.3, 5.7, F + 0.58, cz + 0.3); b.slab("black", 5.05, F + 0.58, cz - 0.3, 5.15, F + 1.3, cz + 0.3);
   }
-  // wall displays on the east side: gas, ROP, pit levels
-  for (let i = 0; i < 3; i++) monitor("-x", 6.22, F + 1.5, -4.6 + i * 1.05, 0.9, 0.55, SCR[(i * 2) % 4]);
-  // ceiling light, AC unit, small fridge
-  b.slab("lamp", 4.0, F + 2.74, -3.9, 5.6, F + 2.8, -3.5); b.slab("lamp", 4.0, F + 2.74, -2.3, 5.6, F + 2.8, -1.9);
-  b.slab("steel", 4.0, F + 2.92, -4.6, 5.4, F + 3.3, -3.4);
-  b.slab("white", 5.8, F, -1.3, 6.2, F + 0.9, -0.9, true);
-  b.label("DRILLER", 4.65, F + 2.45, -0.72, 1.6, 0.4, Math.PI, "#233a52", "#ffd24a", 60);
+  // ---- room details: ceiling lights, A/C, fridge, wall clock, whiteboard, door mat ----
+  b.slab("lamp", 3.9, F + 2.94, -4.4, 5.5, F + 3.0, -4.0); b.slab("lamp", 3.9, F + 2.94, -2.3, 5.5, F + 3.0, -1.9);
+  b.slab("steel", 4.4, F + 3.12, -4.6, 5.8, F + 3.5, -3.4);
+  b.slab("white", 6.4, F, -0.7, 6.8, F + 0.9, -0.3, true);
+  b.slab("white", 3.0, F + 1.4, -0.28, 3.9, F + 2.2, -0.24); b.slab("red", 3.05, F + 1.45, -0.285, 3.4, F + 1.5, -0.25);     // whiteboard on the south wall
+  b.slab("black", 3.0, F + 0.01, -0.9, 3.8, F + 0.03, -0.3);
+  b.label("DRILLER", 4.8, F + 2.6, -0.12, 1.6, 0.4, Math.PI, "#233a52", "#ffd24a", 60);
 
   // ---- doghouse (enterable) ----
   b.room({ x0: -6.0, z0: -5.8, x1: -2.6, z1: -2.4, y0: F, h: 2.6, wall: "tan", roof: "dsteel", floor: "dsteel",
@@ -287,61 +293,56 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     }
     bx(0.4, 0.1, 0.5, "black", 0, 0.3, -1.65);                    // hose bundle tray
   }
-  b.slab("dsteel", -5.9, F, 0.7, -2.3, F + 0.1, 5.7);                          // setback pad
-  b.blocker(-5.95, F, 0.65, -2.25, F + 2.2, 5.75);                           // racked stands: not walkable
+  // ---- setback under the board: racked stands in two blocks either side of the V-door aisle (x -0.7..0.7), tops in the fingers above ----
+  b.slab("dsteel", -2.9, F, 2.6, -0.7, F + 0.1, 5.8); b.slab("dsteel", 0.7, F, 2.6, 2.9, F + 0.1, 5.8);
+  b.blocker(-2.9, F, 2.55, -0.7, F + 2.2, 5.85); b.blocker(0.7, F, 2.55, 2.9, F + 2.2, 5.85);              // racked stands: not walkable
   const FB = F + 25;
-  // ---- monkey board: a centre walkway (x -4.5..-3.5) with a row of fingers on each side, rails around, a landing at the ladder,
-  //      and a catwalk across to the top drive's stabbing board
-  const WX0 = -4.5, WX1 = -3.5;
-  b.slab("steel", WX0, FB, 1.0, WX1, FB + 0.12, 5.8);                          // centre walkway
-  b.slab("steel", -5.8, FB, 1.0, WX0, FB + 0.08, 5.8); b.slab("steel", WX1, FB, 1.0, -2.2, FB + 0.08, 5.8);   // finger decks either side
-  for (const [fx0, fx1] of [[-5.8, WX0], [WX1, -2.2]] as [number, number][]) {
-    for (let i = 0; i < 12; i++) b.slab("dsteel", fx0, FB + 0.08, 1.15 + i * 0.4, fx1, FB + 0.5, 1.2 + i * 0.4);    // finger dividers (pipe slots)
-    b.rail("yellow", fx0, 1.0, fx1, 1.0, FB, 1.1); b.rail("yellow", fx0, 5.8, fx1, 5.8, FB, 1.1);               // pipe latches front and back
-    b.blocker(fx0, FB - 0.15, 1.0, fx1, FB + 1.8, 5.8);                                                          // racked pipe: the derrickman works from the walkway
+  // ---- monkey board, centred on the well (x = 0, the top drive's line): a central walkway with fingers either side, a stabbing board
+  //      on the mast face right at the top drive, rails all round, and a ladder through the stabbing board ----
+  b.slab("steel", -0.5, FB, 1.8, 0.5, FB + 0.12, 6.0);                                                       // centre walkway
+  b.blocker(-0.5, FB - 0.15, 1.8, 0.5, FB + 0.12, 6.0);
+  for (const [fx0, fx1] of [[-3.0, -0.5], [0.5, 3.0]] as [number, number][]) {
+    b.slab("steel", fx0, FB, 1.8, fx1, FB + 0.08, 5.8);                                                      // finger deck
+    for (let i = 0; i < 11; i++) b.slab("dsteel", fx0, FB + 0.08, 1.95 + i * 0.36, fx1, FB + 0.5, 2.0 + i * 0.36);   // fingers (pipe slots between them)
+    b.blocker(fx0, FB - 0.15, 1.8, fx1, FB + 1.8, 5.8);                                                      // racked pipe: the derrickman works from the walkway
   }
-  b.blocker(WX0, FB - 0.15, 1.0, WX1, FB + 0.12, 5.8);
-  b.rail("yellow", -5.8, 1.0, -5.8, 5.8, FB, 1.1); b.rail("yellow", -2.2, 1.0, -2.2, 5.8, FB, 1.1);             // outer rails
-  b.rail("yellow", WX0, 5.8, WX1, 5.8, FB, 1.1);                                                                // end of the walkway
-  // landing at the top of the ladder (x -4.6..-3.4), with the catwalk leaving east toward the mast
-  b.slab("steel", -4.6, FB, -0.35, -3.4, FB + 0.12, 1.0);
-  b.blocker(-4.6, FB - 0.15, -0.35, -3.4, FB + 0.12, 1.0);
-  b.rail("yellow", -4.6, -0.35, -4.6, 1.0, FB, 1.1);
-  b.rail("yellow", -4.6, -0.35, -4.3, -0.35, FB, 1.1); b.rail("yellow", -3.7, -0.35, -3.4, -0.35, FB, 1.1);       // gap for the ladder
-  b.rail("yellow", -3.4, 0.4, -3.4, 1.0, FB, 1.1);
-  // catwalk to the top drive: -3.4 -> -0.95 at z -0.35..0.4, rails both sides, gate at the end
-  b.slab("steel", -3.4, FB, -0.35, -0.95, FB + 0.1, 0.4); b.blocker(-3.4, FB - 0.15, -0.35, -0.95, FB + 0.1, 0.4);
-  b.rail("yellow", -3.4, -0.35, -0.95, -0.35, FB, 1.1); b.rail("yellow", -3.4, 0.4, -0.95, 0.4, FB, 1.1); b.rail("yellow", -0.95, -0.35, -0.95, 0.4, FB, 1.1);
-  for (let x = -3.2; x < -1.0; x += 0.8) b.beam("dsteel", v(x, FB - 0.05, -0.1), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), 0.7), 0.05);   // support struts back to the mast
-  b.label("STABBING BOARD", -2.15, FB + 0.62, 0.43, 1.5, 0.3, Math.PI, "#233a52", "#ffd24a", 38);
-  // ladder from the drill floor to the board (x=-4.0, z=0.05): rails, rungs, struts back to the mast leg
-  b.beam("steel", v(-4.25, F, 0.05), v(-4.25, FB + 1.2, 0.05), 0.07); b.beam("steel", v(-3.75, F, 0.05), v(-3.75, FB + 1.2, 0.05), 0.07);
-  for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", -4.0, y, 0.05, 0.5, 0.035, 0.035);
+  b.rail("yellow", -3.0, 1.8, -3.0, 5.8, FB, 1.1); b.rail("yellow", 3.0, 1.8, 3.0, 5.8, FB, 1.1);            // outer rails
+  b.rail("yellow", -3.0, 5.8, -0.5, 5.8, FB, 1.1); b.rail("yellow", 0.5, 5.8, 3.0, 5.8, FB, 1.1);             // latches / back rail
+  b.rail("yellow", -0.5, 6.0, 0.5, 6.0, FB, 1.1);                                                               // chain across the walkway end (the Geronimo post is right beside it)
+  // stabbing board on the mast face, at the top drive
+  b.slab("steel", -1.4, FB, -0.1, 1.4, FB + 0.12, 1.8); b.blocker(-1.4, FB - 0.15, -0.1, 1.4, FB + 0.12, 1.8);
+  b.rail("yellow", -1.4, -0.1, -1.4, 1.8, FB, 1.1); b.rail("yellow", 1.4, -0.1, 1.4, 1.8, FB, 1.1);
+  b.rail("yellow", -1.4, -0.1, 1.4, -0.1, FB, 1.1);                                                           // mast side: gate onto the top drive
+  b.rail("yellow", -1.4, 1.8, -0.5, 1.8, FB, 1.1); b.rail("yellow", 0.5, 1.8, 1.4, 1.8, FB, 1.1);
+  for (const x of [-1.2, 1.2]) b.beam("dsteel", v(x, FB - 0.05, 1.2), Vector3.Lerp(v(x * 1.6, F, 1.2), v(x * 0.6, 46, 0.4), 0.66), 0.05);   // support struts to the mast
+  b.label("STABBING BOARD", 0, FB + 0.75, 1.76, 1.5, 0.3, Math.PI, "#233a52", "#ffd24a", 38);
+  // ladder through the stabbing board hatch: floor -> board at (0, 1.45), struts back to the mast
+  b.beam("steel", v(-0.28, F, 1.45), v(-0.28, FB + 1.2, 1.45), 0.07); b.beam("steel", v(0.28, F, 1.45), v(0.28, FB + 1.2, 1.45), 0.07);
+  for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", 0, y, 1.45, 0.56, 0.035, 0.035);
   for (let y = F + 4; y < FB; y += 4.2) {
     const u = (y - F) / (46 - F);
-    b.beam("steel", v(-4.0, y, 0.15), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), u), 0.06);
+    b.beam("steel", v(-0.28, y, 1.5), Vector3.Lerp(v(-1.2, F, 1.2), v(-0.9, 46, 0.4), u), 0.06); b.beam("steel", v(0.28, y, 1.5), Vector3.Lerp(v(1.2, F, 1.2), v(0.9, 46, 0.4), u), 0.06);
   }
-  // Geronimo line: the derrickman's escape cable, anchored at the corner post and run down to a ground anchor with a landing pad
-  const GA = v(-5.0, FB + 2.6, 5.5), GB = v(-5.0, 0.55, 46);
-  b.beam("steel", v(-5.0, FB, 5.5), GA, 0.1); b.beam("steel", v(-5.0, FB + 1.3, 5.5), v(-5.6, FB + 0.4, 5.5), 0.05);    // anchor post + brace
-  b.beam("black", GA, GB, 0.035, 5);                                                                                    // the line
-  b.slab("steel", -5.8, FB + 2.4, 5.35, -4.2, FB + 2.5, 5.65);                                                          // anchor beam
-  b.box("yellow", -5.0, FB + 2.38, 5.5, 0.4, 0.16, 0.26);                                                                // trolley
-  b.box("red", -5.0, FB + 1.9, 5.5, 0.04, 0.9, 0.04); b.box("black", -5.0, FB + 1.4, 5.5, 0.5, 0.1, 0.3);                // lanyard and harness seat
-  b.cyl("dsteel", -5.0, 0.3, 46, 0.5, 0.6, { tess: 8 }); b.cyl("steel", -5.0, 1.2, 46, 0.14, 1.8, { tess: 6 });          // ground anchor
-  b.slab("blue", -6.6, 0.0, 41.5, -3.4, 0.35, 45); b.slab("yellow", -6.7, 0.0, 41.4, -3.3, 0.06, 45.1);                  // landing pad
-  b.label("GERONIMO LINE\nESCAPE ONLY", -5.0, 2.7, 46.5, 2.4, 0.9, Math.PI, "#7a1a14", "#ffffff", 44);
-  b.blocker(-5.3, 0, 45.75, -4.7, 2.0, 46.25);
-  spots.board = v(-4.0, FB + 1.0, 2.6);
-  spots.geronimo = v(-4.9, FB + 1.0, 5.2);
-  spots.floorSetback = v(-4.0, F + 1.0, 3.5);
+  // Geronimo line: the derrickman's escape cable from the end of the walkway straight out to a ground anchor with a landing pad
+  const GA = v(0, FB + 2.6, 5.7), GB = v(0, 0.55, 38.6);
+  b.beam("steel", v(0.5, FB, 5.9), v(0.5, FB + 2.6, 5.9), 0.1); b.beam("steel", v(-0.5, FB, 5.9), v(-0.5, FB + 2.6, 5.9), 0.1); b.slab("steel", -0.6, FB + 2.5, 5.8, 0.6, FB + 2.6, 6.0);
+  b.beam("black", GA, GB, 0.035, 5);                                                                          // the line
+  b.box("yellow", 0, FB + 2.38, 5.7, 0.4, 0.16, 0.26);                                                        // trolley
+  b.box("red", 0, FB + 1.9, 5.7, 0.04, 0.9, 0.04); b.box("black", 0, FB + 1.4, 5.7, 0.5, 0.1, 0.3);            // lanyard and harness seat
+  b.cyl("dsteel", 0, 0.3, 38.6, 0.5, 0.6, { tess: 8 }); b.cyl("steel", 0, 1.2, 38.6, 0.14, 1.8, { tess: 6 });   // ground anchor
+  b.slab("blue", -1.6, 0.0, 35.9, 1.6, 0.35, 38.0); b.slab("yellow", -1.7, 0.0, 35.8, 1.7, 0.06, 38.1);          // landing pad
+  b.label("GERONIMO LINE\nESCAPE ONLY", 0, 2.7, 39.3, 2.4, 0.9, Math.PI, "#7a1a14", "#ffffff", 44);
+  b.blocker(-0.3, 0, 38.35, 0.3, 2.0, 38.85);
+  spots.board = v(0, FB + 1.0, 3.6);
+  spots.geronimo = v(0, FB + 1.0, 5.2);
+  spots.floorSetback = v(0, F + 1.0, 3.6);
 
   // stands (thin instances so we can show a count)
   const standBase = MeshBuilder.CreateCylinder("stand", { diameter: 0.2, height: 1, tessellation: 6 }, scene);
   standBase.material = b.getMat("pipe");
   standBase.isVisible = true;
   const standSlots: Vector3[] = [];
-  for (let zi = 0; zi < 10; zi++) for (const x of [-5.6, -3.3, -5.15, -2.85, -4.7, -2.4]) standSlots.push(v(x, F + 0.1, 1.2 + zi * 0.5));
+  for (let zi = 0; zi < 6; zi++) for (const x of [-2.6, -2.1, -1.6, -1.1, 1.1, 1.6, 2.1, 2.6]) standSlots.push(v(x, F + 0.1, 2.85 + zi * 0.5));
   const standMats = standSlots.map(() => Matrix.Identity());
   standSlots.forEach((p, i) => { standBase.thinInstanceAdd(Matrix.Identity()); void p; void i; });
   let shownStands = -1;
@@ -769,12 +770,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const addH = (key: string, x: number, y: number, z: number, rotY: number, o: ConstructorParameters<typeof Human>[1]) => {
     const h = new Human(scene, o); h.root.position.set(x, y, z); h.root.rotation.y = rotY; humans[key] = h; return h;
   };
-  addH("driller", 4.7, F - 0.17, -3.25, -0.97, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" }).seated = true;
-  addH("dd1", 4.8, F - 0.17, -4.62, Math.PI, { shirt: "#2b4a66", pants: "#3a3a3a", hat: null, skin: "#8a5a3a" }).seated = true;
-  addH("dd2", 5.6, F - 0.17, -4.62, Math.PI, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
+  addH("driller", 4.5, F - 0.17, -3.2, -Math.PI / 2, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" }).seated = true;
+  addH("dd1", 5.4, F - 0.17, -4.7, Math.PI / 2, { shirt: "#2b4a66", pants: "#3a3a3a", hat: null, skin: "#8a5a3a" }).seated = true;
+  addH("dd2", 5.4, F - 0.17, -2.8, Math.PI / 2, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
   addH("hand1", -0.9, F, 2.4, 0.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
-  addH("hand2", 1.9, F, 3.6, -2.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a" });
-  addH("derrickman", -4.0, FB + 0.12, 3.2, Math.PI, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
+  addH("hand2", 0.0, F, 5.3, Math.PI, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a" });
+  addH("derrickman", 0.0, FB + 0.12, 3.8, Math.PI, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
   addH("mudeng", -6, 2.78, -22.8, 1.2, { shirt: "#1d6fb5", pants: "#3a3a3a", hat: "#f2f2f2", skin: "#e0b48f" });
   addH("pusher", 27.5, 0, 30, -1.6, { shirt: "#3a5a3a", pants: "#4a3a2a", hat: "#d9d9d9", skin: "#b9805a" });
   addH("hand3", 2.1, 0, 20, 0, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
@@ -798,11 +799,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // walker paths
   const walkers = [
     { h: humans.hand3, pts: [v(2.1, 0, 20), v(2.1, 0, 36), v(-2.1, 0, 36), v(-2.1, 0, 20), v(-2.1, 0, 36), v(2.1, 0, 36)], i: 0, speed: 1.1 },
-    { h: humans.hand1, pts: [v(-0.9, F, 2.4), v(-0.9, F, 4.3), v(1.2, F, 4.3), v(1.2, F, 2.4)], i: 0, speed: 0.8 },
+    { h: humans.hand1, pts: [v(-0.4, F, 2.9), v(-0.4, F, 4.6), v(0.4, F, 4.6), v(0.4, F, 2.9)], i: 0, speed: 0.8 },
   ];
 
   let tdY = F + 24;
   const tmpQ = new Quaternion();
+  let scrT = 0;
   const update = (dt: number, f: RigFrame) => {
     // top drive position follows hole depth within the current stand
     const into = ((f.depth - f.startDepth) % 93 + 93) % 93;
@@ -829,6 +831,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     const dir = c2.subtract(a), len = dir.length();
     hose.position.copyFrom(a.add(c2).scale(0.5)); hose.scaling.y = len;
     Quaternion.FromUnitVectorsToRef(Vector3.Up(), dir.scale(1 / len), tmpQ); hose.rotationQuaternion = tmpQ.clone();
+    // cabin monitors: live data, redrawn about three times a second and only when someone is near
+    scrT -= dt; if (scrT <= 0 && f.near && f.screens) { scrT = 0.33; screens.update(f.screens); }
     // iron roughneck swings in on connection
     rough.rotation.y = f.connecting ? -0.6 : 0;
     setStands(f.tripping ? f.standsRacked : 40 + Math.min(0, 0));

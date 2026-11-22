@@ -53,7 +53,7 @@
   .rmsg .txt { font-size: 13px; line-height: 1.3; }
   @keyframes slidein { from { transform: translateX(-20px); opacity: 0; } }
 
-  #mapwrap { position: absolute; left: 22px; bottom: 22px; width: 344px; height: 344px; border-radius: 50%; border: 4px solid #0b0f14; box-shadow: 0 0 0 2px rgba(255,255,255,.35), 0 4px 16px rgba(0,0,0,.6); overflow: hidden; background: #cdb98f; }
+  #mapwrap { position: absolute; left: 22px; bottom: 22px; width: 260px; height: 260px; border-radius: 50%; border: 4px solid #0b0f14; box-shadow: 0 0 0 2px rgba(255,255,255,.35), 0 4px 16px rgba(0,0,0,.6); overflow: hidden; background: #cdb98f; }
   #map { width: 100%; height: 100%; display: block; }
   #district { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); font-family: var(--display); font-size: clamp(30px, 5.5vw, 70px); text-transform: uppercase; color: #fff; letter-spacing: 4px; opacity: 0; white-space: nowrap; text-shadow: 0 3px 0 #000, 0 0 24px rgba(0,0,0,.8); pointer-events: none; }
   #district.show { animation: distShow 3.6s ease-out forwards; }
@@ -136,8 +136,9 @@
   @keyframes flick { 0%, 100% { filter: brightness(1); } 7% { filter: brightness(1.28) saturate(1.2); } 9% { filter: brightness(1); } 52% { filter: brightness(1.18); } 54% { filter: brightness(1); } 81% { filter: brightness(1.32) saturate(1.25); } 83% { filter: brightness(1); } }
   #ver { position: absolute; top: 2.2%; left: 50%; transform: translateX(-50%); font-size: max(7px, 1.05cqw); color: #76ff03; text-shadow: 2px 2px #000, 0 0 10px #76ff03; white-space: nowrap; }
   #sub2 { position: absolute; top: 33%; left: 50%; transform: translateX(-50%); font-size: max(7px, .95cqw); color: #ffd24a; text-shadow: 2px 2px #000, 0 0 8px rgba(255,160,40,.8); white-space: nowrap; letter-spacing: .06cqw; }
-  #btnrow { position: absolute; left: 28.8%; width: 40.9%; top: 81.8%; height: 10.2%; display: flex; }
+  #btnrow { position: absolute; left: 17%; width: 66%; top: 80.5%; height: 12.5%; display: flex; gap: 2.2%; }
   .tbtn { flex: 1; font-family: inherit; font-size: max(11px, 1.15cqw); white-space: nowrap; background: transparent; color: #0b1a05; border: 0; cursor: pointer; text-shadow: 1px 1px rgba(255,255,255,.25); transition: transform .15s, color .15s; letter-spacing: .04cqw; padding: 0; }
+  #btnrow .tbtn { background: linear-gradient(#a9dc6a, #6fae3a); border: 3px solid #0b1a05; border-radius: 6px; box-shadow: 0 4px 0 #2f5a14, 0 0 0 2px rgba(255,255,255,.25); font-weight: 700; letter-spacing: .12cqw; }
   .tbtn:hover, .tbtn:focus-visible { transform: scale(1.06); color: #fff; text-shadow: 0 0 10px #fff, 2px 2px #000; outline: none; }
   #startBtn { animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .78; } }
@@ -201,7 +202,7 @@
   .td { position: absolute; pointer-events: auto; touch-action: none; border: 3px solid rgba(255,255,255,.8); background: rgba(10,16,24,.6); color: #fff; font-family: var(--display); letter-spacing: 1px; font-size: 18px; display: grid; place-content: center; text-align: center; -webkit-tap-highlight-color: transparent; padding: 0; border-radius: 16px; }
   .td small { font-size: 9px; opacity: .8; }
   .td.on { background: rgba(244,192,74,.9); color: #111; }
-  .tbtn:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.7); } .tbtn:disabled:hover { transform: none; color: #0b1a05; text-shadow: 1px 1px rgba(255,255,255,.25); }
+  #btnrow .tbtn:disabled { opacity: 1; background: linear-gradient(#8d9a86, #67725f); color: #2e3629; cursor: not-allowed; box-shadow: 0 4px 0 #3a4235; } .tbtn:disabled { cursor: not-allowed; } .tbtn:disabled:hover { transform: none; color: #0b1a05; text-shadow: 1px 1px rgba(255,255,255,.25); }
   #story { position: fixed; inset: 0; z-index: 22; display: none; place-items: center; background: #05070c; transition: opacity .45s; }
   #story.out { opacity: 0; }
   #story .frame { width: min(96vw, 148vh, 1100px); }
@@ -246,8 +247,8 @@
   body.touch #status .lbl { font-size: 9px; }
   body.touch #strip { bottom: 6px; max-width: 44vw; }
   body.touch #strip div { padding: 2px 6px; min-width: 44px; } body.touch #strip span { font-size: 12px; } body.touch #strip small { font-size: 7px; }
-  body.touch #mapwrap { left: max(10px, env(safe-area-inset-left)); transform: none; top: auto; bottom: max(10px, env(safe-area-inset-bottom)); width: 176px; height: 176px; border-width: 3px; opacity: .92; pointer-events: none; }
-  body.touch.driving #mapwrap { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 108px); width: 130px; height: 130px; }
+  body.touch #mapwrap { left: max(10px, env(safe-area-inset-left)); transform: none; top: auto; bottom: max(10px, env(safe-area-inset-bottom)); width: 138px; height: 138px; border-width: 3px; opacity: .92; pointer-events: none; }
+  body.touch.driving #mapwrap { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 108px); width: 108px; height: 108px; }
   body.touch #map { width: 100%; height: 100%; }
   body.touch #district { bottom: 70px; font-size: 26px; }   /* where the centre action prompt used to be */
   body.touch #radio { left: max(12px, env(safe-area-inset-left)); top: 112px; bottom: auto; width: 40vw; max-width: 330px; }
@@ -328,7 +329,7 @@
     <div class="bar"><span class="lbl">Incidents</span><div class="track"><div class="fill" id="incFill" style="background:var(--red)"></div></div><span class="val shadowtext" id="incVal">0</span></div>
   </div>
   <div id="radio"></div>
-  <div id="mapwrap"><canvas id="map" width="344" height="344"></canvas></div>
+  <div id="mapwrap"><canvas id="map" width="260" height="260"></canvas></div>
   <div id="district" class="shadowtext"></div>
   <div id="prompt"><div class="key">E</div><div class="lab shadowtext" id="plabel"></div></div>
   <div id="pins"></div>
@@ -342,8 +343,8 @@
   <div id="tbhint"></div>
   <div id="drive">
     <div id="td-steer"><span class="arr l">&#9664;</span><span class="arr r">&#9654;</span><div id="td-knob"></div><small>SLIDE TO STEER</small></div>
-    <button class="td pedal" id="td-brake" data-key="KeyS">BRAKE<small>REVERSE</small></button>
-    <button class="td pedal" id="td-gas" data-key="KeyW">GAS</button>
+    <button class="td pedal" id="td-brake" data-key="ArrowDown">BRAKE<small>REVERSE</small></button>
+    <button class="td pedal" id="td-gas" data-key="ArrowUp">GAS</button>
     <div id="tlift">
       <button class="td sm" data-key="KeyR">BOOM &#9650;</button><button class="td sm" data-key="KeyF">BOOM &#9660;</button>
       <button class="td sm fk" data-key="KeyT">OUT</button><button class="td sm fk" data-key="KeyG">IN</button>

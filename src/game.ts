@@ -226,7 +226,7 @@ export class Game {
   /** people a vehicle can run over */
   peopleAt(): { name: string; x: number; y: number; z: number }[] {
     const out: { name: string; x: number; y: number; z: number }[] = [];
-    const names: Record<string, string> = { hand1: "A floorhand", hand2: "A floorhand", hand3: "Jimbo", derrickman: "The derrickman", mudeng: "Marcus", pusher: "Earl", guard: "Roy", vp: "The VP", driller: "Dale", dd1: "Tex", dd2: "Priya" };
+    const names: Record<string, string> = { hand1: "A floorhand", hand2: "A floorhand", hand3: "Jimbo", derrickman: "The derrickman", mudeng: "Marcus", pusher: "Earl", guard: "Roy", vp: "The VP", driller: "Dale", dd1: "Tex" };
     for (const [k, h] of Object.entries(this.rig.humans)) if (h.root.isEnabled()) out.push({ name: names[k] ?? "Someone", x: h.root.position.x, y: h.root.position.y, z: h.root.position.z });
     for (const h of this.interns) out.push({ name: "The intern", x: h.root.position.x, y: h.root.position.y, z: h.root.position.z });
     return out;
@@ -283,7 +283,7 @@ export class Game {
     add(() => S.mudlog, "Mud logging unit", 2.8, () => this.openMudlog());
     add(() => S.bop, "BOP stack", 3.6, () => this.openBop());
     add(() => S.coffee, "Coffee", 2.2, () => { if (this.flags.coffeeEmpty) this.radio("earl", "Pot's empty. Somebody's going to have to make coffee."); else { this.gain(0, 3); this.ui.toast("+3 MORALE", "Tastes like diesel."); } });
-    const talk = (key: "driller" | "pusher" | "mudeng" | "hand3" | "dd1" | "dd2", who: Who, lines: string[]) => {
+    const talk = (key: "driller" | "pusher" | "mudeng" | "hand3" | "dd1", who: Who, lines: string[]) => {
       let i = 0;
       add(() => H[key].root.position.add(v3(0, 1.1, 0)), "Talk", 2.4, () => { this.radio(who, lines[i++ % lines.length], 6500); }, () => H[key].root.isEnabled());
     };
@@ -291,7 +291,6 @@ export class Game {
     talk("pusher", "earl", ["If it's not on the JSA, we don't do it.", "Your trailer's got the good chair. Don't tell the others.", "Walk the location. Then walk it again."]);
     talk("mudeng", "marcus", ["Mud's looking good. The mud is always looking good until it isn't.", "Delaware's coming up. You'll want ten-nine in the pits before six thousand.", "That's not 'sticky.' That's 'rheology.'"]);
     talk("dd1", "tex", ["We're sliding, boss. Build rate's fine. Don't touch my toolface.", "Inclination is 2 degrees. That is, in this business, a vertical well.", "I steer a drill bit a mile down with a joystick. And you want me to fill out a JSA about the coffee."]);
-    talk("dd2", "priya", ["Gamma's flat. Boring. I love it.", "I get the survey every ninety feet. The driller gets the credit.", "If the numbers move, I'll tell you. If you move my chair, I'll also tell you."]);
     talk("hand3", "jimbo", ["Pipe's pipe, boss.", "I do not get paid enough for the forklift.", "Is it break time? It feels like break time."]);
   }
 
@@ -564,6 +563,12 @@ export class Game {
   // ---------- CHOKE PANEL (kill the well) ----------
   openChoke() {
     const s = this.sim.s, k = s.kill;
+    if (s.kick.shut && k.stage === "none") { k.stage = "readings"; if (!s.kick.shutT || s.kick.shutT > s.t) s.kick.shutT = s.t - 6; }   // shut in but the kill sheet was never opened (e.g. after a reload)
+    if (s.kick.active && !s.kick.shut && k.stage === "none") {
+      this.inspect("Remote Choke Panel", [["Well status", "FLOWING: not shut in", "bad"], ["Pit gain", fmt(s.kick.gain) + " bbl", "bad"]],
+        `<p class="hint">Shut the well in first: Driller's console → <b>SHUT IN THE WELL</b>. Then come back here to record SIDPP and SICP.</p>`);
+      return;
+    }
     if (!s.kick.shut && k.stage === "none") {
       this.inspect("Remote Choke Panel", [["Well status", "Open · flowing normally", "ok"], ["Casing pressure", "0 psi"], ["Drill pipe pressure", fmt(s.spp) + " psi"]],
         `<p class="hint">Keep your hands off the choke unless the well is shut in. The choke panel is for well control only.</p>`);

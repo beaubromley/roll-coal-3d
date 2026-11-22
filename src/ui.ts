@@ -6,7 +6,6 @@ export const CAST = {
   earl: { name: "Earl — Toolpusher", img: "pusher" },
   marcus: { name: "Marcus — Mud Engineer", img: "mud" },
   tex: { name: "Tex — Directional Driller", img: "driller" },
-  priya: { name: "Priya — MWD Hand", img: "geo" },
   jimbo: { name: "Jimbo — Floorhand", img: "hand" },
   brent: { name: "Brent — Houston Office", img: "office" },
   chad: { name: "Chadwick — VP of Ops", img: "vp" },
@@ -162,7 +161,7 @@ export class UI {
   }
 
   drawMap(px: number, pz: number, yaw: number, targets: MapTarget[]) {
-    const c = this.mctx, S = 344, scale = 1.8; // px per metre (twice the old size, same area shown)
+    const c = this.mctx, S = 260, scale = 1.36; // px per metre
     c.save(); c.clearRect(0, 0, S, S);
     c.fillStyle = "#cdb98f"; c.fillRect(0, 0, S, S);
     c.translate(S / 2, S / 2); c.rotate(-yaw); // heading-up

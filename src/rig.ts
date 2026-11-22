@@ -236,10 +236,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // ---- directional driller / MWD desk along the east wall: they face east, back to the driller ----
   b.slab("dsteel", 6.0, F, -5.7, 6.8, F + 0.95, -1.6, true);
   b.slab("steel", 6.0, F + 0.95, -5.7, 6.8, F + 0.99, -1.6);
-  ([["survey", -5.2], ["toolface", -4.4], ["gamma", -3.2], ["mwd", -2.4]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.45, F + 1.32, z, 0.74, 0.5, k));
-  ([["plan", -4.8], ["steer", -2.8]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k));
-  for (const z of [-5.0, -3.3, -2.6]) b.slab("black", 6.15, F + 0.99, z - 0.25, 6.4, F + 1.03, z + 0.25);
-  for (const cz of [-4.7, -2.8]) {                                               // two chairs facing the desk
+  ([["survey", -5.2], ["toolface", -4.45], ["gamma", -3.7], ["mwd", -2.95]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.45, F + 1.32, z, 0.7, 0.5, k));
+  ([["plan", -4.8], ["steer", -3.3]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k));
+  for (const z of [-5.0, -4.0, -3.0]) b.slab("black", 6.15, F + 0.99, z - 0.25, 6.4, F + 1.03, z + 0.25);
+  for (const cz of [-4.7]) {                                                     // the directional driller's chair, facing the desk
     b.cyl("black", 5.4, F + 0.25, cz, 0.12, 0.5, { tess: 8 }); b.slab("black", 5.0, F, cz - 0.4, 5.8, F + 0.07, cz + 0.4);
     b.slab("black", 5.1, F + 0.5, cz - 0.3, 5.7, F + 0.58, cz + 0.3); b.slab("black", 5.05, F + 0.58, cz - 0.3, 5.15, F + 1.3, cz + 0.3);
   }
@@ -772,7 +772,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   };
   addH("driller", 4.5, F - 0.17, -3.2, -Math.PI / 2, { shirt: "#8a1f1a", pants: "#2c3e50", hat: "#f2f2f2", skin: "#c68b63" }).seated = true;
   addH("dd1", 5.4, F - 0.17, -4.7, Math.PI / 2, { shirt: "#2b4a66", pants: "#3a3a3a", hat: null, skin: "#8a5a3a" }).seated = true;
-  addH("dd2", 5.4, F - 0.17, -2.8, Math.PI / 2, { shirt: "#5a3a6a", pants: "#2c3e50", hat: null, skin: "#e0b48f" }).seated = true;
   addH("hand1", -0.9, F, 2.4, 0.4, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
   addH("hand2", 0.0, F, 5.3, Math.PI, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#8a5a3a" });
   addH("derrickman", 0.0, FB + 0.12, 3.8, Math.PI, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });

@@ -60,7 +60,6 @@ export class Vehicles {
   private seats = [
     { name: "Driller's chair", pos: new Vector3(4.5, F + 0.5, -3.2), yaw: -Math.PI / 2, npc: "driller", off: new Vector3(4.8, F, -1.1) },
     { name: "Directional driller's seat", pos: new Vector3(5.4, F + 0.5, -4.7), yaw: Math.PI / 2, npc: "dd1", off: new Vector3(4.9, F, -3.75) },
-    { name: "MWD seat", pos: new Vector3(5.4, F + 0.5, -2.8), yaw: Math.PI / 2, npc: "dd2", off: new Vector3(4.9, F, -3.75) },
   ];
   /** steering the well from the DD seat */
   dd = { inc: 2.1, azi: 270, tf: 0, sliding: false, warned: 0 };
@@ -179,7 +178,7 @@ export class Vehicles {
   private buildDrone(x: number, z: number, yaw: number): Veh {
     const v = this.blank("drone", "Survey Drone", "drone", x, z, yaw), r = v.root;
     Object.assign(v, { radius: 0.6, pts: [0], boxH: 0.5, camDist: 7, camHeight: 1.2, eye: { x: 0, y: 0, z: 0.35 }, maxFwd: 17, maxRev: 8, accel: 8, alt: 0.14, dock: { x, z, yaw },
-      controls: "W fly forward · S brake / back up · A/D turn · R/F up / down · V camera (drone cam) · E redock" });
+      controls: "W/S up / down  ·  A/D turn  ·  ↑ fly forward  ·  ↓ brake / back up  ·  V camera  ·  E redock" });
     // dock: a round pad with an H and a controller box
     const pad = new TransformNode("dockpad", this.scene); pad.position.set(x, 0, z);
     const pv = this.blank("dock", "dock", "car", x, z, 0);
@@ -343,7 +342,7 @@ export class Vehicles {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning });
     out.push({ pos: () => new Vector3(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
-    this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : i === 1 ? "Sit in the directional driller's seat" : "Sit in the MWD seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
+    this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : "Sit in the directional driller's seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
     out.push({ pos: () => new Vector3(0, F + 1.2, 2.1), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
     out.push({ pos: () => new Vector3(0, FB + 1.2, 0.9), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
@@ -391,7 +390,7 @@ export class Vehicles {
     if (!this.blend) this.player.body.root.setEnabled(false);
     this.hud.style.display = "block";
     this.game.sfx.click();
-    this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W forward, A/D turn, R/F up and down. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. SPACE jumps you out." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
+    this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W / S climb and descend, A / D turn, arrow keys fly forward and back. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. SPACE jumps you out." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
   }
 
   /** manlift: leap out of the basket in the direction you are looking. Only a jump gets you out up high, and a long fall is on you. */
@@ -466,7 +465,7 @@ export class Vehicles {
     this.player.pos.set(st.pos.x, st.pos.y, st.pos.z);
     this.hud.style.display = "block";
     if (i === 0) this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000);
-    else this.game.radio("tex", i === 1 ? "That's the steering seat. Small corrections, boss. Toolface is not a suggestion." : "That's Priya's seat. She's going to want it back.", 7000);
+    else this.game.radio("tex", "That's the steering seat. Small corrections, boss. Toolface is not a suggestion.", 7000);
   }
   private stand() {
     const st = this.seats[this.chair.idx];
@@ -579,8 +578,9 @@ export class Vehicles {
     if (!v) return;
     const p = this.player, joy = p.touchMove;
     const jyv = v.kind === "drone" ? 0 : (joy.y || 0);          // the drone's stick climbs and descends; its pedals fly it
-    const gasIn = Math.max(0, Math.min(1, (this.k("KeyW", "ArrowUp") ? 1 : 0) + Math.max(0, jyv)));
-    const brkIn = Math.max(0, Math.min(1, (this.k("KeyS", "ArrowDown") ? 1 : 0) + Math.max(0, -jyv)));
+    const dr = v.kind === "drone";                              // drone: W/S climb and descend, the arrow keys (gas / brake pedals on touch) fly it
+    const gasIn = Math.max(0, Math.min(1, ((dr ? this.k("ArrowUp") : this.k("KeyW", "ArrowUp")) ? 1 : 0) + Math.max(0, jyv)));
+    const brkIn = Math.max(0, Math.min(1, ((dr ? this.k("ArrowDown") : this.k("KeyS", "ArrowDown")) ? 1 : 0) + Math.max(0, -jyv)));
     const str = Math.max(-1, Math.min(1, (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0) + (joy.x || 0)));
     this.gas += (gasIn - this.gas) * Math.min(1, dt * 9); this.brk += (brkIn - this.brk) * Math.min(1, dt * 9);
     let maxF = v.maxFwd, maxR = v.maxRev;
@@ -687,7 +687,7 @@ export class Vehicles {
   /** quadcopter flight: W/S speed, A/D yaw, R/F climb and descend */
   private flyDrone(v: Veh, dt: number, str: number) {
     v.yaw += str * 1.7 * dt;
-    const up = Math.max(-1, Math.min(1, (this.k("KeyR", "Space") ? 1 : 0) - (this.k("KeyF") ? 1 : 0) + (this.player.touchMove.y || 0)));
+    const up = Math.max(-1, Math.min(1, (this.k("KeyW", "KeyR", "Space") ? 1 : 0) - (this.k("KeyS", "KeyF") ? 1 : 0) + (this.player.touchMove.y || 0)));
     v.vy += (up * 5 - v.vy) * Math.min(1, dt * 4);
     v.alt = Math.max(0.14, Math.min(90, v.alt + v.vy * dt)); if (v.alt <= 0.14 && v.vy < 0) v.vy = 0;
     v.x += Math.sin(v.yaw) * v.speed * dt; v.z += Math.cos(v.yaw) * v.speed * dt;

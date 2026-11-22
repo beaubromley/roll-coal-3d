@@ -187,7 +187,8 @@ export class Mini {
     const p = this.open(this.shell(o.eyebrow, o.title, o.intro, `<div class="belt" id="belt"><div class="beltzone"></div></div><div class="fillnum"><b id="rc">0</b> / ${N} ${o.unit}</div><div id="mgResult" class="hint">Press SPACE (or tap COUNT) as each one crosses the line.</div>`, `<button class="b" id="mgCount">COUNT</button>`));
     this.skip(done, p);
     const belt = p.querySelector<HTMLElement>("#belt")!, W = () => belt.clientWidth || 560;
-    for (let i = 0; i < N; i++) { const el = document.createElement("div"); el.className = "joint"; belt.appendChild(el); joints.push({ x: W() + 60 + i * (110 + (i % 3) * 30), hit: false, passed: false, el }); }
+    let gx = W() + 60;
+    for (let i = 0; i < N; i++) { const el = document.createElement("div"); el.className = "joint"; belt.appendChild(el); joints.push({ x: gx, hit: false, passed: false, el }); gx += 125 + (i % 3) * 22; }   // always at least a joint-width of clear belt between them
     let hits = 0, misses = 0;
     const press = () => {
       if (!this.alive) return;

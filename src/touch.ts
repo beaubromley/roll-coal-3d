@@ -49,13 +49,13 @@ export class TouchControls {
       if (m < 0.14) { x = 0; y = 0; }       // dead zone
       this.player.touchMove.x = x; this.player.touchMove.y = y;
       // pushing the stick all the way out auto-sprints
-      if (m > 0.97) this.player.keys.add("ShiftLeft"); else if (!this.run) this.player.keys.delete("ShiftLeft");
+      this.player.stickSprint = m > 0.86;
     });
     const joyEnd = (e: PointerEvent) => {
       if (e.pointerId !== this.joyId) return;
       this.joyId = -1; base.style.display = "none";
       this.player.touchMove.x = 0; this.player.touchMove.y = 0;
-      if (!this.run) this.player.keys.delete("ShiftLeft");
+      this.player.stickSprint = false;
     };
     joyzone.addEventListener("pointerup", joyEnd); joyzone.addEventListener("pointercancel", joyEnd);
 
@@ -82,8 +82,7 @@ export class TouchControls {
     press($("tb-use"), () => this.game.interact());
     press($("tb-jump"), () => this.player.keys.add("Space"), () => this.player.keys.delete("Space"));
     press($("tb-run"), () => {
-      this.run = !this.run; $("tb-run").classList.toggle("on", this.run);
-      if (this.run) this.player.keys.add("ShiftLeft"); else this.player.keys.delete("ShiftLeft");
+      this.run = !this.run; $("tb-run").classList.toggle("on", this.run); this.player.sprintLatch = this.run;
     });
     press($("tb-cam"), () => { this.player.third = !this.player.third; });
     press($("tb-pause"), () => this.game.togglePause(true));

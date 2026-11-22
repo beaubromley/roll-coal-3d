@@ -22,66 +22,66 @@ function wrap(size: number, x: number, y: number, r: number, fn: (x: number, y: 
 }
 
 /**
- * Painted/galvanized steel panels: seams, rivets, scratches, rain streaks and grime.
- * Neutral light-gray diffuse so the material's own colour tints it; bump carries seams, rivets and scratches.
+ * Brushed galvanized plate: long horizontal brushing, plate seams with raised weld beads, hex bolt heads, edge grime and light rust at the bolts.
+ * Neutral light-gray diffuse so the material's own colour tints it; the bump carries brushing, welds and bolts.
  */
 export function metalPanels(scene: Scene): DetailTex {
   const S = 512;
   const d = mk(scene, S, "metalD"), b = mk(scene, S, "metalB");
-  d.c.fillStyle = "#e4e4e4"; d.c.fillRect(0, 0, S, S);
+  d.c.fillStyle = "#dcdfe2"; d.c.fillRect(0, 0, S, S);
   b.c.fillStyle = "#808080"; b.c.fillRect(0, 0, S, S);
-  // big soft grime blotches
-  for (let i = 0; i < 26; i++) {
-    const x = rnd() * S, y = rnd() * S, r = 40 + rnd() * 90, a = 0.04 + rnd() * 0.08;
-    wrap(S, x, y, r, (px, py) => {
-      const g = d.c.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, `rgba(60,50,40,${a})`); g.addColorStop(1, "rgba(60,50,40,0)");
-      d.c.fillStyle = g; d.c.fillRect(px - r, py - r, r * 2, r * 2);
-    });
-  }
-  // fine speckle
-  for (let i = 0; i < 5000; i++) {
-    const x = rnd() * S, y = rnd() * S, v = rnd() < 0.5 ? 0 : 255, a = 0.04 + rnd() * 0.07;
-    d.c.fillStyle = `rgba(${v},${v},${v},${a})`; d.c.fillRect(x, y, 1 + rnd() * 1.5, 1 + rnd() * 1.5);
-    b.c.fillStyle = `rgba(${v},${v},${v},${a * 1.4})`; b.c.fillRect(x, y, 1, 1);
-  }
-  // vertical rain streaks
-  for (let i = 0; i < 60; i++) {
-    const x = rnd() * S, y0 = rnd() * S, len = 40 + rnd() * 160, w = 1 + rnd() * 2.5;
-    const g = d.c.createLinearGradient(0, y0, 0, y0 + len); g.addColorStop(0, "rgba(70,55,40,0.0)"); g.addColorStop(0.2, "rgba(70,55,40,0.16)"); g.addColorStop(1, "rgba(70,55,40,0)");
-    wrap(S, x, y0 + len / 2, len / 2 + 4, (px) => { d.c.fillStyle = g; d.c.fillRect(px, y0, w, len); });
-  }
-  // rust spots near seams
+  // slow tonal drift so large surfaces don't read as one flat colour
   for (let i = 0; i < 14; i++) {
-    const x = rnd() * S, y = rnd() * S, r = 6 + rnd() * 18;
+    const x = rnd() * S, y = rnd() * S, r = 70 + rnd() * 120, a = 0.03 + rnd() * 0.05, dark = rnd() < 0.6;
     wrap(S, x, y, r, (px, py) => {
-      const g = d.c.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, "rgba(140,70,30,0.35)"); g.addColorStop(1, "rgba(140,70,30,0)");
+      const g = d.c.createRadialGradient(px, py, 0, px, py, r); const c = dark ? "40,48,58" : "255,255,255";
+      g.addColorStop(0, `rgba(${c},${a})`); g.addColorStop(1, `rgba(${c},0)`);
       d.c.fillStyle = g; d.c.fillRect(px - r, py - r, r * 2, r * 2);
     });
   }
-  // scratches
-  for (let i = 0; i < 70; i++) {
-    const x = rnd() * S, y = rnd() * S, a = rnd() * Math.PI, len = 10 + rnd() * 50, light = rnd() < 0.5;
-    wrap(S, x, y, len, (px, py) => {
-      for (const ctx of [d.c, b.c]) {
-        ctx.strokeStyle = light ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.25)"; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len); ctx.stroke();
-      }
+  // brushing: many long, thin, nearly horizontal strokes
+  for (let i = 0; i < 1300; i++) {
+    const x = rnd() * S, y = rnd() * S, len = 60 + rnd() * 220, light = rnd() < 0.5, a = 0.025 + rnd() * 0.07;
+    wrap(S, x + len / 2, y, len / 2 + 2, (px, py) => {
+      d.c.strokeStyle = light ? `rgba(255,255,255,${a})` : `rgba(20,30,40,${a})`; d.c.lineWidth = 1;
+      d.c.beginPath(); d.c.moveTo(px - len / 2, py); d.c.lineTo(px + len / 2, py + (rnd() - 0.5) * 1.2); d.c.stroke();
+      b.c.strokeStyle = light ? `rgba(255,255,255,${a * 1.5})` : `rgba(0,0,0,${a * 1.5})`; b.c.beginPath(); b.c.moveTo(px - len / 2, py); b.c.lineTo(px + len / 2, py); b.c.stroke();
     });
   }
-  // panel seams (2x2 panels per tile) + rivets
-  const P = S / 2;
-  for (let i = 0; i < 2; i++) {
-    const p = i * P;
-    d.c.fillStyle = "rgba(20,20,24,0.45)"; d.c.fillRect(p - 1, 0, 3, S); d.c.fillRect(0, p - 1, S, 3);
-    b.c.fillStyle = "rgba(0,0,0,0.9)"; b.c.fillRect(p - 1, 0, 3, S); b.c.fillRect(0, p - 1, S, 3);
-    b.c.fillStyle = "rgba(255,255,255,0.35)"; b.c.fillRect(p + 2, 0, 1, S); b.c.fillRect(0, p + 2, S, 1);
-  }
-  for (let px = 0; px < 2; px++) for (let py = 0; py < 2; py++) {
-    for (let k = 0; k < 8; k++) for (const [rx, ry] of [[(k + 0.5) / 8 * P, 10], [(k + 0.5) / 8 * P, P - 10], [10, (k + 0.5) / 8 * P], [P - 10, (k + 0.5) / 8 * P]]) {
-      const x = px * P + rx, y = py * P + ry;
-      d.c.fillStyle = "rgba(0,0,0,0.28)"; d.c.beginPath(); d.c.arc(x, y, 2.6, 0, 6.3); d.c.fill();
-      b.c.fillStyle = "rgba(255,255,255,0.95)"; b.c.beginPath(); b.c.arc(x, y, 2.6, 0, 6.3); b.c.fill();
+  // plate seams: one vertical and one horizontal weld per tile, wavy raised bead with dark toe lines either side
+  for (const v of [S / 2]) {
+    for (let y = 0; y < S; y += 2) {
+      const wob = Math.sin(y * 0.35) * 1.6 + Math.sin(y * 0.11) * 1.2;
+      d.c.fillStyle = "rgba(60,64,70,0.55)"; d.c.fillRect(v - 5, y, 2, 2); d.c.fillRect(v + 4, y, 2, 2);
+      d.c.fillStyle = "rgba(235,238,240,0.7)"; d.c.fillRect(v - 3 + wob, y, 7, 2);
+      b.c.fillStyle = "rgba(255,255,255,0.9)"; b.c.fillRect(v - 3 + wob, y, 7, 2);
+      b.c.fillStyle = "rgba(0,0,0,0.8)"; b.c.fillRect(v - 6, y, 2, 2); b.c.fillRect(v + 5, y, 2, 2);
     }
+    for (let x = 0; x < S; x += 2) {
+      const wob = Math.sin(x * 0.3) * 1.6 + Math.sin(x * 0.09) * 1.2;
+      d.c.fillStyle = "rgba(60,64,70,0.55)"; d.c.fillRect(x, v - 5, 2, 2); d.c.fillRect(x, v + 4, 2, 2);
+      d.c.fillStyle = "rgba(235,238,240,0.7)"; d.c.fillRect(x, v - 3 + wob, 2, 7);
+      b.c.fillStyle = "rgba(255,255,255,0.9)"; b.c.fillRect(x, v - 3 + wob, 2, 7);
+      b.c.fillStyle = "rgba(0,0,0,0.8)"; b.c.fillRect(x, v - 6, 2, 2); b.c.fillRect(x, v + 5, 2, 2);
+    }
+  }
+  // plate edge at the tile border: dark seam so neighbouring tiles read as separate plates
+  d.c.fillStyle = "rgba(25,28,32,0.5)"; d.c.fillRect(0, 0, S, 3); d.c.fillRect(0, 0, 3, S);
+  b.c.fillStyle = "rgba(0,0,0,0.85)"; b.c.fillRect(0, 0, S, 3); b.c.fillRect(0, 0, 3, S);
+  // hex bolt heads along the seams and edges (with a rust ring around some)
+  const hex = (c: CanvasRenderingContext2D, x: number, y: number, r: number) => { c.beginPath(); for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + 0.5; c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } c.closePath(); c.fill(); };
+  const bolts: [number, number][] = [];
+  for (let t = 32; t < S; t += 64) { bolts.push([t, 14], [t, S - 14], [14, t], [S - 14, t], [t, S / 2 - 16], [t, S / 2 + 16], [S / 2 - 16, t], [S / 2 + 16, t]); }
+  for (const [x, y] of bolts) wrap(S, x, y, 10, (px, py) => {
+    if (rnd() < 0.35) { const g = d.c.createRadialGradient(px, py, 3, px, py, 11); g.addColorStop(0, "rgba(150,80,35,0.4)"); g.addColorStop(1, "rgba(150,80,35,0)"); d.c.fillStyle = g; d.c.fillRect(px - 12, py - 12, 24, 24); }
+    d.c.fillStyle = "rgba(70,74,80,0.85)"; hex(d.c, px, py, 5.2); d.c.fillStyle = "rgba(210,214,218,0.9)"; hex(d.c, px - 0.6, py - 0.6, 3.6);
+    b.c.fillStyle = "rgba(255,255,255,0.95)"; hex(b.c, px, py, 5.2); b.c.fillStyle = "rgba(0,0,0,0.5)"; b.c.beginPath(); b.c.arc(px, py, 1.4, 0, 6.3); b.c.fill();
+  });
+  // a few vertical rain runs from the bolts
+  for (let i = 0; i < 22; i++) {
+    const x = (bolts[(rnd() * bolts.length) | 0] ?? [0, 0])[0] + (rnd() - 0.5) * 4, y0 = rnd() * S, len = 30 + rnd() * 110;
+    const g = d.c.createLinearGradient(0, y0, 0, y0 + len); g.addColorStop(0, "rgba(90,70,50,0)"); g.addColorStop(0.2, "rgba(90,70,50,0.14)"); g.addColorStop(1, "rgba(90,70,50,0)");
+    wrap(S, x, y0 + len / 2, len / 2 + 3, (px) => { d.c.fillStyle = g; d.c.fillRect(px, y0, 1.5, len); });
   }
   d.tex.update(); b.tex.update();
   return { diffuse: d.tex, bump: b.tex };

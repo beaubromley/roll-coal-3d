@@ -377,7 +377,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     }
   }
   // mast legs as collision (you can't walk through the mast)
-  for (let i = 0; i < 4; i++) b.blocker(base[i].x - 0.25, F, base[i].z - 0.25, base[i].x + 0.25, F + 4, base[i].z + 0.25);
+  for (let i = 0; i < 4; i++) b.blocker(base[i].x - 0.18, F, base[i].z - 0.18, base[i].x + 0.18, F + 4, base[i].z + 0.18);
   // crown block + beacon
   b.slab("dsteel", -1.5, MH, -2.0, 1.5, MH + 1.1, 0.8);
   b.sphere("beacon", 0, MH + 1.5, -0.6, 0.45);
@@ -641,13 +641,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     door: { side: "-x", c: 96, w: 1.1 } });
   b.slab("wood", 6.5, 0, 96.8, 8.2, 1.0, 97.8, true);
   // two signs on posts beside the entry road, facing the traffic coming in from +z
-  b.label("PPE REQUIRED\nHARD HAT • FRC\nGLASSES • GLOVES", 4.0, 2.25, 95.5, 2.2, 1.5, Math.PI, "#7a1a14", "#ffffff", 40);
-  for (const x of [3.05, 4.95]) b.cyl("dsteel", x, 1.5, 95.42, 0.12, 3.0, { tess: 6 });
-  b.beam("dsteel", v(2.9, 3.0, 95.42), v(5.1, 3.0, 95.42), 0.08);
-  b.label("AL DRILLING • RIG 107\nAUTHORIZED PERSONNEL", -4.4, 3.0, 95.5, 3.2, 1.0, Math.PI, "#233a52", "#ffd24a", 40);
-  for (const x of [-5.85, -2.95]) b.cyl("dsteel", x, 1.8, 95.42, 0.14, 3.6, { tess: 6 });
-  b.beam("dsteel", v(-6.0, 3.55, 95.42), v(-2.8, 3.55, 95.42), 0.08);
-  b.beam("dsteel", v(-6.0, 2.45, 95.42), v(-2.8, 2.45, 95.42), 0.08);
+  b.label("PPE REQUIRED\nHARD HAT • FRC\nGLASSES • GLOVES", 2.4, 2.25, 95.5, 2.2, 1.5, Math.PI, "#7a1a14", "#ffffff", 40);
+  for (const x of [1.45, 3.35]) b.cyl("dsteel", x, 1.5, 95.42, 0.12, 3.0, { tess: 6 });
+  b.beam("dsteel", v(1.3, 3.0, 95.42), v(3.5, 3.0, 95.42), 0.08);
+  b.label("AL DRILLING • RIG 107\nAUTHORIZED PERSONNEL", -5.0, 3.0, 95.5, 3.2, 1.0, Math.PI, "#233a52", "#ffd24a", 40);
+  for (const x of [-6.45, -3.55]) b.cyl("dsteel", x, 1.8, 95.42, 0.14, 3.6, { tess: 6 });
+  b.beam("dsteel", v(-6.6, 3.55, 95.42), v(-3.4, 3.55, 95.42), 0.08);
+  b.beam("dsteel", v(-6.6, 2.45, 95.42), v(-3.4, 2.45, 95.42), 0.08);
   spots.gate = v(6.9, 1.4, 96.4);
   // pad edge fence posts
   for (let i = -12; i <= 12; i++) { b.box("dsteel", i * 5, 0.8, 62, 0.1, 1.6, 0.1); b.box("dsteel", i * 5, 0.8, -66, 0.1, 1.6, 0.1); }

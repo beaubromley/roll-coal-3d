@@ -2,7 +2,7 @@ import { Scene, FreeCamera, Vector3 } from "@babylonjs/core";
 import type { AABB } from "./builder";
 import { Human } from "./npcs";
 
-const R = 0.35, EYE = 1.62, STEP = 0.5, HEAD = 1.75, G = 20;
+const R = 0.3, EYE = 1.62, STEP = 0.62, HEAD = 1.75, G = 20;
 
 export class Player {
   pos = new Vector3(0, 0, 100);
@@ -26,6 +26,8 @@ export class Player {
   enabled = true;
   /** true while a vehicle (or the driller chair) owns position and camera */
   ride = false;
+  /** touch: RUN button latched / stick pushed hard */
+  sprintLatch = false; stickSprint = false;
   gScale = 1;
   private camY: number | null = null;
   moved = 0;
@@ -141,7 +143,7 @@ export class Player {
     const joy = this.enabled && (this.touchMove.x !== 0 || this.touchMove.y !== 0);
     if (joy) { ix += this.touchMove.x; iz += this.touchMove.y; }
     const len = Math.hypot(ix, iz);
-    const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.sprintLatch || this.stickSprint;
     const speed = (sprint ? 6.8 : 3.4) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
     let vx = 0, vz = 0;
     if (len > 0) {

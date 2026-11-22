@@ -538,8 +538,9 @@ export class Vehicles {
     const v = this.active;
     if (!v) return;
     const p = this.player, joy = p.touchMove;
-    const gasIn = Math.max(0, Math.min(1, (this.k("KeyW", "ArrowUp") ? 1 : 0) + Math.max(0, joy.y || 0)));
-    const brkIn = Math.max(0, Math.min(1, (this.k("KeyS", "ArrowDown") ? 1 : 0) + Math.max(0, -(joy.y || 0))));
+    const jyv = v.kind === "drone" ? 0 : (joy.y || 0);          // the drone's stick climbs and descends; its pedals fly it
+    const gasIn = Math.max(0, Math.min(1, (this.k("KeyW", "ArrowUp") ? 1 : 0) + Math.max(0, jyv)));
+    const brkIn = Math.max(0, Math.min(1, (this.k("KeyS", "ArrowDown") ? 1 : 0) + Math.max(0, -jyv)));
     const str = Math.max(-1, Math.min(1, (this.k("KeyD", "ArrowRight") ? 1 : 0) - (this.k("KeyA", "ArrowLeft") ? 1 : 0) + (joy.x || 0)));
     this.gas += (gasIn - this.gas) * Math.min(1, dt * 9); this.brk += (brkIn - this.brk) * Math.min(1, dt * 9);
     let maxF = v.maxFwd, maxR = v.maxRev;
@@ -643,7 +644,7 @@ export class Vehicles {
   /** quadcopter flight: W/S speed, A/D yaw, R/F climb and descend */
   private flyDrone(v: Veh, dt: number, str: number) {
     v.yaw += str * 1.7 * dt;
-    const up = (this.k("KeyR", "Space") ? 1 : 0) - (this.k("KeyF", "ShiftLeft") ? 1 : 0);
+    const up = Math.max(-1, Math.min(1, (this.k("KeyR", "Space") ? 1 : 0) - (this.k("KeyF") ? 1 : 0) + (this.player.touchMove.y || 0)));
     v.vy += (up * 5 - v.vy) * Math.min(1, dt * 4);
     v.alt = Math.max(0.14, Math.min(90, v.alt + v.vy * dt)); if (v.alt <= 0.14 && v.vy < 0) v.vy = 0;
     v.x += Math.sin(v.yaw) * v.speed * dt; v.z += Math.cos(v.yaw) * v.speed * dt;

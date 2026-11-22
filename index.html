@@ -57,8 +57,8 @@
   #district { position: absolute; right: 26px; bottom: 26px; font-family: var(--display); font-size: clamp(30px, 5vw, 62px); text-transform: uppercase; color: rgba(255,255,255,.28); letter-spacing: 1px; transition: opacity .6s; }
 
   #prompt { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); display: none; align-items: center; gap: 12px; }
-  #prompt .key { width: 44px; height: 44px; display: grid; place-items: center; background: #fff; color: #111; font-weight: 900; font-size: 24px; border-radius: 6px; box-shadow: 0 3px 0 #888; }
-  #prompt .lab { font-family: var(--display); font-size: 28px; letter-spacing: .5px; color: #fff; }
+  #prompt .key { width: 58px; height: 58px; display: grid; place-items: center; background: var(--gold); color: #111; font-weight: 900; font-size: 32px; border-radius: 10px; box-shadow: 0 4px 0 #8a6a1a, 0 0 0 4px rgba(244,192,74,.35), 0 0 26px rgba(244,192,74,.8); animation: usepulse 1s infinite; }
+  #prompt .lab { font-family: var(--display); font-size: 32px; letter-spacing: .5px; color: #fff; background: rgba(10,16,24,.78); padding: 6px 16px; border: 2px solid var(--gold); border-radius: 8px; text-shadow: 0 2px 0 #000; }
 
   #pins { position: absolute; inset: 0; }
   .pin { position: absolute; left: 0; top: 0; display: none; transform: translate(-50%, -50%); text-align: center; white-space: nowrap; --c: var(--gold); }
@@ -178,14 +178,14 @@
   #joyknob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(255,255,255,.7); box-shadow: 0 2px 8px rgba(0,0,0,.5); }
   .tb { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 3px solid rgba(255,255,255,.8); background: rgba(10,16,24,.55); color: #fff; font-family: var(--display); letter-spacing: 1px; font-size: 14px; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; padding: 0; }
   .tb:active, .tb.on { background: rgba(244,192,74,.85); color: #111; }
-  #tb-use { right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); width: 86px; height: 86px; font-size: 22px; border-color: var(--gold); }
-  #tb-use.hot { background: var(--gold); color: #111; animation: usepulse 1s infinite; }
-  @keyframes usepulse { 50% { transform: scale(1.08); } }
-  #tb-jump { right: calc(max(18px, env(safe-area-inset-right)) + 100px); bottom: max(30px, env(safe-area-inset-bottom)); width: 64px; height: 64px; }
-  #tb-run { right: calc(max(18px, env(safe-area-inset-right)) + 12px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 100px); width: 60px; height: 60px; }
-  #tb-cam { right: calc(max(18px, env(safe-area-inset-right)) + 82px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 84px); width: 52px; height: 52px; font-size: 11px; }
-  #tb-pause { position: absolute; pointer-events: auto; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); width: 44px; height: 44px; border-radius: 10px; border: 2px solid rgba(255,255,255,.7); background: rgba(10,16,24,.6); color: #fff; font-size: 16px; font-weight: 900; letter-spacing: -1px; touch-action: none; padding: 0; }
-  #tbhint { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 170px); max-width: 44vw; text-align: right; font-family: var(--display); font-size: 15px; color: #fff; text-shadow: 0 2px 0 #000, 0 0 10px #000; display: none; pointer-events: none; }
+  #tb-use { right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); width: 116px; height: 116px; font-size: 28px; border-color: var(--gold); border-width: 4px; }
+  #tb-use.hot { background: var(--gold); color: #111; animation: usepulse .9s infinite; box-shadow: 0 0 0 7px rgba(244,192,74,.35), 0 0 34px 10px rgba(244,192,74,.75); }
+  @keyframes usepulse { 50% { transform: scale(1.1); } }
+  #tb-jump { right: calc(max(18px, env(safe-area-inset-right)) + 130px); bottom: max(26px, env(safe-area-inset-bottom)); width: 88px; height: 88px; font-size: 17px; }
+  #tb-run { right: calc(max(18px, env(safe-area-inset-right)) + 14px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 130px); width: 84px; height: 84px; font-size: 17px; }
+  #tb-cam { right: calc(max(18px, env(safe-area-inset-right)) + 112px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 108px); width: 66px; height: 66px; font-size: 13px; }
+  #tb-pause { position: absolute; pointer-events: auto; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); width: 56px; height: 56px; border-radius: 12px; border: 2px solid rgba(255,255,255,.7); background: rgba(10,16,24,.6); color: #fff; font-size: 16px; font-weight: 900; letter-spacing: -1px; touch-action: none; padding: 0; }
+  #tbhint { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 232px); max-width: 52vw; text-align: right; font-family: var(--display); font-size: 21px; background: rgba(10,16,24,.82); padding: 5px 12px; border: 2px solid var(--gold); border-radius: 8px; color: #fff; text-shadow: 0 2px 0 #000, 0 0 10px #000; display: none; pointer-events: none; }
   /* driving: pedals + steer buttons replace the stick */
   #drive { display: none; }
   body.driving #drive { display: block; }
@@ -198,16 +198,17 @@
   #td-steer small { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-family: var(--display); font-size: 9px; letter-spacing: 1px; color: rgba(255,255,255,.6); }
   #td-knob { position: absolute; top: 50%; left: 50%; width: 62px; height: 62px; margin: -36px 0 0 -31px; border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 2px 8px rgba(0,0,0,.5); transition: background .1s; }
   #td-steer.on #td-knob { background: rgba(244,192,74,.95); }
-  #td-gas { right: max(16px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); width: 104px; height: 150px; font-size: 24px; border-color: #7bd35a; }
-  #td-brake { right: calc(max(16px, env(safe-area-inset-right)) + 116px); bottom: max(18px, env(safe-area-inset-bottom)); width: 92px; height: 110px; font-size: 18px; border-color: #e5483b; }
-  body.driving #tb-use { right: max(16px, env(safe-area-inset-right)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 164px); width: 64px; height: 64px; font-size: 16px; }
-  body.driving #tb-cam { right: calc(max(16px, env(safe-area-inset-right)) + 82px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 168px); }
+  #td-gas { right: max(16px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); width: 118px; height: 160px; font-size: 26px; border-color: #7bd35a; }
+  #td-brake { right: calc(max(16px, env(safe-area-inset-right)) + 130px); bottom: max(18px, env(safe-area-inset-bottom)); width: 104px; height: 124px; font-size: 20px; border-color: #e5483b; }
+  body.driving #tb-use { right: max(16px, env(safe-area-inset-right)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 166px); width: 80px; height: 80px; font-size: 19px; }
+  body.driving #tb-cam { right: calc(max(16px, env(safe-area-inset-right)) + 98px); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 172px); width: 68px; height: 68px; }
   body.driving #tbhint { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 240px); }
   #tlift { display: none; position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 112px); width: 230px; grid-template-columns: 1fr 1fr; gap: 4px; }
-  body[data-veh="forklift"] #tlift, body[data-veh="lift"] #tlift, body[data-veh="drone"] #tlift { display: grid; }
-  #tlift .td { position: static; height: 34px; font-size: 11px; border-radius: 8px; border-width: 2px; }
+  body[data-veh="forklift"] #tlift, body[data-veh="lift"] #tlift { display: grid; }
+  #tlift .td { position: static; height: 40px; font-size: 12px; border-radius: 8px; border-width: 2px; }
   #tlift .wide { grid-column: 1 / 3; }
-  body[data-veh="lift"] #tlift .fk, body[data-veh="drone"] #tlift .fk { display: none; }
+  body[data-veh="lift"] #tlift .fk { display: none; }
+  body[data-veh="drone"] #joyzone { display: block; } body[data-veh="drone"] #td-steer { display: none; }
 
   body.touch { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   body.touch #mission { left: max(12px, env(safe-area-inset-left)); top: 8px; max-width: 40vw; }
@@ -282,7 +283,7 @@
 </head>
 <body>
 <canvas id="view" tabindex="0"></canvas>
-<div id="loading">LOADING LOCATION…</div>
+<div id="loading">BUILDING LOCATION…</div>
 
 <div id="hud">
   <div id="crosshair"></div>

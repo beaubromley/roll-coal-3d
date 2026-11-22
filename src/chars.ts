@@ -48,6 +48,8 @@ export class CharKit {
     const roots = inst.rootNodes as TransformNode[];
     roots.forEach((r) => { r.parent = holder; });
     holder.scaling.setAll(target / this.height);
+    // plain uniform arrays for bone matrices: float-texture skinning mangles extremities (feet) on some phones/tablets
+    inst.skeletons.forEach((sk) => { sk.useTextureToStoreBoneMatrices = false; });
     const meshes = roots.flatMap((r) => r.getChildMeshes(false)) as AbstractMesh[];
     const find = (re: RegExp) => inst.animationGroups.find((g) => new RegExp("(^|[|:_ ])" + re.source + "$", "i").test(g.name)) ?? inst.animationGroups.find((g) => re.test(g.name)) ?? null;
     const idle = find(/idle/i), walk = find(/walk/i) ?? (inst.animationGroups.length === 1 ? inst.animationGroups[0] : null), run = find(/run/i);

@@ -255,12 +255,13 @@ export class Human {
     const grp = { idle: c.idle, walk: c.walk ?? c.idle, run: c.run ?? c.walk, sit: c.idle } as Record<string, any>;
     if (next !== this.chState) {
       for (const g of [c.idle, c.walk, c.run]) g?.stop();
+      if (next === "idle" || next === "sit") c.restoreFeet();   // Idle never writes the foot bones; without this they stay frozen in the last stride
       this.chState = next;
       const g = grp[next]; g?.start(true, 1, g.from, g.to, false);
       if (next === "idle" && !c.idle && c.walk) { c.walk.start(true); c.walk.goToFrame(c.walk.from); c.walk.pause(); }
       if (next === "sit") { g?.goToFrame(g.from); g?.pause(); this.chSat = false; }
     }
-    if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.5, speed / 1.9);
+    if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.6, Math.min(1.5, speed / 2.6));
     if (next === "run" && grp.run) grp.run.speedRatio = Math.max(0.7, speed / 5.2);
     if (next === "sit" && !this.chSat) {
       // freeze the idle pose, then aim each limb segment in world space (bone axes differ between rigs, so no hard-coded axes):

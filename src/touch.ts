@@ -108,6 +108,14 @@ export class TouchControls {
 
   /** Called every frame: the USE button lights up and shows a label when something is in reach. */
   update() {
+    const bc = document.body.classList, hidden = bc.contains("panelopen") || bc.contains("paused");
+    if (hidden && (this.joyId !== -1 || this.lookId !== -1 || this.player.touchMove.x || this.player.touchMove.y)) {
+      // the layer is about to vanish under a finger: its pointerup would never arrive, so let go of everything now
+      this.joyId = -1; this.lookId = -1; this.player.touchMove.x = 0; this.player.touchMove.y = 0; this.player.stickSprint = false;
+      document.getElementById("joybase")!.style.display = "none";
+    }
+    if (this.player.ride && this.player.sprintLatch) { this.player.sprintLatch = false; this.run = false; }       // getting in a vehicle ends the run
+    document.getElementById("tb-run")!.classList.toggle("on", this.player.sprintLatch);                          // the button always shows the real state
     // got out of the vehicle (or it was taken away) while a button was down: let go of everything
     if (!document.body.classList.contains("driving") && this.player.touchMove.x && this.joyId === -1) { this.player.touchMove.x = 0; document.getElementById("td-knob")!.style.transform = "translateX(0)"; }
     if (this.held.size && !document.body.classList.contains("driving")) {

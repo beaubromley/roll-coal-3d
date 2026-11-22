@@ -5,7 +5,7 @@ import {
 import { Builder, AABB, node, pushOutXZ } from "./builder";
 import { Human } from "./npcs";
 import type { Kit } from "./models";
-import { metalPanels, corrugated, woodGrain, DetailTex } from "./textures";
+import { corrugated, woodGrain, DetailTex } from "./textures";
 
 export const F = 7.8; // drill floor height above ground (m) - 25.5 ft standard FlexRig-class floor
 export const STAND_M = 28.35; // 93 ft stand
@@ -102,7 +102,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   kit?.useLampMaterial(lampMat);
 
   // ---- surface detail: world-scaled panel/corrugation/wood textures with bump ----
-  const mp = metalPanels(scene), co = corrugated(scene), wo = woodGrain(scene);
+  const co = corrugated(scene), wo = woodGrain(scene);
   const dressed: { mat: StandardMaterial; bump: DetailTex["bump"] }[] = [];
   const dress = (keys: string[], tex: DetailTex, tile: number, level: number, bump = true) => {
     for (const k of keys) {
@@ -113,12 +113,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       }
     }
   };
-  dress(["steel", "dsteel", "orange", "white", "blue", "navy", "red", "yellow", "bopred", "bopblue", "accgreen", "poly", "cabinwall", "flaregray", "tan", "trailer2", "black", "rust"], mp, 2.4, 0.55);
-  dress(["pipe", "pipeband"], mp, 0.9, 0, false);          // round stock: diffuse grime only, bump looks noisy on cylinders
+  // metal stays smooth: plain painted colour, no panel/brush texture or bump, just a soft sheen
+  for (const k of ["steel", "dsteel", "orange", "white", "blue", "navy", "red", "yellow", "bopred", "bopblue", "accgreen", "poly", "cabinwall", "flaregray", "tan", "trailer2", "black", "rust", "pipe", "pipeband"]) {
+    const m = b.getMat(k); m.diffuseTexture = null; m.bumpTexture = null; m.specularColor = new Color3(0.2, 0.2, 0.2); m.specularPower = 48;
+  }
   dress(["tank", "tankgreen", "trailer"], co, 1.4, 0.9);
   dress(["wood", "lcm"], wo, 1.2, 0.6);
   b.setTile("deck", 1.0);
-  for (const k of ["deck", "asphalt"]) { const m = b.getMat(k); if (opts.bump !== false && k === "deck") { m.bumpTexture = mp.bump; mp.bump.level = 0.35; dressed.push({ mat: m, bump: mp.bump }); } }
 
   // ================= SUBSTRUCTURE (box-on-box) + DRILL FLOOR =================
   const FX = 6.5, FZ = 6.0;

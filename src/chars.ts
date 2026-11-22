@@ -1,4 +1,4 @@
-import { Color3, LoadAssetContainerAsync, AssetContainer, Scene, TransformNode, AnimationGroup, AbstractMesh, Skeleton } from "@babylonjs/core";
+import { Color3, Quaternion, LoadAssetContainerAsync, AssetContainer, Scene, TransformNode, AnimationGroup, AbstractMesh, Skeleton } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 
 /** One animated, skinned character instance (own skeleton and animation groups). */
@@ -11,6 +11,8 @@ export interface CharInstance {
   idle: AnimationGroup | null; walk: AnimationGroup | null; run: AnimationGroup | null;
   /** find a bone's transform node by (suffix of) its name, e.g. "Head" */
   bone(name: string): TransformNode | null;
+  /** put the foot / toe bones back at their rest pose (the Idle clip has no tracks for them, so after Walk/Run they would stay frozen mid-stride) */
+  restoreFeet(): void;
   dispose(): void;
 }
 
@@ -51,6 +53,8 @@ export class CharKit {
     const meshes = roots.flatMap((r) => r.getChildMeshes(false)) as AbstractMesh[];
     const find = (re: RegExp) => inst.animationGroups.find((g) => new RegExp("(^|[|:_ ])" + re.source + "$", "i").test(g.name)) ?? inst.animationGroups.find((g) => re.test(g.name)) ?? null;
     const idle = find(/idle/i), walk = find(/walk/i) ?? (inst.animationGroups.length === 1 ? inst.animationGroups[0] : null), run = find(/run/i);
+    const rest = [...roots.flatMap((r) => r.getChildTransformNodes(false))].filter((n) => /^(Foot|PT)\./.test(n.name.replace(id, "").replace(/^.*:/, "")))
+      .map((n) => ({ n, p: n.position.clone(), q: (n.rotationQuaternion ?? Quaternion.FromEulerVector(n.rotation)).clone(), s: n.scaling.clone() }));
     inst.animationGroups.forEach((g) => { g.stop(); g.enableBlending = true; g.blendingSpeed = 0.07; g.loopAnimation = true; });
     const nodes = roots.flatMap((r) => [r, ...r.getChildTransformNodes(false)]);
     return {
@@ -61,6 +65,7 @@ export class CharKit {
       })),
       skeleton: inst.skeletons[0] ?? null, idle, walk, run,
       bone: (name) => nodes.find((n) => n.name.replace(id, "").replace(/^.*:/, "").toLowerCase() === name.toLowerCase()) ?? null,
+      restoreFeet: () => { for (const r of rest) { r.n.position.copyFrom(r.p); r.n.rotationQuaternion = r.q.clone(); r.n.scaling.copyFrom(r.s); } },
       dispose: () => { inst.animationGroups.forEach((g) => g.dispose()); holder.dispose(false, true); },
     };
   }

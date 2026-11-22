@@ -207,7 +207,7 @@ export class Human {
     if (band) tint(/^Red/, band);
     else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
     const sy = o.height ?? 0.95 + rnd(5) * 0.11, sx = 0.95 + rnd(6) * 0.14;
-    this.chBuild = new Vector3(sx, sy, sx);
+    this.chBuild = new Vector3(sy, sy, sy);   // uniform only: non-uniform scale on the root shears every rotating limb and foot (looks like smeared boots while running)
     for (const mesh of c.meshes) if (/head/i.test(mesh.name) && /^Beige/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
     const mk = (mesh: Mesh, hex: string) => { mesh.material = m(sc, hex); mesh.parent = this.root; this.meshes.push(mesh); this.ppe.push(mesh); return mesh; };
     const parts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];

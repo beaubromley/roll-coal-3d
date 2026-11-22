@@ -632,7 +632,7 @@ export class Vehicles {
     this.place(v);
     // wheels
     v.spinNodes.forEach((n, i) => { n.rotation.x += (v.speed / v.wheelR[i]) * dt; });
-    v.steerNodes.forEach((n, i) => { n.rotation.y = v.steer * v.steerSign[i] * 0.8; });
+    v.steerNodes.forEach((n, i) => { n.rotation.y = -v.steer * v.steerSign[i] * 0.8; });
     // chassis roll / pitch for the big truck
     if (v.kind === "car") { v.root.rotation.z = -v.steer * v.speed * 0.006; v.root.rotation.x = -thr * 0.012 * Math.min(1, Math.abs(v.speed) / 8); }
 

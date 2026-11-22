@@ -67,6 +67,8 @@ export class Vehicles {
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0;
+  /** get-in / get-out animation: eased camera, plus the body walking to / from the vehicle */
+  private blend: { t: number; dur: number; fromPos: Vector3; fromTgt: Vector3; body?: { from: Vector3; to: Vector3; mode: "in" | "out" } } | null = null;
   private uiKind = "";
   /** pedals: travel 0..1; reverse only engages after the brake has been released at a stop */
   private gas = 0; private brk = 0; private revArm = true; private spaceWas = false;
@@ -356,12 +358,36 @@ export class Vehicles {
   }
   private setSolid(v: Veh, on: boolean) { v.solid = on; this.place(v); }
 
+  private startBlend(dur: number, body?: { from: Vector3; to: Vector3; mode: "in" | "out" }) {
+    const cam = this.player.cam;
+    this.blend = { t: 0, dur, fromPos: cam.position.clone(), fromTgt: cam.getTarget().clone(), body };
+  }
+  /** call after all cameras have been placed for the frame */
+  postCamera(dt: number) {
+    const b = this.blend; if (!b) return;
+    b.t += dt; const k = Math.min(1, b.t / b.dur), e = k * k * (3 - 2 * k), cam = this.player.cam;
+    const tgt = cam.getTarget().clone();
+    cam.position.copyFrom(Vector3.Lerp(b.fromPos, cam.position, e)); cam.setTarget(Vector3.Lerp(b.fromTgt, tgt, e));
+    if (b.body) {
+      const body = this.player.body.root, m = b.body.mode;
+      const f = m === "in" ? Math.min(1, k * 1.6) : Math.max(0, 1 - k * 1.6), ee = f * f * (3 - 2 * f);
+      if (m === "in") {
+        body.setEnabled(k < 0.65); body.position.copyFrom(Vector3.Lerp(b.body.from, b.body.to, Math.min(1, k * 1.5))); body.scaling.setAll(Math.max(0.05, 1 - ee * 0.95));
+        const d = b.body.to.subtract(b.body.from); if (d.lengthSquared() > 0.01) body.rotation.y = Math.atan2(d.x, d.z);
+        this.player.body.animate(dt, 2.6);
+      } else { body.scaling.setAll(1 - ee * 0.9); }
+    }
+    if (k >= 1) { this.blend = null; this.player.bodyHold = false; this.player.body.root.scaling.setAll(1); if (this.active || this.chair.on || this.climb.on || this.zip.on) this.player.body.root.setEnabled(false); }
+  }
+
   enter(v: Veh) {
     if (this.riding) return;
+    const here = this.player.pos.clone();
+    this.startBlend(0.6, { from: here, to: new Vector3(v.x, v.kind === "drone" ? 0 : here.y, v.z), mode: "in" }); this.player.bodyHold = true;
     this.active = v; v.speed = 0; this.setSolid(v, false);
     this.wasThird = this.player.third; this.player.ride = true; this.player.third = true;
     this.player.yaw = v.yaw; this.player.pitch = 0.22;
-    this.player.body.root.setEnabled(false);
+    if (!this.blend) this.player.body.root.setEnabled(false);
     this.hud.style.display = "block";
     this.game.sfx.click();
     this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W forward, A/D turn, R/F up and down. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. It reaches the drill floor." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
@@ -413,10 +439,13 @@ export class Vehicles {
     }
     this.active = null; this.setSolid(v, true); v.speed = 0;
     this.player.ride = false; this.player.third = this.wasThird;
+    this.startBlend(0.55, { from: new Vector3(v.x, spot.y, v.z), to: spot, mode: "out" });
     this.player.teleport(spot.x, spot.y, spot.z, v.yaw);
+    this.player.body.root.scaling.setAll(0.2); this.exitPop = 0.35;
     this.hud.style.display = "none";
     this.game.sfx.click();
   }
+  private exitPop = 0;
 
   private sit(i = 0) {
     if (this.riding) return;
@@ -524,6 +553,7 @@ export class Vehicles {
   // ---------------------------------------------------------------------------------------------- simulation
   update(dt: number) {
     dt = Math.min(dt, 0.05);
+    if (this.exitPop > 0) { this.exitPop -= dt; const k = 1 - Math.max(0, this.exitPop) / 0.35; this.player.body.root.scaling.setAll(0.2 + 0.8 * k * k * (3 - 2 * k)); if (this.exitPop <= 0) this.player.body.root.scaling.setAll(1); }
     this.updatePallet(dt);
     for (const d of this.list) if (d.kind === "drone" && d.returning) this.flyHome(d, dt);
     const kind = this.active?.kind ?? "";

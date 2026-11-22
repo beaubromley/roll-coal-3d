@@ -156,7 +156,10 @@ export class UI {
     if (!text) { a.style.display = "none"; return; }
     a.style.display = "block"; a.textContent = text;
   }
-  setDistrict(t: string) { $("district").textContent = t; }
+  setDistrict(t: string) {
+    const el = $("district"); el.textContent = t;
+    el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");     // restarts the fade-in / hold / fade-out
+  }
 
   drawMap(px: number, pz: number, yaw: number, targets: MapTarget[]) {
     const c = this.mctx, S = 172, scale = 0.9; // px per metre

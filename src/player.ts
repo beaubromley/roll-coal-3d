@@ -26,6 +26,8 @@ export class Player {
   enabled = true;
   /** true while a vehicle (or the driller chair) owns position and camera */
   ride = false;
+  /** keep the body visible during a get-in / get-out animation */
+  bodyHold = false;
   /** touch: RUN button latched / stick pushed hard */
   sprintLatch = false; stickSprint = false; sprinting = false;
   gScale = 1;
@@ -136,7 +138,7 @@ export class Player {
 
   update(dt: number) {
     dt = Math.min(dt, 0.05);
-    if (this.ride) { this.body.root.setEnabled(false); return; }
+    if (this.ride) { if (!this.bodyHold) this.body.root.setEnabled(false); return; }
     let ix = 0, iz = 0;
     if (this.enabled) {
       if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) iz += 1;

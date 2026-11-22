@@ -13,6 +13,7 @@ import { Graphics, QUALITY_NAMES } from "./graphics";
 import { Kit } from "./models";
 import { CharKit } from "./chars";
 import { Tutorial } from "./tutorial";
+import { Story } from "./story";
 import { Human } from "./npcs";
 
 const isTouch = detectTouch();
@@ -82,7 +83,7 @@ if (isTouch) {
   touch = new TouchControls(player, game);
   document.addEventListener("touchmove", (e) => { if (!(e.target as HTMLElement).closest("#panel, .pbox, #controls")) e.preventDefault(); }, { passive: false });
   window.addEventListener("contextmenu", (e) => e.preventDefault());
-  $("pressstart").textContent = "TAP CLOCK IN";
+  $("pressstart").textContent = "TAP START NEW";
   const cl = document.querySelector("#controls .clist");
   if (cl) cl.innerHTML = "<span>STICK</span><em>MOVE</em><span>DRAG</span><em>LOOK</em><span>USE</span><em>INTERACT</em><span>JUMP</span><em>JUMP</em><span>RUN</span><em>SPRINT</em><span>CAM</span><em>1ST / 3RD</em>";
 }
@@ -106,7 +107,8 @@ window.addEventListener("keydown", (e) => {
   else if (!inControls && (e.code === "Enter" || e.code === "Space")) { e.preventDefault(); $("startBtn").click(); }
 });
 const tutorial = new Tutorial(game, player, isTouch);
-if (game.hasSave()) $("contBtn").style.display = "";
+const story = new Story();
+($("contBtn") as HTMLButtonElement).disabled = !game.hasSave();
 const begin = (cont: boolean) => {
   sfx.init(); sfx.good(); fx.stop();
   if (cont) game.load(); else game.clearSave();
@@ -118,8 +120,8 @@ const begin = (cont: boolean) => {
   ui.toast(cont ? "WELCOME BACK" : "ROLL COAL, MAKE HOLE 2", cont ? "Progress restored. Pick up where you left off." : isTouch ? "Stick to move, drag to look. Walk to the gate shack." : "Walk to the gate shack and sign in.");
   if (!cont) tutorial.start();
 };
-$("startBtn").addEventListener("click", () => begin(false));
-$("contBtn").addEventListener("click", () => begin(true));
+$("startBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("intro").style.display = "none"; fx.stop(); story.play(() => begin(false)); });
+$("contBtn").addEventListener("click", () => { if (!($("contBtn") as HTMLButtonElement).disabled) begin(true); });
 player.onLockFailed = () => ui.toast("MOUSE CAPTURE UNAVAILABLE", "Click and drag to look around");
 canvas.addEventListener("click", () => { if (game.started && !ui.panelOpen && !game.paused) player.lock(); });
 
@@ -156,6 +158,7 @@ engine.runRenderLoop(() => {
   });
   game.update(dt, dt);
   tutorial.update(dt);
+  game.veh.postCamera(dt);
   touch?.update();
   sfx.engine(Math.min(1, s.rop / 200));
   // keep the shadow frustum centred on the player

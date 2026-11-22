@@ -12,6 +12,7 @@ import { TouchControls, detectTouch } from "./touch";
 import { Graphics, QUALITY_NAMES } from "./graphics";
 import { Kit } from "./models";
 import { CharKit } from "./chars";
+import { Tutorial } from "./tutorial";
 import { Human } from "./npcs";
 
 const isTouch = detectTouch();
@@ -104,15 +105,21 @@ window.addEventListener("keydown", (e) => {
   if (inControls && (e.code === "Escape" || e.code === "Enter")) $("ctrlBack").click();
   else if (!inControls && (e.code === "Enter" || e.code === "Space")) { e.preventDefault(); $("startBtn").click(); }
 });
-$("startBtn").addEventListener("click", () => {
+const tutorial = new Tutorial(game, player, isTouch);
+if (game.hasSave()) $("contBtn").style.display = "";
+const begin = (cont: boolean) => {
   sfx.init(); sfx.good(); fx.stop();
+  if (cont) game.load(); else game.clearSave();
   $("intro").style.display = "none";
   $("hud").style.display = "block";
   game.started = true;
   if (isTouch) { try { (document.documentElement as any).requestFullscreen?.({ navigationUI: "hide" })?.catch?.(() => {}); } catch { /* not supported (iOS) */ } }
   player.lock();
-  ui.toast("ROLL COAL, MAKE HOLE 2", isTouch ? "Stick to move, drag to look. Walk to the gate shack." : "Walk to the gate shack and sign in.");
-});
+  ui.toast(cont ? "WELCOME BACK" : "ROLL COAL, MAKE HOLE 2", cont ? "Progress restored. Pick up where you left off." : isTouch ? "Stick to move, drag to look. Walk to the gate shack." : "Walk to the gate shack and sign in.");
+  if (!cont) tutorial.start();
+};
+$("startBtn").addEventListener("click", () => begin(false));
+$("contBtn").addEventListener("click", () => begin(true));
 player.onLockFailed = () => ui.toast("MOUSE CAPTURE UNAVAILABLE", "Click and drag to look around");
 canvas.addEventListener("click", () => { if (game.started && !ui.panelOpen && !game.paused) player.lock(); });
 
@@ -148,6 +155,7 @@ engine.runRenderLoop(() => {
     standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true,
   });
   game.update(dt, dt);
+  tutorial.update(dt);
   touch?.update();
   sfx.engine(Math.min(1, s.rop / 200));
   // keep the shadow frustum centred on the player

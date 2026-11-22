@@ -127,7 +127,8 @@ export class Human {
     const alias: Record<string, string[]> = {
       Head: ["Head_end", "HeadTop_End", "Head"], Spine2: ["Chest", "Spine2", "Torso"],
       LeftArm: ["UpperArm.L", "LeftArm"], RightArm: ["UpperArm.R", "RightArm"], LeftForeArm: ["LowerArm.L", "LeftForeArm"], RightForeArm: ["LowerArm.R", "RightForeArm"],
-      LeftHand: ["Wrist.L", "LeftHand"], RightHand: ["Wrist.R", "RightHand"], LeftFoot: ["Foot.L", "LeftFoot"], RightFoot: ["Foot.R", "RightFoot"],
+      LeftFoot: ["Foot.L", "LeftFoot"], RightFoot: ["Foot.R", "RightFoot"], LeftFootEnd: ["Foot.L_end", "LeftToeBase", "LeftToe_End"], RightFootEnd: ["Foot.R_end", "RightToeBase", "RightToe_End"],
+      LeftHand: ["Wrist.L", "LeftHand"], RightHand: ["Wrist.R", "RightHand"],
       LeftUpLeg: ["UpperLeg.L", "LeftUpLeg"], RightUpLeg: ["UpperLeg.R", "RightUpLeg"], LeftLeg: ["LowerLeg.L", "LeftLeg"], RightLeg: ["LowerLeg.R", "RightLeg"],
     };
     for (const [k, names] of Object.entries(alias)) this.bones[k] = names.map((n) => c.bone(n)).find(Boolean) ?? null;
@@ -140,12 +141,15 @@ export class Human {
     const band = o.band !== undefined ? o.band : rnd(2) < 0.3 ? pick(["#b3231c", "#1d6fb5", "#2f7d3e", "#e8b923"], 3) : false;
     const boots = pick(["#2a1d12", "#3a2a1c", "#1a1a1a", "#4a3a2a"], 4);
     tint(/^Brown2/, boots); tint(/^Brown(?!2)/, o.shirt); tint(/^Beige/, o.shirt); tint(/^LightBlue/, o.pants); tint(/^Skin/, o.skin); tint(/^Eyebrows/, hair);
-    // boots: the "Brown" material is shared by shirt, gloves and boots, so give the feet meshes their own copies and keep them dark
-    for (const mesh of c.meshes) if (/feet/i.test(mesh.name) && mesh.material) {
-      const mt: any = mesh.material.clone(mesh.material.name + "_boot");
-      const dark = /Brown2/.test(String(mt.name));
-      if (mt && "albedoColor" in mt) mt.albedoColor = Color3.FromHexString(boots).toLinearSpace().scale(dark ? 0.55 : 1);
-      mesh.material = mt;
+    // boots: the model's own feet are hidden (they rendered stretched on some devices) and replaced by simple boots that ride the foot bones
+    for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(false);
+    for (const side of ["Left", "Right"]) {
+      const node = new TransformNode("boot", sc); node.parent = this.root;
+      const upper = MeshBuilder.CreateBox("bu", { width: 0.12, height: 0.15, depth: 0.31 }, sc); upper.position.set(0, 0.085, 0.07); upper.parent = node; upper.material = m(sc, boots);
+      const toe = MeshBuilder.CreateSphere("bt", { diameter: 0.13, segments: 8 }, sc); toe.position.set(0, 0.06, 0.2); toe.scaling.set(0.95, 0.8, 1.1); toe.parent = node; toe.material = m(sc, boots);
+      const sole = MeshBuilder.CreateBox("bs", { width: 0.125, height: 0.035, depth: 0.36 }, sc); sole.position.set(0, 0.018, 0.09); sole.parent = node; sole.material = m(sc, "#0c0b0a");
+      this.meshes.push(upper, toe, sole);
+      this.bootNodes.push({ node, foot: this.bones[side + "Foot"], end: this.bones[side + "FootEnd"] });
     }
     if (band) tint(/^Red/, band);
     else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
@@ -177,6 +181,7 @@ export class Human {
   }
   static count = 0;
   private chBuild = new Vector3(1, 1, 1);
+  private bootNodes: { node: TransformNode; foot: TransformNode | null | undefined; end: TransformNode | null | undefined }[] = [];
   private chParts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
   private ppeLocal!: Vector3;
 
@@ -221,6 +226,18 @@ export class Human {
         this.aim(this.bones[side + "ForeArm"], this.bones[side + "Hand"], fwd.scale(0.95).add(down.scale(0.3)).normalize());
       }
       this.chSat = true;
+    }
+    // boots follow the foot bones: placed at the ankle and pointed along the foot
+    if (this.bootNodes.length) {
+      this.root.computeWorldMatrix(true);
+      const inv0 = this.root.getWorldMatrix().clone().invert(), q = new Quaternion();
+      for (const b of this.bootNodes) {
+        if (!b.foot || !b.end) continue;
+        const a = Vector3.TransformCoordinates(b.foot.getAbsolutePosition(), inv0), e = Vector3.TransformCoordinates(b.end.getAbsolutePosition(), inv0);
+        const d = e.subtract(a); if (d.lengthSquared() < 1e-6) continue; d.normalize();
+        Quaternion.FromUnitVectorsToRef(Vector3.Forward(), d, q);
+        b.node.position.copyFrom(a); b.node.rotationQuaternion = q.clone();
+      }
     }
     // PPE follows the bones (positions taken in this person's local space)
     if (this.chParts.length) {

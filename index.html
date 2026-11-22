@@ -193,6 +193,12 @@
   .td { position: absolute; pointer-events: auto; touch-action: none; border: 3px solid rgba(255,255,255,.8); background: rgba(10,16,24,.6); color: #fff; font-family: var(--display); letter-spacing: 1px; font-size: 18px; display: grid; place-content: center; text-align: center; -webkit-tap-highlight-color: transparent; padding: 0; border-radius: 16px; }
   .td small { font-size: 9px; opacity: .8; }
   .td.on { background: rgba(244,192,74,.9); color: #111; }
+  #tut { position: fixed; z-index: 7; left: 50%; transform: translateX(-50%); top: 112px; max-width: min(92vw, 560px); padding: 10px 16px 12px; background: rgba(10,16,24,.88); border: 2px solid var(--gold); border-radius: 12px; color: #fff; text-align: center; pointer-events: none; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+  #tut .ts { font-family: var(--display); font-size: 11px; letter-spacing: 2px; color: var(--gold); margin-bottom: 4px; }
+  #tut .tt { font-family: var(--display); font-size: 20px; letter-spacing: .5px; line-height: 1.25; }
+  #tut button { pointer-events: auto; margin-top: 8px; font-family: var(--display); font-size: 12px; letter-spacing: 1px; background: transparent; color: #aab6c3; border: 1px solid #55697e; border-radius: 6px; padding: 5px 14px; }
+  body.touch #tut { top: 6px; left: auto; right: 74px; transform: none; max-width: 40vw; padding: 6px 10px 8px; } body.touch #tut .tt { font-size: 14px; }
+  .tb.tuthi { border-color: var(--gold); animation: usepulse .8s infinite; box-shadow: 0 0 0 6px rgba(244,192,74,.35), 0 0 26px 8px rgba(244,192,74,.7); }
   #td-steer { position: absolute; pointer-events: auto; touch-action: none; left: max(16px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); width: 230px; height: 96px; border: 3px solid rgba(255,255,255,.8); background: rgba(10,16,24,.6); border-radius: 48px; overflow: hidden; -webkit-tap-highlight-color: transparent; }
   #td-steer .arr { position: absolute; top: 50%; transform: translateY(-60%); font-size: 26px; color: rgba(255,255,255,.55); } #td-steer .arr.l { left: 16px; } #td-steer .arr.r { right: 16px; }
   #td-steer small { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-family: var(--display); font-size: 9px; letter-spacing: 1px; color: rgba(255,255,255,.6); }
@@ -303,6 +309,7 @@
   <div id="toast" class="shadowtext"></div>
 </div>
 
+<div id="tut" style="display:none"><div class="ts"></div><div class="tt"></div><button id="tutSkip">SKIP</button></div>
 <div id="touch">
   <div id="lookzone"></div>
   <div id="joyzone"><div id="joybase"><div id="joyknob"></div></div></div>
@@ -354,6 +361,7 @@
     <div id="sub2">YOU ARE THE COMPANY MAN. THE WELL IS YOUR PROBLEM.</div>
     <div id="btnrow">
       <button class="tbtn" id="startBtn">CLOCK IN</button>
+      <button class="tbtn" id="contBtn" style="display:none">CONTINUE</button>
       <button class="tbtn" id="ctrlBtn">CONTROLS</button>
     </div>
     <div id="pressstart">PRESS ENTER</div>

@@ -1,4 +1,4 @@
-import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport } from "@babylonjs/core";
+import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture } from "@babylonjs/core";
 import { Rig, F } from "./rig";
 import { Player } from "./player";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP } from "./sim";
@@ -65,6 +65,7 @@ export class Game {
     this.player.onStep = () => this.sfx.step();
     this.buildAmbient();
     this.buildMissions();
+    this.buildSky();
     this.wirePause();
   }
 
@@ -635,7 +636,69 @@ export class Game {
   }
 
   // ---------- missions ----------
-  buildMissions() { defineMissions(this); }
+  buildMissions() { defineMissions(this); this.allMissions = [...this.queue]; }
+
+  // ---------- sky: sun, moon and stars ----------
+  private sky!: { sun: Mesh; sunMat: StandardMaterial; moon: Mesh; glow: Mesh; stars: Mesh; starMat: StandardMaterial };
+  private buildSky() {
+    const sc = this.scene;
+    const tex = (size: number, draw: (c: CanvasRenderingContext2D, s: number) => void) => { const t = new DynamicTexture("skytex", size, sc, true); draw(t.getContext() as CanvasRenderingContext2D, size); t.hasAlpha = true; t.update(); return t; };
+    const mat = (t: DynamicTexture, emissive = new Color3(1, 1, 1)) => { const m = new StandardMaterial("skymat", sc); m.diffuseTexture = t; m.emissiveTexture = t; m.useAlphaFromDiffuseTexture = true; m.emissiveColor = emissive; m.disableLighting = true; m.fogEnabled = false; m.backFaceCulling = false; m.disableDepthWrite = true; m.specularColor = Color3.Black(); return m; };
+    const disc = (size: number, mat_: StandardMaterial, name: string, dist: number) => { const p = MeshBuilder.CreatePlane(name, { size }, sc); p.material = mat_; p.billboardMode = Mesh.BILLBOARDMODE_ALL; p.infiniteDistance = true; p.isPickable = false; p.alwaysSelectAsActiveMesh = true; p.position.set(0, dist, 0); return p; };
+    const sunT = tex(256, (c, s) => { const g = c.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0, "rgba(255,255,240,1)"); g.addColorStop(0.16, "rgba(255,250,215,1)"); g.addColorStop(0.19, "rgba(255,225,150,0.55)"); g.addColorStop(0.5, "rgba(255,190,90,0.16)"); g.addColorStop(1, "rgba(255,170,60,0)"); c.fillStyle = g; c.fillRect(0, 0, s, s); });
+    const sunMat = mat(sunT); const sun = disc(380, sunMat, "sun", 1000);
+    const moonT = tex(256, (c, s) => { const g = c.createRadialGradient(s / 2, s / 2, s * 0.12, s / 2, s / 2, s / 2); g.addColorStop(0, "rgba(190,205,255,0.35)"); g.addColorStop(1, "rgba(190,205,255,0)"); c.fillStyle = g; c.fillRect(0, 0, s, s);
+      c.beginPath(); c.arc(s / 2, s / 2, s * 0.17, 0, 6.3); c.fillStyle = "#e9ecf5"; c.fill();
+      for (const [x, y, r] of [[-0.05, -0.05, 0.05], [0.07, 0.03, 0.035], [-0.02, 0.08, 0.04], [0.06, -0.09, 0.025], [-0.09, 0.02, 0.03]]) { c.beginPath(); c.arc(s / 2 + x * s, s / 2 + y * s, r * s, 0, 6.3); c.fillStyle = "rgba(150,160,185,0.55)"; c.fill(); } });
+    const moonMat = mat(moonT); const moon = disc(300, moonMat, "moon", 1000); moon.setEnabled(false);
+    const glow = moon;                                       // (the moon texture carries its own halo)
+    const starT = tex(2048, (c, s) => { c.clearRect(0, 0, s, s); for (let i = 0; i < 1400; i++) { const x = Math.random() * s, y = Math.random() * s, r = 0.5 + Math.random() * 1.1, a = 0.4 + Math.random() * 0.6; c.fillStyle = `rgba(${200 + (Math.random() * 55) | 0},${210 + (Math.random() * 45) | 0},255,${a})`; c.beginPath(); c.arc(x, y, r, 0, 6.3); c.fill(); } });
+    const starMat = mat(starT); starMat.alpha = 0;
+    const stars = MeshBuilder.CreateSphere("stars", { diameter: 1700, segments: 16, sideOrientation: Mesh.BACKSIDE }, sc);
+    stars.material = starMat; stars.infiniteDistance = true; stars.isPickable = false; stars.alwaysSelectAsActiveMesh = true; stars.renderingGroupId = 0;
+    starT.uScale = 2; starT.vScale = 1;
+    this.sky = { sun, sunMat, moon, glow, stars, starMat };
+  }
+  private updateSky(hour: number, night: number) {
+    const k = this.sky; if (!k) return;
+    const a = ((hour - 6.5) / 13.25) * Math.PI, d = new Vector3(Math.cos(a) * 0.8, Math.sin(a) * 0.95, 0.45).normalize();
+    k.sun.position.copyFrom(d.scale(1000)); k.moon.position.copyFrom(d.scale(-1000));
+    k.sun.setEnabled(!this.astMode && d.y > -0.1); k.moon.setEnabled(!this.astMode && d.y < 0.1);
+    k.sunMat.emissiveColor = Color3.Lerp(new Color3(1, 0.55, 0.28), new Color3(1, 1, 0.92), clamp(d.y * 3.2, 0, 1));
+    k.starMat.alpha = this.astMode ? 0 : clamp(night * 1.1 - 0.1, 0, 1);
+  }
+
+  // ---------- save / load ----------
+  static SAVE_KEY = "rcmh2.save.v1";
+  allMissions: Mission[] = []; doneIds = new Set<string>(); saveT = 0;
+  onInteract: () => void = () => {};
+  hasSave(): boolean { try { return !!localStorage.getItem(Game.SAVE_KEY); } catch { return false; } }
+  clearSave() { try { localStorage.removeItem(Game.SAVE_KEY); } catch { /* ignore */ } }
+  save() {
+    if (!this.started || this.flags.finish || this.astMode || this.sleeping) return;
+    try {
+      const flags: Record<string, any> = {};
+      for (const [k, v] of Object.entries(this.flags)) { try { JSON.stringify(v); flags[k] = v; } catch { /* skip things that can't be saved */ } }
+      const p = this.player, onFoot = !this.veh.riding;
+      localStorage.setItem(Game.SAVE_KEY, JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
+        approval: this.approval, morale: this.morale, incidents: this.incidents, flags, done: [...this.doneIds], realT: this.realT,
+        ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled() : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null }));
+    } catch { /* storage full or blocked */ }
+  }
+  load(): boolean {
+    try {
+      const raw = localStorage.getItem(Game.SAVE_KEY); if (!raw) return false;
+      const d = JSON.parse(raw); if (d.v !== 1) return false;
+      this.sim.s = d.s; this.sim.hold = d.hold ?? null; this.sim.accumDead = !!d.accumDead;
+      this.approval = d.approval; this.morale = d.morale; this.incidents = d.incidents; this.flags = d.flags ?? {}; this.realT = d.realT ?? 0;
+      this.doneIds = new Set<string>(d.done ?? []);
+      this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));
+      this.missionNo = this.doneIds.size;
+      this.player.body.setPPE(!!d.ppe);
+      if (d.pos) this.player.teleport(d.pos[0], d.pos[1], d.pos[2], d.pos[3]);
+      return true;
+    } catch { return false; }
+  }
 
   geoProg(done: () => void) {
     const p = this.open(`<div class="eyebrow">Geologic Prognosis</div><h2>The Plan</h2>
@@ -805,6 +868,7 @@ export class Game {
   }
 
   showEnd() {
+    this.clearSave();
     const s = this.sim.s, hours = s.t / 60;
     const over = s.cost - WELL.afe;
     const score = this.approval * 12 + this.morale * 0.3 - over / 70000 - this.incidents * 4 + s.stats.kicksKilled * 6;
@@ -831,9 +895,9 @@ export class Game {
     const a = this.active; if (!a) return;
     a.i++;
     if (a.i >= a.m.steps.length) {
-      const m = a.m; m.end?.();
+      const m = a.m; m.end?.(); this.doneIds.add(m.id);
       this.gain(m.a ?? 0, m.m ?? 0); this.sfx.good(); this.ui.toast("JOB COMPLETE", m.title);
-      this.active = null; this.lastDone = this.realT;
+      this.active = null; this.lastDone = this.realT; this.save();
       if (!(m.priority)) { /* keep order */ }
       this.ui.setMission("", "", "");
       this.nextFromStack();
@@ -943,6 +1007,7 @@ export class Game {
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0));
     if (this.asteroid) { this.asteroidT += realDt; this.asteroid.position.y = 420 - this.asteroidT * 30; this.asteroid.position.x = 120 - this.asteroidT * 4; this.asteroid.rotation.y += realDt * 0.05; }
     this.updateEnv();
+    this.saveT += realDt; if (this.saveT > 12) { this.saveT = 0; this.save(); }
     this.updateHud(realDt);
   }
 
@@ -968,6 +1033,7 @@ export class Game {
     this.env.sun.direction.set(-ex * 0.8, -ey, -0.45);
     (this.env.sun as any).__night = night;
     this.nightFactor = night;
+    this.updateSky(hour, night);
   }
   nightFactor = 0;
 
@@ -1099,6 +1165,6 @@ export class Game {
   interact() {
     if (this.started && !this.paused && !this.ui.panelOpen && this.veh.riding) { this.veh.leave(); return; }
     if (!this.started || this.paused || this.ui.panelOpen || !this.nearest) return;
-    this.sfx.click(); this.nearest.act();
+    this.sfx.click(); this.onInteract(); this.nearest.act();
   }
 }

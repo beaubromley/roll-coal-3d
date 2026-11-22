@@ -165,7 +165,7 @@ export function defineMissions(g: Game) {
     end: () => { if (s.mw < 10.85) g.radio("marcus", "You didn't make it. We'll find out what the formation thinks."); else { g.gain(0.4, 0); g.radio("marcus", "Mud's 10.9. We're ready for the Delaware. Mostly."); } } });
 
   // ================================================================ 9. kill the well (unchanged flow; dosing at the hopper)
-  M({ id: "kick", title: "Kill the Well", sub: "The well is kicking. Shut it in, read the pressures, calculate the kill weight, weight up and circulate it out through the choke.", trigger: () => s.kick.alarm || s.kill.stage !== "none", priority: true, a: 1.0, m: 10,
+  M({ id: "kick", title: "Kill the Well", sub: "The well is kicking. Shut it in, read the pressures, calculate the kill weight, weight up and circulate it out through the choke.", trigger: () => s.kick.alarm || s.kick.active || s.kick.shut || s.kill.stage !== "none", priority: true, a: 1.0, m: 10,
     start: () => { g.sfx.horn(); g.ui.toast("KICK!", "Pit gain — flow check!"); g.radio("dale", "PIT GAIN! She's flowing! BOSS — shut it in!", 10000); },
     steps: [
       { text: "Shut in the well at the driller's console", at: sy(S.cabin), label: "Driller's console — SHUT IN", r: 3.5, act: () => g.openCabin(), watch: () => s.kick.shut },

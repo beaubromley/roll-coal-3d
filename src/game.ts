@@ -731,7 +731,9 @@ export class Game {
     try {
       const raw = localStorage.getItem(Game.SAVE_KEY); if (!raw) return false;
       const d = JSON.parse(raw); if (d.v !== 1) return false;
-      this.sim.s = d.s; this.sim.hold = d.hold ?? null; this.sim.accumDead = !!d.accumDead;
+      Object.assign(this.sim.s, d.s);      // keep the same state object: the job definitions hold a reference to it
+      this.active = null; this.stack = []; this.ui.setMission("", "", "");   // jobs are re-evaluated from the restored state
+      this.sim.hold = d.hold ?? null; this.sim.accumDead = !!d.accumDead;
       this.approval = d.approval; this.morale = d.morale; this.incidents = d.incidents; this.flags = d.flags ?? {}; this.realT = d.realT ?? 0;
       this.doneIds = new Set<string>(d.done ?? []); this.depthLog = d.depthLog ?? [];
       this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));

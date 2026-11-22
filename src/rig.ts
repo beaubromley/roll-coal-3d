@@ -190,11 +190,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.ramp("deck", 0, 2.0, FZ, F, FZ + n * run, 0);
     for (let k = 1; k <= n; k++) {
       const top = F - (F / n) * k, cz = FZ + (k - 0.5) * run;
-      b.blocker(-1.0, 0, cz - run / 2, 1.0, top, cz + run / 2);
+      // thin walking surface only: the space under the ramp stays open so you can run (or drive) through it
+      b.blocker(-1.0, top - 0.12, cz - run / 2, 1.0, top, cz + run / 2);
+      b.blocker(-1.2, top - 0.1, cz - run / 2, -1.0, top + 1.1, cz + run / 2); b.blocker(1.0, top - 0.1, cz - run / 2, 1.2, top + 1.1, cz + run / 2);   // side rails sit on the ramp
     }
     b.beam("yellow", v(-1.05, F + 0.9, FZ), v(-1.05, 0.9, FZ + n * run), 0.06);
     b.beam("yellow", v(1.05, F + 0.9, FZ), v(1.05, 0.9, FZ + n * run), 0.06);
-    b.blocker(-1.2, 0, FZ, -1.0, F + 1.8, FZ + n * run); b.blocker(1.0, 0, FZ, 1.2, F + 1.8, FZ + n * run);
     b.label("V-DOOR", 0, F + 2.4, 5.9, 2.0, 0.6, Math.PI, "#7a1a14", "#ffffff", 64);
     b.label("SLICK RAMP\nNO WALKING", 1.25, F + 1.2, 6.2, 1.0, 0.8, Math.PI, "#e8b923", "#111111", 38);
   }

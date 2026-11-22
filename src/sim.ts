@@ -289,7 +289,7 @@ export class Sim {
   // ---- driller's-method circulation with a manual choke ----
   private stepKill(dt: number) {
     const s = this.s, k = s.kill;
-    const total = 60; // sim minutes to circulate bottoms-up (about a minute of real time at 1x)
+    const total = 71; // sim minutes to circulate bottoms-up: 71 s at 1x, exactly a third of the original ~214 s
     k.progress = Math.min(1, k.progress + dt / total);
     const p = k.progress;
     const icp = s.kick.sidpp + k.scr, fcp = k.scr * (s.mw > 0 ? (k.kmw / Math.max(1, s.mw)) : 1);

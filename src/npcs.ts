@@ -127,7 +127,7 @@ export class Human {
     const alias: Record<string, string[]> = {
       Head: ["Head_end", "HeadTop_End", "Head"], Spine2: ["Chest", "Spine2", "Torso"],
       LeftArm: ["UpperArm.L", "LeftArm"], RightArm: ["UpperArm.R", "RightArm"], LeftForeArm: ["LowerArm.L", "LeftForeArm"], RightForeArm: ["LowerArm.R", "RightForeArm"],
-      LeftFoot: ["Foot.L", "LeftFoot"], RightFoot: ["Foot.R", "RightFoot"], LeftFootEnd: ["Foot.L_end", "LeftToeBase", "LeftToe_End"], RightFootEnd: ["Foot.R_end", "RightToeBase", "RightToe_End"],
+      LeftFoot: ["Foot.L", "LeftFoot"], RightFoot: ["Foot.R", "RightFoot"], LeftLegEnd: ["LowerLeg.L_end", "LeftFoot"], RightLegEnd: ["LowerLeg.R_end", "RightFoot"], LeftFootEnd: ["Foot.L_end", "LeftToeBase", "LeftToe_End"], RightFootEnd: ["Foot.R_end", "RightToeBase", "RightToe_End"],
       LeftHand: ["Wrist.L", "LeftHand"], RightHand: ["Wrist.R", "RightHand"],
       LeftUpLeg: ["UpperLeg.L", "LeftUpLeg"], RightUpLeg: ["UpperLeg.R", "RightUpLeg"], LeftLeg: ["LowerLeg.L", "LeftLeg"], RightLeg: ["LowerLeg.R", "RightLeg"],
     };
@@ -141,68 +141,34 @@ export class Human {
     const band = o.band !== undefined ? o.band : rnd(2) < 0.3 ? pick(["#b3231c", "#1d6fb5", "#2f7d3e", "#e8b923"], 3) : false;
     const boots = pick(["#2a1d12", "#3a2a1c", "#1a1a1a", "#4a3a2a"], 4);
     tint(/^Brown2/, boots); tint(/^Brown(?!2)/, o.shirt); tint(/^Beige/, o.shirt); tint(/^LightBlue/, o.pants); tint(/^Skin/, o.skin); tint(/^Eyebrows/, hair);
-    // Feet: the model's feet are skinned to the very last bones in the skeleton, which break on some GPUs after running.
-    // So we cut the feet out of the skinned mesh and glue each foot rigidly to its foot bone instead: no skinning, no distortion.
-    const rigidFeet = (): boolean => {
-      let made = false;
-      const feet = c.meshes.filter((x) => /feet/i.test(x.name) && x.getTotalVertices() > 0) as Mesh[];
-      const L = this.bones.LeftFoot, Rb = this.bones.RightFoot;
-      if (!feet.length || !L || !Rb) return false;
-      // refresh every world matrix top-down so no bone is measured from a stale parent
-      this.root.computeWorldMatrix(true); c.holder.computeWorldMatrix(true);
-      for (const n of c.holder.getChildTransformNodes(false)) n.computeWorldMatrix(true);
-      for (const m of c.meshes) m.computeWorldMatrix(true);
-      L.computeWorldMatrix(true); Rb.computeWorldMatrix(true);
-      const bone = { L, R: Rb }, inv = { L: L.getWorldMatrix().clone().invert(), R: Rb.getWorldMatrix().clone().invert() };
-      const lp = L.getAbsolutePosition().clone(), rp = Rb.getAbsolutePosition().clone(), axis = rp.subtract(lp).normalize(), mid = lp.add(rp).scale(0.5);
-      for (const mesh of feet) {
-        const pos = mesh.getVerticesData("position"), nor = mesh.getVerticesData("normal"), uv = mesh.getVerticesData("uv"), idx = mesh.getIndices();
-        if (!pos || !idx) continue;
-        mesh.computeWorldMatrix(true); const mw = mesh.getWorldMatrix();
-        const wp: Vector3[] = [];
-        for (let i = 0; i < pos.length; i += 3) wp.push(Vector3.TransformCoordinates(new Vector3(pos[i], pos[i + 1], pos[i + 2]), mw));
-        const mi = mesh.getVerticesData("matricesIndices"), mwt = mesh.getVerticesData("matricesWeights"), bonesList = mesh.skeleton?.bones ?? c.skeleton?.bones ?? [];
-        const vSide: (string | null)[] = [];
-        for (let v = 0; v < wp.length; v++) {
-          let best = -1, bw = -1;
-          if (mi && mwt) for (let k = 0; k < 4; k++) if (mwt[v * 4 + k] > bw) { bw = mwt[v * 4 + k]; best = mi[v * 4 + k]; }
-          const nm = best >= 0 ? String(bonesList[best]?.name ?? "") : "";
-          vSide.push(/\.L(_|$)/.test(nm) ? "L" : /\.R(_|$)/.test(nm) ? "R" : null);
-        }
-        const side: Record<"L" | "R", number[]> = { L: [], R: [] };
-        for (let t = 0; t < idx.length; t += 3) {
-          const cen = wp[idx[t]].add(wp[idx[t + 1]]).add(wp[idx[t + 2]]).scale(1 / 3);
-          let votes = 0;                                                    // left/right by the bone that owns each vertex (falls back to which side of the body)
-          for (let q = 0; q < 3; q++) { const sd = vSide[idx[t + q]]; votes += sd === "L" ? -1 : sd === "R" ? 1 : 0; }
-          const sd = votes < 0 ? "L" : votes > 0 ? "R" : Vector3.Dot(cen.subtract(mid), axis) <= 0 ? "L" : "R";
-          side[sd].push(idx[t], idx[t + 1], idx[t + 2]);
-        }
-        for (const k of ["L", "R"] as const) {
-          const ids = side[k]; if (!ids.length) continue;
-          const remap = new Map<number, number>(), P: number[] = [], N: number[] = [], U: number[] = [], I: number[] = [];
-          for (const v of ids) {
-            let n = remap.get(v);
-            if (n === undefined) {
-              n = P.length / 3; remap.set(v, n);
-              const q = Vector3.TransformCoordinates(wp[v], inv[k]); P.push(q.x, q.y, q.z);
-              if (nor) { const w = Vector3.TransformNormal(new Vector3(nor[v * 3], nor[v * 3 + 1], nor[v * 3 + 2]), mw), l = Vector3.TransformNormal(w, inv[k]).normalize(); N.push(l.x, l.y, l.z); }
-              if (uv) U.push(uv[v * 2], uv[v * 2 + 1]);
-            }
-            I.push(n);
-          }
-          const nm = new Mesh("foot" + k, sc), vd = new VertexData(); vd.positions = P; vd.indices = I; if (N.length) vd.normals = N; if (U.length) vd.uvs = U; vd.applyToMesh(nm);
-          // the model's "Brown" is shared with the shirt and gloves, so the feet get their own dark copy of it
-          const mt: any = mesh.material ? mesh.material.clone(mesh.material.name + "_boot" + k) : null;
-          if (mt && "albedoColor" in mt) mt.albedoColor = Color3.FromHexString(boots).toLinearSpace().scale(/Brown2/.test(String(mesh.material?.name)) ? 1 : 0.5);
-          nm.material = mt ?? mesh.material; nm.parent = bone[k]; nm.isPickable = false; nm.receiveShadows = true; nm.alwaysSelectAsActiveMesh = true;
-          this.meshes.push(nm); made = true;
-        }
-        mesh.setEnabled(false);
+    // Boots: the model's own feet are hidden. Our own boots hang off the SHIN bone (the one thing every clip animates correctly):
+    // planted at the shin's lower end, tilted with the shin, always facing the way the body faces. No foot bones, no skinning.
+    for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(false);
+    const bootParts: { node: TransformNode; knee: TransformNode | null | undefined; end: TransformNode | null | undefined }[] = [];
+    for (const side of ["Left", "Right"]) {
+      const node = new TransformNode("boot", sc); node.parent = this.root;
+      const part = (mesh: Mesh, hex: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { mesh.material = m(sc, hex); mesh.parent = node; mesh.position.set(x, y, z); mesh.scaling.set(sx, sy, sz); this.meshes.push(mesh); };
+      part(MeshBuilder.CreateCylinder("bsh", { diameterTop: 0.125, diameterBottom: 0.115, height: 0.2, tessellation: 12 }, sc), boots, 0, 0.13, 0.01);       // shaft, under the pant cuff
+      part(MeshBuilder.CreateBox("bfo", { width: 0.115, height: 0.075, depth: 0.2 }, sc), boots, 0, 0.06, 0.1);                                           // foot
+      part(MeshBuilder.CreateSphere("bto", { diameter: 0.115, segments: 8 }, sc), boots, 0, 0.055, 0.2, 1, 0.7, 1.15);                                      // rounded toe
+      part(MeshBuilder.CreateBox("bhe", { width: 0.12, height: 0.03, depth: 0.1 }, sc), "#0c0b0a", 0, 0.015, -0.02);                                      // heel
+      part(MeshBuilder.CreateBox("bso", { width: 0.12, height: 0.026, depth: 0.31 }, sc), "#0c0b0a", 0, 0.013, 0.1);                                      // sole
+      bootParts.push({ node, knee: this.bones[side + "Leg"], end: this.bones[side + "LegEnd"] });
+    }
+    sc.onAfterAnimationsObservable.add(() => {
+      if (!this.root.isEnabled()) return;
+      this.root.computeWorldMatrix(true);
+      const inv = this.root.getWorldMatrix().clone().invert(), q = new Quaternion(), fwd = new Vector3(0, 0, 1);
+      for (const bp of bootParts) {
+        if (!bp.knee || !bp.end) continue;
+        bp.knee.computeWorldMatrix(true); bp.end.computeWorldMatrix(true);
+        const e = Vector3.TransformCoordinates(bp.end.getAbsolutePosition(), inv), k = Vector3.TransformCoordinates(bp.knee.getAbsolutePosition(), inv);
+        const up = k.subtract(e); if (up.lengthSquared() < 1e-6) continue; up.normalize();
+        const f = fwd.subtract(up.scale(Vector3.Dot(fwd, up))); if (f.lengthSquared() < 1e-6) continue; f.normalize();   // body-forward made perpendicular to the shin
+        Quaternion.FromLookDirectionLHToRef(f, up, q);
+        bp.node.position.copyFrom(e); bp.node.rotationQuaternion = q.clone();
       }
-      return made;
-    };
-    // whatever the animation system leaves behind, standing / sitting people always have their feet at the rest pose
-    if (!rigidFeet()) for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(true);   // could not split them: keep the skinned feet
+    });
     if (band) tint(/^Red/, band);
     else for (const mesh of c.meshes) if (/^Red/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
     const sy = o.height ?? 0.95 + rnd(5) * 0.11, sx = 0.95 + rnd(6) * 0.14;

@@ -74,7 +74,7 @@ export class Mini {
     const W = 560, H = 300, dpr = Math.min(2, window.devicePixelRatio || 1);
     const body = `<div style="display:flex;justify-content:center;margin:10px 0"><canvas id="sheet" width="${W * dpr}" height="${H * dpr}" style="width:min(100%,${W}px);aspect-ratio:${W}/${H};background:#f4efe1;border:2px solid #9a8f74;box-shadow:0 6px 18px rgba(0,0,0,.45);touch-action:none;cursor:crosshair"></canvas></div>
       <div id="mgResult" class="hint">Sign on the line, then initial in the box.</div>`;
-    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body, `<button class="b alt" id="sgClear">Clear</button><button class="b" id="sgDone" disabled>Hand it back</button>`), undefined, true);
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body, `<button class="b alt" id="sgClear">Clear</button><button class="b" id="sgDone" style="display:none" disabled>Hand it back</button>`), undefined, true);
     this.skip(done, p);
     const cv = p.querySelector<HTMLCanvasElement>("#sheet")!, ctx = cv.getContext("2d")!;
     ctx.scale(dpr, dpr);
@@ -111,12 +111,19 @@ export class Mini {
       const st = stats(), ok = st.sigLen > 70 && st.iniLen > 18;
       (p.querySelector("#sgDone") as HTMLButtonElement).disabled = !ok;
       const r = document.getElementById("mgResult");
-      if (r && this.alive) r.textContent = ok ? "Looks signed. Hand it back." : st.sigLen > 70 ? "Now initial in the box." : "Sign on the line, then initial in the box.";
+      if (r && this.alive) r.textContent = ok ? "Signed. Handing it back…" : st.sigLen > 70 ? "Now initial in the box." : "Sign on the line, then initial in the box.";
     };
     const pt = (e: PointerEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }; };
     cv.onpointerdown = (e) => { cv.setPointerCapture(e.pointerId); cur = [pt(e)]; strokes.push(cur); refresh(); e.preventDefault(); };
     cv.onpointermove = (e) => { if (!cur) return; cur.push(pt(e)); paper(); };
-    const up = () => { if (cur) { cur = null; this.g.sfx.click(); refresh(); } };
+    let finishing = false;
+    const finish = () => {
+      if (finishing) return; const st = stats(); if (!(st.sigLen > 70 && st.iniLen > 18)) return;
+      finishing = true;                                         // signed and initialled: hand it back automatically
+      const score = clamp(0.15 + 0.85 * ((st.sigIn + st.iniIn) / 2) ** 1.5, 0, 1);
+      this.later(() => this.end(done, { score, skipped: false }, score >= 0.75 ? "Neat. Roy actually nods." : score >= 0.4 ? "Legible enough." : "That's… all over the page.", 900), 450);
+    };
+    const up = () => { if (cur) { cur = null; this.g.sfx.click(); refresh(); finish(); } };
     cv.onpointerup = up; cv.onpointercancel = up;
     p.querySelector<HTMLButtonElement>("#sgClear")!.onclick = () => { strokes = []; cur = null; refresh(); };
     p.querySelector<HTMLButtonElement>("#sgDone")!.onclick = () => {

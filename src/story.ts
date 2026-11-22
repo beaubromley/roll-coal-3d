@@ -56,23 +56,32 @@ function slideBoardroom(c: Ctx) {
   R(c, "#f2f2f2", 70, 70, 4, 4); R(c, "#f2f2f2", 124, 70, 4, 4);
 }
 
-function slideContract(c: Ctx, reveal = false) {
+/** The contract. t = scan animation 0..1 (undefined = plain). The AI's image reader sweeps the name; the lowercase l grows serifs and becomes a capital I. */
+function slideContract(c: Ctx, t?: number) {
   R(c, "#20150e", 0, 0, W, H); for (let y = 0; y < H; y += 6) R(c, "#271a11", 0, y, W, 3);        // desk wood
   R(c, "#000000", 30, 8, 134, 96); R(c, "#f4efe1", 27, 5, 134, 96); R(c, "#e4dcc6", 27, 99, 134, 2);   // the paper
   R(c, "#222", 36, 14, 70, 3);
   for (let y = 22; y < 40; y += 4) R(c, "#8a8a8a", 36, y, y % 8 ? 96 : 112, 1);
-  // the contractor name, set in a plain sans-serif where lowercase l and capital I are the same stick
-  c.save(); c.textBaseline = "alphabetic"; c.font = "bold 17px Arial, Helvetica, sans-serif"; c.fillStyle = "#14161c"; c.fillText("Al Drilling, LLC", 36, 62); c.restore();
+  c.save(); c.textBaseline = "alphabetic"; c.font = "bold 15px Arial, Helvetica, sans-serif"; c.fillStyle = "#14161c";
+  const wA = c.measureText("A").width, wl = c.measureText("l").width, x0 = 36, y0 = 62;
+  if (t === undefined) c.fillText("Al Drilling, LLC", x0, y0);
+  else {
+    c.fillText("A", x0, y0); c.fillText(" Drilling, LLC", x0 + wA + wl, y0);
+    const gx = x0 + wA, k = Math.max(0, Math.min(1, (t - 0.45) / 0.35));        // 0 = lowercase l, 1 = capital I
+    const col = k > 0 ? "#b3231c" : "#14161c";
+    R(c, col, gx + wl / 2 - 1.3, y0 - 11, 2.6, 11);                              // the stem
+    const sw = 6.4 * k; if (sw > 0.4) { R(c, col, gx + wl / 2 - sw / 2, y0 - 11, sw, 1.5); R(c, col, gx + wl / 2 - sw / 2, y0 - 1.5, sw, 1.5); }   // serifs grow in
+  }
+  c.restore();
   R(c, "#222", 36, 66, 112, 1);
   for (let y = 70; y < 80; y += 4) R(c, "#8a8a8a", 36, y, 90, 1);
-  if (reveal) {
-    c.strokeStyle = "#e8442a"; c.lineWidth = 1.5; c.beginPath(); c.ellipse(46, 56, 10, 9, 0, 0, 6.3); c.stroke();
-    R(c, "#e8442a", 46, 44, 1, 3);
-    // thought bubble: what the agents read
-    R(c, "#fff9c8", 100, 24, 52, 16); R(c, "#e8442a", 100, 24, 52, 1); R(c, "#e8442a", 100, 39, 52, 1); R(c, "#e8442a", 100, 24, 1, 16); R(c, "#e8442a", 151, 24, 1, 16);
-    c.save(); c.font = "bold 11px Arial, Helvetica, sans-serif"; c.fillStyle = "#b3231c"; c.fillText("AI!?", 106, 36); c.restore();
-    R(c, "#fff9c8", 98, 40, 4, 3); R(c, "#fff9c8", 94, 44, 3, 2);
-    R(c, "#e8442a", 128, 30, 18, 1);
+  if (t !== undefined) {
+    // scanner sweep over the name, then a lens box around the glyph and the AI's reading
+    const sweep = Math.min(1, t / 0.45), sx = 36 + sweep * 112;
+    if (t < 0.5) { R(c, "rgba(79,214,255,0.55)", sx, 44, 2, 24); R(c, "rgba(79,214,255,0.12)", 36, 44, sx - 36, 24); }
+    c.strokeStyle = "#4fd6ff"; c.lineWidth = 1; c.strokeRect(36.5, 44.5, 112, 24);
+    R(c, "#0b0e14", 96, 20, 62, 20); R(c, "#4fd6ff", 96, 20, 62, 1);
+    c.save(); c.font = "bold 6px monospace"; c.fillStyle = "#4fd6ff"; c.fillText("AI IMAGE READER", 99, 27); c.font = "bold 9px Arial, Helvetica, sans-serif"; c.fillStyle = t > 0.7 ? "#ff5a4a" : "#8fa7b8"; c.fillText(t > 0.7 ? "\"AI Drilling\"" : "reading…", 99, 37); c.restore();
   }
   // signature and approval stamp
   R(c, "#222", 40, 90, 50, 1); R(c, "#101c4a", 42, 85, 3, 4); R(c, "#101c4a", 45, 83, 5, 2); R(c, "#101c4a", 50, 85, 4, 4); R(c, "#101c4a", 54, 84, 6, 2);
@@ -125,10 +134,10 @@ function slideYou(c: Ctx) {
   const r = rnd(11); for (let i = 0; i < 40; i++) R(c, "#fff", r() * W, r() * 30, 1, 1);
 }
 
-const SLIDES: { draw: (c: Ctx) => void; text: string }[] = [
+const SLIDES: { draw: (c: Ctx, t?: number) => void; text: string; anim?: number }[] = [
   { draw: slideBoardroom, text: "Houston. A brand-new oil and gas operator. Every executive is an AI agent." },
-  { draw: slideContract, text: "They wanted AI for everything, so they hired the best-sounding drilling contractor on the list…" },
-  { draw: (c) => slideContract(c, true), text: "…and signed \"AI Drilling.\" The contract says AL Drilling. A lowercase L. Nobody read it." },
+  { draw: (c) => slideContract(c), text: "They wanted AI for everything, so they had their AI scan the contract to pick a drilling contractor…" },
+  { draw: (c, t) => slideContract(c, t ?? 0), anim: 2600, text: "…but the AI image reader can't tell a lowercase l from a capital I. It read \"AI Drilling,\" and they signed. The real name is Al Drilling. Nobody checked." },
   { draw: slideRig, text: "Rig 107, west Texas. A real crew, a real well, and executives who answer every problem with \"Great insight!\"" },
   { draw: slideYou, text: "You're the Company Man. Keep it all together." },
 ];
@@ -154,27 +163,27 @@ export class Story {
     this.show();
   }
 
+  private raf = 0;
   private show() {
     const s = SLIDES[this.i];
     this.cv.classList.remove("in"); void this.cv.offsetWidth; this.cv.classList.add("in");
-    const c = this.cv.getContext("2d")!; c.clearRect(0, 0, W, H); s.draw(c);
-    // vignette + scanlines baked into the pixels
-    for (let y = 0; y < H; y += 2) { c.fillStyle = "rgba(0,0,0,0.10)"; c.fillRect(0, y, W, 1); }
-    this.full = s.text; this.n = 0; this.cap.textContent = "";
-    clearInterval(this.typing);
-    this.typing = window.setInterval(() => { this.n++; this.cap.textContent = this.full.slice(0, this.n); if (this.n >= this.full.length) clearInterval(this.typing); }, 24);
+    const c = this.cv.getContext("2d")!;
+    const paint = (t?: number) => { c.clearRect(0, 0, W, H); s.draw(c, t); for (let y = 0; y < H; y += 2) { c.fillStyle = "rgba(0,0,0,0.10)"; c.fillRect(0, y, W, 1); } };
+    cancelAnimationFrame(this.raf);
+    if (s.anim) { const t0 = performance.now() + 500; const step = (now: number) => { const t = Math.max(0, Math.min(1, (now - t0) / s.anim!)); paint(t); if (t < 1) this.raf = requestAnimationFrame(step); }; this.raf = requestAnimationFrame(step); }
+    else paint();
+    this.cap.textContent = s.text; this.cap.classList.remove("pop"); void (this.cap as HTMLElement).offsetWidth; this.cap.classList.add("pop");   // appears all at once
     document.getElementById("storyDots")!.innerHTML = SLIDES.map((_, k) => `<i class="${k === this.i ? "on" : ""}"></i>`).join("");
     (document.getElementById("storyNext") as HTMLElement).textContent = this.i === SLIDES.length - 1 ? "START SHIFT" : "NEXT";
   }
 
   private next() {
-    if (this.n < this.full.length) { this.n = this.full.length; this.cap.textContent = this.full; clearInterval(this.typing); return; }
     if (++this.i >= SLIDES.length) { this.end(); return; }
     this.show();
   }
 
   private end() {
-    clearInterval(this.typing); window.removeEventListener("keydown", this.key);
+    cancelAnimationFrame(this.raf); window.removeEventListener("keydown", this.key);
     this.root.classList.add("out");
     window.setTimeout(() => { this.root.style.display = "none"; this.done(); }, 450);
   }

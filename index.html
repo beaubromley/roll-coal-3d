@@ -288,6 +288,12 @@
   .joint { position: absolute; left: 0; top: 24px; width: 90px; height: 22px; background: linear-gradient(#aeb4bb, #6a7078); border-radius: 11px; border: 2px solid #2a2f35; box-shadow: inset -14px 0 0 -4px #e8b923; }
   .joint.hit { background: linear-gradient(#7bd35a, #2e9a55); } .joint.miss { opacity: .35; }
   .react { margin: 14px 0; height: 120px; display: grid; place-items: center; background: #1a2430; border: 3px solid var(--line); font-family: var(--display); font-size: 40px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); cursor: pointer; user-select: none; touch-action: manipulation; }
+  .ticketline { text-align: center; font-family: var(--display); letter-spacing: 1px; color: var(--gold); margin: 6px 0; } .ticketline b { color: #fff; font-size: 1.3em; }
+  .bundle { position: relative; width: 100%; max-width: 560px; margin: 8px auto; background: radial-gradient(#26323f, #141c25); border: 2px solid var(--line); border-radius: 6px; overflow: hidden; touch-action: none; }
+  .pipe { position: absolute; border-radius: 50%; border: 3px solid #4b525a; background: radial-gradient(circle at 38% 34%, #b9bec4 0 18%, #7d848c 45%, #4a4f55 100%); box-shadow: inset 0 0 0 5px rgba(255,255,255,.06), 0 2px 3px rgba(0,0,0,.5); cursor: pointer; padding: 0; color: #111; font-family: var(--display); font-size: 14px; display: grid; place-items: center; }
+  .pipe::after { content: ""; position: absolute; inset: 28%; border-radius: 50%; background: #0c1015; box-shadow: inset 0 0 5px #000; }
+  .pipe.tag { border-color: #76ff03; background: radial-gradient(circle at 40% 36%, #d4ff9a, #5eb52a); } .pipe.tag::after { background: rgba(0,0,0,.22); inset: 18%; z-index: 0; } .pipe.tag { z-index: 1; }
+  .react.fake { background: #4a3a14; color: #ffd24a; border-color: #ffd24a; }
   .react.go { background: var(--red); color: #fff; border-color: #fff; animation: usepulse .35s infinite; } .react.ok { background: #1f6a3a; color: #fff; } .react.bad { background: #5a1f1a; color: #fff; }
   .wires { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
   .wire { height: 110px; border: 0; background: transparent; cursor: pointer; position: relative; font-family: var(--display); letter-spacing: 1px; color: #fff; padding: 0; }

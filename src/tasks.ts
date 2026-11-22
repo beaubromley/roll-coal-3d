@@ -60,14 +60,15 @@ export function defineMissions(g: Game) {
     { text: "Order casing at the computer in your trailer", at: sy(S.desk), label: "Order 9⅝″ casing", r: 3, act: () => g.orderCasing(), watch: () => g.casingOrder > 0 },
     { text: "Wait for the casing truck…", watch: () => sim.s.t - g.orderT >= 50 },
     { text: "Count the casing joints off the truck", at: sy(S.casing), label: "Check the casing tally", r: 5, enter: () => { g.rig.setCasingTruck(true); g.radio("brent", "Casing's on location. Please verify the tally. And be nice to the driver, he's been talking about his boat since Pecos."); }, act: (done) => {
-      g.mini.rhythm({ eyebrow: "Casing Tally", title: "Count the Joints", intro: "The driver is unloading joints one at a time. Hit COUNT as each one crosses the tally line.", count: 12, unit: "joints" }, (r) => {
-        const short = g.casingOrder < 212;
+      // the truck really carries 23-29 joints; the ticket claims the number you ordered (usually a little different)
+      const real = 23 + ((Math.random() * 7) | 0), claim = Math.max(20, real + [0, 0, 1, -1, 2, -2][(Math.random() * 6) | 0]);
+      g.mini.tally({ eyebrow: "Casing Tally", title: "Count the Joints", intro: "The driver has the bundle stacked end-on. The ticket says one number, the pipe may say another. Tag every joint, then report your count.", count: real, claim }, (r) => {
         if (r.skipped) {
           g.shortcutToast("You signed the ticket without counting.");
           g.radio("earl", "Signed. Whatever's on that truck is now the company's problem. Yours, specifically.");
-          g.addDebt({ id: "tally", atDepth: 8200, chance: short ? 1 : 0.6, run: () => { g.radio("brent", "The casing is SIX joints short. Hot-shot truck from Odessa. Somebody signed this tally.", 11000); sim.addCost(60000); sim.s.t += 360; g.inc(1, "SHORT CASING TALLY"); } });
-        } else if (good(r)) { g.gain(0.3, 0); g.radio("marcus", "Every joint. He was one over. You counted it. He'll never forgive you."); }
-        else { g.gain(0.1, 0); g.radio("marcus", `You counted ${r.value} of 12. Close enough for a Company Man.`); if ((r.value ?? 12) < 10) g.addDebt({ id: "tally2", atDepth: 8200, chance: 0.7, run: () => { g.radio("brent", "We're a couple of joints short at TD. Your tally said otherwise.", 9000); sim.addCost(24000); } }); }
+          g.addDebt({ id: "tally", atDepth: 8200, chance: real !== claim ? 1 : 0.5, run: () => { g.radio("brent", "The casing is SIX joints short. Hot-shot truck from Odessa. Somebody signed this tally.", 11000); sim.addCost(60000); sim.s.t += 360; g.inc(1, "SHORT CASING TALLY"); } });
+        } else if (good(r)) { g.gain(0.3, 0); g.radio("marcus", real === claim ? `${real} joints, just like the ticket. He'll never forgive you for counting.` : `Ticket said ${claim}, you counted ${real}. Nice catch. That's a phone call to the vendor.`); if (real < claim) sim.addCost(-4000); }
+        else { g.gain(0.05, 0); g.radio("marcus", `You said ${r.value}. There were ${r.extra}. Close enough for a Company Man.`); if (Math.abs((r.value ?? real) - real) >= 3) g.addDebt({ id: "tally2", atDepth: 8200, chance: 0.7, run: () => { g.radio("brent", "The joint count at TD doesn't match your tally. We're paying for it.", 9000); sim.addCost(24000); } }); }
         done();
       });
     } },
@@ -133,7 +134,7 @@ export function defineMissions(g: Game) {
         if (good(r)) { g.gain(0.2, 3); g.radio("tyler", "Seals the well. Got it. Brayden is touching it."); } else { g.gain(-0.05, 0); g.radio("tyler", "Wait, so it IS decorative?"); }
         done(); }) },
       { text: "Tour stop 3: the rig floor", at: () => v3(2.3, F + 1.0, 2.6), label: "Give the tour: drill floor", r: 4, act: (done) => g.tourStop("tyler", "Stop 3 — Drill floor", "'Can I push the big red button?'", [["No. There's no button. It's a rotary table.", "Brayden: 'So it IS a button.' You let it go.", 0.1, 2], ["Sure. Press it.", "The fire alarm goes off. For three seconds. Everyone looks at you.", -0.15, 6]], done) },
-      { text: "Tour stop 4: muster point — head count", at: sy(S.muster), label: "Give the tour: muster", r: 5, act: (done) => g.mini.whack({ eyebrow: "Intern Tour — Stop 4", title: "Head Count", intro: "Muster drill! The interns won't hold still. Tap each intern to count them before the time runs out.", label: "intern", count: 3, seconds: 11 }, (r) => {
+      { text: "Tour stop 4: muster point — head count", at: sy(S.muster), label: "Give the tour: muster", r: 5, act: (done) => g.mini.whack({ eyebrow: "Intern Tour — Stop 4", title: "Head Count", intro: "Muster drill! TWENTY interns just scattered across the muster area and they will not hold still. Tap every one of them before they wander off. Tap fast.", label: "intern", count: 20, seconds: 17, speed: 2.4, size: 30, life: 2.6 }, (r) => {
         if (r.skipped) return internSkip(done);
         if (good(r)) { g.gain(0.25, 4); g.radio("tyler", "Three. All present. I did not know it was a game."); } else { g.gain(0, 0); g.radio("earl", "You lost an intern at a muster drill. Impressive."); g.inc(1, "MISSING HEAD AT MUSTER"); }
         done(); }) },
@@ -206,7 +207,7 @@ export function defineMissions(g: Game) {
   // ================================================================ 12. snake — reaction test
   M({ id: "snake", title: "Rattlesnake in the Doghouse", sub: "It's under the table. The crew is standing on the benches. Someone has to go in there.", trigger: gap(8), a: 0.3, m: 6,
     start: () => { g.spawnSnake(); g.radio("jimbo", "BOSS. There's a snake in the doghouse. It's a rattler. It's rattling.", 9000); },
-    steps: [{ text: "Go to the doghouse and deal with the snake", at: () => v3(-4.3, F + 0.6, -3.2), label: "Handle the snake", r: 3.5, act: (done) => g.mini.reaction({ eyebrow: "Doghouse", title: "Snake Dance", intro: "It's coiled, and it's watching you. Wait for the strike, then jump back. Don't flinch early.", rounds: 3, goText: "STRIKE!" }, (r) => {
+    steps: [{ text: "Go to the doghouse and deal with the snake", at: () => v3(-4.3, F + 0.6, -3.2), label: "Handle the snake", r: 3.5, act: (done) => g.mini.reaction({ eyebrow: "Doghouse", title: "Snake Dance", intro: "It's coiled, and it's watching you. It will fake you out. Only jump back when it truly strikes, and you only get a heartbeat. Don't flinch early.", rounds: 6, goText: "STRIKE!", window: 420, feints: 0.5 }, (r) => {
       const bite = (why: string) => { g.radio("jimbo", why, 8000); g.inc(1, "SNAKEBITE — FIRST AID"); sim.addCost(12000); g.gain(0, -4); };
       if (r.skipped) { g.shortcutToast("You decided to just walk past it."); g.radio("earl", "Walking past a rattlesnake. Bold."); g.addDebt({ id: "bite", afterMin: 15, chance: 0.5, run: () => bite("It got you in the boot, boss. The BOOT. Count your blessings.") }); }
       else if (good(r)) { g.gain(0.4, 4); g.radio("earl", "Dodged it. Sent it out with a broom. The crew's cheering."); }

@@ -207,6 +207,45 @@ export class Mini {
     };
   }
 
+  // ---------------------------------------------------------------- 4b. TALLY (count the pipe in the bundle)
+  /** An end-on view of a bundle of casing joints. Tap each one to tag it (so you never lose count), then report your total.
+   *  The truck's ticket claims a number that may not match what is really on the truck. */
+  tally(o: { eyebrow: string; title: string; intro: string; count: number; claim: number }, done: Done) {
+    const N = o.count;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro,
+      `<div class="ticketline">DELIVERY TICKET: <b>${o.claim}</b> joints</div><div class="bundle" id="bundle"></div>
+       <div class="fillnum">Tagged: <b id="tcnt">0</b></div><div id="mgResult" class="hint">Tap each joint as you count it. Tap a tagged joint to untag it. Missed some? Keep looking: they are packed in tight.</div>`,
+      `<button class="b" id="tUntag">Clear tags</button><button class="b green" id="tDone">REPORT COUNT</button>`), undefined, true);
+    this.skip(done, p);
+    const bundle = p.querySelector<HTMLElement>("#bundle")!;
+    // hex-packed rows of different lengths, with a little hand-stacked jitter, laid out from N
+    const rows: number[] = []; let left = N, w = Math.max(3, Math.round(Math.sqrt(N * 1.4)));
+    for (let r = 0; left > 0; r++) { const n = Math.min(left, r % 2 ? w - 1 : w); rows.push(n); left -= n; }
+    const D = 38, tagged = new Set<number>(), els: HTMLElement[] = [];
+    bundle.style.height = (rows.length * (D * 0.88) + 22) + "px";
+    let idx = 0;
+    rows.forEach((n, r) => {
+      const x0 = (bundle.clientWidth || 520) / 2 - (n * D) / 2;
+      for (let i = 0; i < n; i++) {
+        const k = idx++, el = document.createElement("button"); el.className = "pipe";
+        el.style.cssText = `left:${x0 + i * D + (Math.random() - 0.5) * 3}px;top:${8 + r * D * 0.88 + (Math.random() - 0.5) * 3}px;width:${D - 3}px;height:${D - 3}px`;
+        el.addEventListener("pointerdown", (e) => {
+          e.preventDefault(); if (!this.alive) return;
+          if (tagged.has(k)) { tagged.delete(k); el.classList.remove("tag"); el.textContent = ""; } else { tagged.add(k); el.classList.add("tag"); this.g.sfx.click(); }
+          // numbered in the order tapped so the count is visible on the pipe itself
+          let n2 = 0; for (const j of [...tagged]) { n2++; els[j].textContent = String(n2); }
+          p.querySelector("#tcnt")!.textContent = String(tagged.size);
+        });
+        bundle.appendChild(el); els.push(el);
+      }
+    });
+    p.querySelector<HTMLButtonElement>("#tUntag")!.onclick = () => { tagged.clear(); els.forEach((e) => { e.classList.remove("tag"); e.textContent = ""; }); p.querySelector("#tcnt")!.textContent = "0"; };
+    p.querySelector<HTMLButtonElement>("#tDone")!.onclick = () => {
+      const n = tagged.size, off = Math.abs(n - N), score = clamp(1 - off / 4, 0, 1);
+      this.end(done, { score, skipped: false, value: n, extra: N }, off === 0 ? `Exactly ${N}. ${N === o.claim ? "The ticket was right." : `The ticket said ${o.claim}: it was wrong.`}` : `You said ${n}. There were ${N}.`, 1800);
+    };
+  }
+
   // ---------------------------------------------------------------- 5. MASH (jammed latch)
   mash(o: { eyebrow: string; title: string; intro: string; seconds: number; label: string }, done: Done) {
     let prog = 0, last = "", t = o.seconds;
@@ -226,20 +265,31 @@ export class Mini {
   }
 
   // ---------------------------------------------------------------- 6. REACTION
-  reaction(o: { eyebrow: string; title: string; intro: string; rounds: number; goText: string }, done: Done) {
-    let round = 0, wins = 0, armed = false, t0 = 0;
-    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, `<div class="react" id="react">wait for it…</div><div id="mgResult" class="hint">Round 1 of ${o.rounds}. Click only when it says ${o.goText}.</div>`));
+  reaction(o: { eyebrow: string; title: string; intro: string; rounds: number; goText: string; window?: number; feints?: number }, done: Done) {
+    // `window` = how many ms you get to react; `feints` = chance (0..1) of a fake-out before each real strike, which you must NOT react to
+    const WIN = o.window ?? 650, FEINT = o.feints ?? 0;
+    let round = 0, wins = 0, armed = false, fake = false, t0 = 0;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, `<div class="react" id="react">wait for it…</div><div id="mgResult" class="hint">Round 1 of ${o.rounds}. Click only when it says ${o.goText}${FEINT ? ". It will fake you out." : "."}</div>`));
     this.skip(done, p);
     const box = p.querySelector<HTMLElement>("#react")!;
+    const status = () => { const r = document.getElementById("mgResult"); if (r && this.alive) r.textContent = `Round ${Math.min(round + 1, o.rounds)} of ${o.rounds}. ${wins} dodged.`; };
+    const strike = () => {
+      armed = true; t0 = performance.now(); box.textContent = o.goText; box.className = "react go"; this.g.sfx.horn();
+      this.later(() => { if (armed) { armed = false; round++; box.textContent = "too slow"; box.className = "react bad"; status(); this.later(next, 600); } }, WIN);
+    };
     const next = () => {
       if (round >= o.rounds) return this.end(done, { score: wins / o.rounds, skipped: false }, `${wins} of ${o.rounds}.`);
-      armed = false; box.textContent = "wait for it…"; box.className = "react";
-      this.later(() => { armed = true; t0 = performance.now(); box.textContent = o.goText; box.className = "react go"; this.g.sfx.horn(); this.later(() => { if (armed) { armed = false; round++; box.textContent = "too slow"; box.className = "react bad"; this.later(next, 700); } }, 650); }, 1100 + Math.random() * 2200);
+      armed = false; fake = false; box.textContent = "wait for it…"; box.className = "react";
+      const wait = 900 + Math.random() * 2000;
+      if (Math.random() < FEINT) {
+        // a feint: it lunges and stops short. Clicking now is a flinch.
+        this.later(() => { fake = true; box.textContent = "ssss…"; box.className = "react fake"; this.later(() => { fake = false; box.textContent = "wait for it…"; box.className = "react"; this.later(strike, 350 + Math.random() * 1100); }, 380 + Math.random() * 250); }, wait * 0.7);
+      } else this.later(strike, wait);
     };
     box.addEventListener("pointerdown", (e) => {
       e.preventDefault(); if (!this.alive) return;
-      if (armed) { armed = false; wins++; round++; box.textContent = `${Math.round(performance.now() - t0)} ms`; box.className = "react ok"; this.later(next, 700); }
-      else if (box.className === "react") { round++; box.textContent = "too early"; box.className = "react bad"; this.g.sfx.bad(); this.later(next, 700); }
+      if (armed) { armed = false; wins++; round++; box.textContent = `${Math.round(performance.now() - t0)} ms`; box.className = "react ok"; status(); this.later(next, 600); }
+      else if (fake || box.className === "react") { round++; fake = false; box.textContent = fake ? "flinched" : "too early"; box.className = "react bad"; this.g.sfx.bad(); status(); this.later(next, 700); }
     });
     next();
   }
@@ -277,16 +327,17 @@ export class Mini {
   }
 
   // ---------------------------------------------------------------- 9. WHACK (click the moving targets)
-  whack(o: { eyebrow: string; title: string; intro: string; label: string; count: number; seconds: number }, done: Done) {
+  whack(o: { eyebrow: string; title: string; intro: string; label: string; count: number; seconds: number; speed?: number; size?: number; life?: number }, done: Done) {
+    const SPD = o.speed ?? 1, SZ = o.size ?? 40, LIFE = o.life ?? 1e9;
     const p = this.open(this.shell(o.eyebrow, o.title, o.intro, `<div class="arena" id="arena"></div><div class="fillnum"><b id="wh">0</b> / ${o.count} <span class="hint" id="wt"></span></div><div id="mgResult" class="hint">Click every ${o.label} before the time runs out.</div>`));
     this.skip(done, p);
     const arena = p.querySelector<HTMLElement>("#arena")!;
     const ts: { x: number; y: number; vx: number; vy: number; el: HTMLElement; dead: boolean; born: number }[] = [];
     let spawned = 0, hits = 0, t = o.seconds, spawnT = 0;
     const spawn = () => {
-      const el = document.createElement("button"); el.className = "tgt"; el.textContent = o.label.slice(0, 1).toUpperCase(); arena.appendChild(el);
+      const el = document.createElement("button"); el.className = "tgt"; el.textContent = o.label.slice(0, 1).toUpperCase(); el.style.width = el.style.height = SZ + "px"; el.style.fontSize = Math.round(SZ * 0.5) + "px"; arena.appendChild(el);
       const W = arena.clientWidth || 520, H = arena.clientHeight || 200;
-      const o2 = { x: Math.random() * (W - 40), y: Math.random() * (H - 40), vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 110, el, dead: false, born: t };
+      const o2 = { x: Math.random() * (W - SZ), y: Math.random() * (H - SZ), vx: (Math.random() - 0.5) * 160 * SPD, vy: (Math.random() - 0.5) * 110 * SPD, el, dead: false, born: t };
       el.addEventListener("pointerdown", (e) => { e.preventDefault(); if (o2.dead || !this.alive) return; o2.dead = true; el.classList.add("dead"); hits++; this.g.sfx.click(); p.querySelector("#wh")!.textContent = String(hits); });
       ts.push(o2); spawned++;
     };
@@ -294,9 +345,10 @@ export class Mini {
       if (!this.alive) return; t -= dt; spawnT -= dt;
       const W = arena.clientWidth || 520, H = arena.clientHeight || 200;
       if (spawned < o.count && spawnT <= 0) { spawn(); spawnT = (o.seconds * 0.7) / o.count; }
-      for (const q of ts) { if (q.dead) continue; q.x += q.vx * dt; q.y += q.vy * dt; if (q.x < 0 || q.x > W - 40) q.vx *= -1; if (q.y < 0 || q.y > H - 40) q.vy *= -1; q.x = clamp(q.x, 0, W - 40); q.y = clamp(q.y, 0, H - 40); q.el.style.transform = `translate(${q.x}px,${q.y}px)`; }
+      for (const q of ts) { if (q.dead) continue; if (q.born - t > LIFE) { q.dead = true; q.el.classList.add("dead"); q.el.style.opacity = "0.12"; continue; }   // it slipped away
+        q.x += q.vx * dt; q.y += q.vy * dt; if (q.x < 0 || q.x > W - SZ) q.vx *= -1; if (q.y < 0 || q.y > H - SZ) q.vy *= -1; q.x = clamp(q.x, 0, W - SZ); q.y = clamp(q.y, 0, H - SZ); q.el.style.transform = `translate(${q.x}px,${q.y}px)`; }
       (p.querySelector("#wt") as HTMLElement).textContent = `${Math.max(0, Math.ceil(t))}s`;
-      if (hits >= o.count || t <= 0) this.end(done, { score: hits / o.count, skipped: false, value: hits }, hits === o.count ? "All of them." : `${hits} of ${o.count}.`);
+      if (hits >= o.count || t <= 0 || (spawned >= o.count && ts.every((q) => q.dead))) this.end(done, { score: hits / o.count, skipped: false, value: hits }, hits === o.count ? "All of them." : `${hits} of ${o.count}.`);
     };
   }
 

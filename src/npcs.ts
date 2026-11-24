@@ -83,14 +83,14 @@ export class Human {
     const buckle = MeshBuilder.CreateBox("bk", { width: 0.07, height: 0.05, depth: 0.02 }, scene);
     buckle.position.set(0, 0.82, 0.155); mk(buckle, "#b8b8b8", this.root);
     if (o.hat) {
-      const hat = MeshBuilder.CreateSphere("hat", { diameter: 0.335, segments: 16, slice: 0.56 }, scene);
-      hat.position.y = 1.68; this.ppe.push(mk(hat, o.hat, this.root));
-      const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.38, height: 0.025, tessellation: 20 }, scene);
-      brim.position.y = 1.68; this.ppe.push(mk(brim, o.hat, this.root));
-      const bill = MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, scene);
-      bill.position.set(0, 1.675, 0.2); this.ppe.push(mk(bill, o.hat, this.root));
-      const ridge = MeshBuilder.CreateBox("rdg", { width: 0.035, height: 0.025, depth: 0.28 }, scene);
-      ridge.position.set(0, 1.84, 0); this.ppe.push(mk(ridge, o.hat, this.root));
+      const hat = MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 18, slice: 0.58 }, scene);
+      hat.position.set(0, 1.688, -0.006); hat.scaling.set(1.0, 0.86, 1.14); this.ppe.push(mk(hat, o.hat, this.root));
+      const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.335, height: 0.014, tessellation: 26 }, scene);
+      brim.position.set(0, 1.672, 0.004); brim.scaling.z = 1.12; this.ppe.push(mk(brim, o.hat, this.root));
+      const bill = MeshBuilder.CreateBox("bill", { width: 0.19, height: 0.012, depth: 0.07 }, scene);
+      bill.position.set(0, 1.672, 0.19); bill.rotation.x = 0.16; this.ppe.push(mk(bill, o.hat, this.root));
+      const ridge = MeshBuilder.CreateBox("rdg", { width: 0.028, height: 0.016, depth: 0.27 }, scene);
+      ridge.position.set(0, 1.828, -0.004); this.ppe.push(mk(ridge, o.hat, this.root));
     }
     const limb = (name: string, w: number, h: number, d: number, x: number, y: number, hex: string) => {
       const pivot = new TransformNode(name, scene);
@@ -195,10 +195,14 @@ export class Human {
     const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
     const hatCol = o.hat ?? "#f4f4f4";
     if (o.hat) {
-      add(MeshBuilder.CreateSphere("hat", { diameter: 0.315, segments: 16, slice: 0.56 }, sc), hatCol, "Head", 0, -0.113, -0.008);
-      add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, -0.105, 0.01);
-      add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, -0.11, 0.17);
-      add(MeshBuilder.CreateBox("rdg", { width: 0.04, height: 0.02, depth: 0.24 }, sc), hatCol, "Head", 0, 0.032, 0.0);
+      // a full-brim industrial hard hat (ANSI Type I style): an oval, slightly low dome that follows the head, a narrow brim all the way round with a short
+      // visor at the front, one centre ridge plus a pair of side ribs, and a thin band where the shell meets the brim
+      const dome = add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 18, slice: 0.58 }, sc), hatCol, "Head", 0, -0.113, -0.006); dome.scaling.set(1.0, 0.86, 1.14);
+      const brim = add(MeshBuilder.CreateCylinder("brim", { diameter: 0.335, height: 0.014, tessellation: 26 }, sc), hatCol, "Head", 0, -0.13, 0.004); brim.scaling.set(1, 1, 1.12);
+      const visor = add(MeshBuilder.CreateBox("bill", { width: 0.19, height: 0.012, depth: 0.07 }, sc), hatCol, "Head", 0, -0.13, 0.19); visor.rotation.x = 0.16;
+      add(MeshBuilder.CreateBox("rdg", { width: 0.028, height: 0.016, depth: 0.27 }, sc), hatCol, "Head", 0, 0.012, -0.004);
+      for (const sx of [-1, 1]) { const rib = add(MeshBuilder.CreateBox("rib", { width: 0.014, height: 0.012, depth: 0.22 }, sc), hatCol, "Head", sx * 0.07, 0.0, -0.004); rib.rotation.z = -sx * 0.5; }
+      const lip = add(MeshBuilder.CreateCylinder("hlip", { diameter: 0.318, height: 0.012, tessellation: 26 }, sc), "#d6dadf", "Head", 0, -0.123, -0.002); lip.scaling.set(1, 1, 1.12);
     }
     if (o.vest) {
       add(MeshBuilder.CreateBox("v", { width: 0.4, height: 0.5, depth: 0.25 }, sc), "#e8f542", "Spine2", 0, -0.04, 0.02);

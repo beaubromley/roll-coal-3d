@@ -61,6 +61,7 @@ export class Game {
               env: { hemi: HemisphericLight; sun: DirectionalLight }) {
     this.env = env;
     this.ui.onPanelOpen = () => { this.player.enabled = false; this.player.unlock(); };
+    this.player.canLock = () => !this.ui.panelOpen && !this.paused;
     this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
     this.player.onRampFall = (h) => {

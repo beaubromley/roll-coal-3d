@@ -60,6 +60,7 @@ export class Player {
     document.addEventListener("pointerlockchange", () => {
       const was = this.locked;
       this.locked = document.pointerLockElement === canvas;
+      if (this.locked && !this.canLock()) { this.intentionalUnlock = true; document.exitPointerLock?.(); return; }
       if (was && !this.locked) { const wanted = this.intentionalUnlock; this.intentionalUnlock = false; if (!wanted) this.onLockLost(); }
     });
     // Pointer-lock look (normal browsers).
@@ -82,9 +83,11 @@ export class Player {
     });
   }
 
+  /** the game says when the mouse must stay free (a panel is open, or paused): a lock request that lands late is given straight back */
+  canLock: () => boolean = () => true;
   private failLock() { if (!this.lockFailed) { this.lockFailed = true; this.onLockFailed(); } }
   lock() {
-    if (this.locked || this.touch) return;
+    if (this.locked || this.touch || !this.canLock()) return;
     try {
       const r: any = this.canvas.requestPointerLock?.();
       if (r && typeof r.catch === "function") r.catch(() => this.failLock());

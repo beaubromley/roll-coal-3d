@@ -29,6 +29,12 @@
 
   #status { position: absolute; right: 22px; top: 18px; width: 300px; text-align: right; }
   #status .lbl { font-size: 11px; letter-spacing: 2.2px; font-weight: 800; text-transform: uppercase; color: #bfe0ff; }
+  /* GTA III corner: the time of day and a framed icon of what you are holding */
+  #gta { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-bottom: 8px; }
+  #clock { font-family: var(--display); font-size: 34px; letter-spacing: 1px; color: #f4c04a; text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; line-height: 1; }
+  #cost { font-family: var(--display); font-size: 30px; letter-spacing: 1px; color: #7ddc6a; text-align: right; line-height: 1; margin: -2px 0 10px; text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+  #item { width: 60px; height: 60px; border: 3px solid #000; border-radius: 8px; background: rgba(10,16,24,.55); box-shadow: 0 0 0 2px rgba(244,192,74,.85), 2px 3px 0 2px rgba(0,0,0,.6); overflow: hidden; }
+  #itemcv { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
   #stars { font-size: 34px; letter-spacing: 2px; color: #3b4652; line-height: 1; }
   #stars b { color: var(--gold); font-weight: normal; text-shadow: 0 0 10px rgba(244,192,74,.5); }
   .bar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 6px; }
@@ -83,7 +89,8 @@
   #toast.show { opacity: 1; }
   #toast small { display: block; font-family: var(--body); font-size: 16px; color: #fff; letter-spacing: 0; text-transform: none; margin-top: 6px; }
 
-  #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,.75); display: none; pointer-events: none; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,.75); display: none; pointer-events: none; transition: width .12s, height .12s, margin .12s, background .12s; }
+  #crosshair.lock { width: 30px; height: 30px; margin: -15px; background: transparent; box-shadow: 0 0 0 2px rgba(0,0,0,.7), inset 0 0 0 2px rgba(0,0,0,.7); border: 3px solid #f4c04a; }
 
   #panelwrap { position: fixed; inset: 0; display: none; place-items: center; background: rgba(4,8,12,.55); z-index: 10; }
   #panel { width: min(94vw, 720px); max-height: 88vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.6); padding: 22px 24px 20px; }
@@ -348,6 +355,8 @@
   <div id="strip"></div>
   <div id="alert"></div>
   <div id="status">
+    <div id="gta"><div id="clock">06:00</div><div id="item"><canvas id="itemcv" width="48" height="48"></canvas></div></div>
+    <div id="cost">$0</div>
     <div class="lbl shadowtext">Office Approval</div><div id="stars"></div>
     <div class="bar"><span class="lbl">Crew Morale</span><div class="track"><div class="fill" id="moraleFill"></div></div><span class="val shadowtext" id="moraleVal">50%</span></div>
     <div class="bar"><span class="lbl">Incidents</span><div class="track"><div class="fill" id="incFill" style="background:var(--red)"></div></div><span class="val shadowtext" id="incVal">0</span></div>

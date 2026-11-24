@@ -251,7 +251,7 @@ export class Human {
       const v = cap(0.16, 0.5, "#e8f542", this.root, 0, 1.24, 0, 1.34, 1, 0.9); ppeAdd(v);
       for (const y of [1.14, 1.3]) { const s = cyl(0.37, 0.37, 0.05, "#cfd3d6", this.root, 0, y, 0, 0.72); ppeAdd(s); }
     }
-    if (o.hat) for (const p of hardHatParts(sc)) { p.mesh.position.set(p.x, HY + 0.045 + p.y, p.z); ppeAdd(mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root)); }
+    if (o.hat) for (const p of hardHatParts(sc)) { p.mesh.position.set(p.x, HY + 0.072 + p.y, p.z); ppeAdd(mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root)); }
     // safety glasses: one clear wraparound lens that follows the curve of the face, with a dark brow bar along the top edge and temple arms back to the ears
     {
       const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.7, 0.9, 1.0); gm.alpha = 0.28; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;

@@ -9,7 +9,7 @@ import { Human } from "./npcs";
 import { pushOutXZ } from "./builder";
 import { Mini } from "./minigames";
 import { Vehicles } from "./vehicles";
-import { Held } from "./held";
+import { Held, drawHeldIcon } from "./held";
 import { defineMissions } from "./tasks";
 
 export interface Step {
@@ -37,7 +37,7 @@ export class Game {
   started = false;
   approval = 3; morale = 62; incidents = 0;
   interacts: Interactable[] = [];
-  held!: Held;
+  held!: Held; private chX = 0; private chY = 0; private hudClock = ""; private hudCost = ""; private hudItem = "";
   queue: Mission[] = [];
   active: { m: Mission; i: number } | null = null;
   stack: { m: Mission; i: number }[] = [];
@@ -575,6 +575,12 @@ export class Game {
     this.sim.addCost(n * 20);
   }
 
+  /** left click: use what you are holding */
+  useHeld() {
+    const [title, text, alarm] = this.held.use();
+    if (alarm) this.sfx.horn(); else this.sfx.click();
+    this.ui.toast(title, text);
+  }
   openPhone() {
     const m = this.flags.houstonPending;
     if (m) { this.flags.houstonPhone = true; return; }
@@ -1322,7 +1328,27 @@ export class Game {
     // district banner
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }
-    $("crosshair").style.display = this.started && !this.ui.panelOpen && !this.paused && !this.veh.riding ? "block" : "none";
+    {   // third-person-aim style reticle: a dot at screen centre that eases onto whatever you can use, and opens into a gold ring while it is locked on
+      const ch = $("crosshair"), live = this.started && !this.ui.panelOpen && !this.paused && !this.veh.riding;
+      ch.style.display = live ? "block" : "none";
+      if (live) {
+        const eng = this.scene.getEngine(), cam = this.player.cam, W = document.documentElement.clientWidth || 1, Hh = document.documentElement.clientHeight || 1;
+        let tx = W / 2, ty = Hh / 2, lock = false;
+        if (this.nearest) {
+          const wp = this.nearest.pos();
+          const sp = Vector3.Project(wp, Matrix.Identity(), this.scene.getTransformMatrix(), new Viewport(0, 0, eng.getRenderWidth(), eng.getRenderHeight()));
+          const k = eng.getRenderWidth() / W, px = sp.x / k, py = sp.y / k;
+          if (Vector3.Dot(wp.subtract(cam.position), cam.getForwardRay().direction) > 0 && px > 40 && px < W - 40 && py > 40 && py < Hh - 40) { tx = px; ty = py; lock = true; }
+        }
+        const f = Math.min(1, dt * 16); this.chX += (tx - this.chX) * f; this.chY += (ty - this.chY) * f;
+        ch.style.left = this.chX + "px"; ch.style.top = this.chY + "px"; ch.classList.toggle("lock", lock);
+      }
+    }
+    { // the corner: time of day, and what you are holding
+      const cs = "$" + Math.round(this.sim.s.cost).toLocaleString("en-US"); if (cs !== this.hudCost) { this.hudCost = cs; $("cost").textContent = cs; }
+      const ck = clockString(this.sim.s.t).hhmm; if (ck !== this.hudClock) { this.hudClock = ck; $("clock").textContent = ck; }
+      if (this.held.kind !== this.hudItem) { this.hudItem = this.held.kind; drawHeldIcon($("itemcv") as HTMLCanvasElement, this.held.kind); }
+    }
     this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen);
   }
 

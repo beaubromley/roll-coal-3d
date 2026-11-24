@@ -10,6 +10,19 @@ export type HeldKind = "none" | "phone" | "tally" | "gas";
 const ORDER: HeldKind[] = ["none", "phone", "tally", "gas"];
 const NAMES: Record<HeldKind, string> = { none: "HANDS FREE", phone: "CELL PHONE", tally: "TALLY BOOK", gas: "4-GAS MONITOR" };
 
+/** a flat, chunky little icon for the corner of the screen */
+export function drawHeldIcon(cv: HTMLCanvasElement, kind: HeldKind) {
+  const c = cv.getContext("2d"); if (!c) return;
+  const W = cv.width; c.clearRect(0, 0, W, W); c.imageSmoothingEnabled = false;
+  const r = (col: string, x: number, y: number, w: number, h: number) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
+  c.save(); c.translate(W / 2, W / 2); c.rotate(0.35); c.translate(-W / 2, -W / 2);
+  if (kind === "phone") { r("#000", 15, 4, 18, 40); r("#1c2430", 17, 6, 14, 36); r("#3fd0ff", 19, 9, 10, 22); r("#d8dde3", 22, 36, 4, 4); }
+  else if (kind === "tally") { r("#000", 10, 6, 28, 36); r("#e8a21c", 12, 8, 24, 32); r("#f4efe1", 15, 11, 19, 26); for (let y = 15; y < 36; y += 5) r("#7aa6d6", 17, y, 15, 1); r("#1a1a1a", 12, 8, 3, 32); r("#2a3e8c", 38, 10, 3, 26); }
+  else if (kind === "gas") { r("#000", 12, 4, 24, 40); r("#f1c40f", 14, 6, 20, 36); r("#1b1b1b", 14, 33, 20, 9); r("#1b1b1b", 14, 6, 20, 5); r("#101a10", 17, 13, 14, 15); r("#7dff7d", 19, 15, 10, 2); r("#7dff7d", 19, 20, 7, 2); r("#d63a2c", 28, 7, 4, 3); }
+  else { r("#000", 11, 15, 26, 22); r("#f0c8a0", 13, 17, 22, 18); r("#000", 11, 15, 26, 3); for (const x of [14, 19, 24, 29]) r("#000", x, 17, 1, 8); r("#f0c8a0", 11, 33, 26, 6); r("#000", 9, 27, 5, 10); r("#f0c8a0", 10, 28, 3, 8); }
+  c.restore();
+}
+
 export interface HeldWorld { kicking(): boolean; ringing(): boolean; clock(): string; depth(): number }
 
 export class Held {
@@ -27,8 +40,30 @@ export class Held {
     this.apply();
   }
 
-  cycle() {
-    this.kind = ORDER[(ORDER.indexOf(this.kind) + 1) % ORDER.length];
+  private tallyN = 0; private phoneN = 0; private kick = 0; private use0 = 0;
+  /** left click: do the thing the item does. Returns [title, text, alarm] for a toast. */
+  use(): [string, string, boolean] {
+    this.kick = 0.18;
+    if (this.kind === "phone") {
+      if (this.w.ringing()) return ["PHONE", "It's the White House. Take it at the phone in your trailer.", false];
+      const L = ["No new messages.", "One bar. Maybe.", "Earl: “where are you.”", "A photo of a very large truck. Nobody knows who sent it.", "Houston: “can you call back? we're in a meeting about meetings.”", "Battery 4%. It has been 4% since Tuesday."];
+      return ["PHONE", L[this.phoneN++ % L.length], false];
+    }
+    if (this.kind === "tally") {
+      const ft = (39.6 + ((this.tallyN * 7919) % 160) / 100).toFixed(2);
+      this.tallyN++;
+      return ["TALLY BOOK", `Joint #${this.tallyN} logged: ${ft} ft. Total ${Math.round(this.w.depth())} ft and counting.`, false];
+    }
+    if (this.kind === "gas") {
+      return this.w.kicking()
+        ? ["4-GAS", "O2 19.1 · LEL 12 · H2S 11 · CO 27 — GET OUT OF THERE", true]
+        : ["4-GAS", "O2 20.9 · LEL 0 · H2S 0 · CO 0 — all clear.", false];
+    }
+    return ["HANDS FREE", "You flex. Nothing happens. Q or the scroll wheel to pick something up.", false];
+  }
+
+  cycle(dir = 1) {
+    this.kind = ORDER[(ORDER.indexOf(this.kind) + dir + ORDER.length) % ORDER.length];
     this.apply();
     return NAMES[this.kind];
   }
@@ -99,6 +134,11 @@ export class Held {
   /** redraw the little screens a few times a second, and keep the right set showing for the camera mode */
   update(dt: number, visible: boolean) {
     this.t += dt;
+    if (this.kick > 0) this.kick = Math.max(0, this.kick - dt);
+    for (const k of ["phone", "tally", "gas"] as const) {
+      const f = this.fp[k]!, bump = Math.sin((this.kick / 0.18) * Math.PI) * 0.05;
+      f.position.z = 0.4 + bump; f.position.y = -0.15 + bump * 0.6;
+    }
     const first = !this.player.third;
     for (const k of ["phone", "tally", "gas"] as const) {
       this.fp[k]!.setEnabled(visible && this.kind === k && first);

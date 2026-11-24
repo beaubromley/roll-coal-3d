@@ -55,7 +55,7 @@ interface Veh {
 export class Vehicles {
   list: Veh[] = [];
   active: Veh | null = null;
-  private world: AABB[]; private ramps: AABB[] = []; private coalPS: ParticleSystem[] = []; private pendingJump: { v: Veh; t: number } | null = null; private digCd = 0; private coalT = 0; private lastSp = 0;
+  private world: AABB[]; private ramps: AABB[] = []; private coalPS: ParticleSystem[] = []; private pendingJump: { v: Veh; t: number } | null = null; private dalePing = false; private digCd = 0; private coalT = 0; private lastSp = 0;
   /** ground height over the hills; vehicles ride up and down them and pitch with the slope */
   terrain: ((x: number, z: number) => number) | null = null;
   private hud: HTMLElement;
@@ -92,7 +92,7 @@ export class Vehicles {
     this.dash = document.createElement("div");
     this.dash.style.cssText = "position:fixed;right:22px;bottom:22px;z-index:30;display:none;width:290px;padding:10px 12px 8px;background:rgba(10,16,24,.84);border:2px solid #f4c04a;color:#fff;font:700 12px/1.4 system-ui,sans-serif;letter-spacing:.4px;pointer-events:none";
     document.body.appendChild(this.dash);
-    const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "KeyT" && this.chair.on && this.chair.idx === 0 && !e.repeat) this.toggleAuto(); };
+    const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "KeyT" && this.chair.on && this.chair.idx === 0 && !e.repeat) this.toggleAuto(); if (e.code === "KeyC" && this.chair.on && this.chair.idx === 0 && !e.repeat && !this.game.ui.panelOpen) this.game.openCabin(); };
     const up = (e: KeyboardEvent) => this.pressed.delete(e.code);
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", () => this.pressed.clear());
     this.build();
@@ -207,7 +207,7 @@ export class Vehicles {
   private buildBackhoe(x: number, z: number, yaw: number): Veh {
     const v = this.blank("backhoe", "Backhoe", "car", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 2.4, maxFwd: 11, maxRev: 5, accel: 4, radius: 1.3, pts: [2.0, 0, -2.2], camDist: 12, camHeight: 4.0, eye: { x: 0, y: 2.25, z: -0.15 }, boxH: 2.6,
-      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  SPACE handbrake  ·  X dig / drive  ·  V camera  ·  E get out" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  SPACE handbrake  ·  X dig / drive (dig: WASD + arrows)  ·  V camera  ·  E get out" });
     const Y = "#e8b100", D = "#2a2d31", G = "#9fc3d6", H = "#bfc3c8";
     this.box(v, r, D, 1.5, 0.3, 4.2, 0, 0.7, -0.2);                                  // frame
     this.box(v, r, Y, 2.0, 0.7, 3.0, 0, 1.15, -0.3);                                 // body
@@ -443,7 +443,7 @@ export class Vehicles {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning });
     out.push({ pos: () => rv(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
-    this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : "Sit in the directional driller's seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
+    this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair (then click a TV)" : "Sit in the directional driller's seat", r: i === 0 ? 2.6 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
     out.push({ pos: () => rv(-3.62, F + 1.2, 2.4), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
     out.push({ pos: () => rv(-3.0, FB + 1.2, 2.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
@@ -474,9 +474,11 @@ export class Vehicles {
     h.stab += ((h.dig ? 1 : 0) - h.stab) * Math.min(1, dt * 2.5);
     if (h.dig && h.stab > 0.9) {
       const d = (a: string, b: string) => (this.k(a) ? 1 : 0) - (this.k(b) ? 1 : 0), cl = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
-      h.boomA = cl(h.boomA + d("KeyR", "KeyF") * dt * 0.7, -0.35, 1.0);
-      h.stickA = cl(h.stickA + d("KeyG", "KeyT") * dt * 0.9, 0.4, 2.3);
-      h.bucketA = cl(h.bucketA + d("KeyY", "KeyH") * dt * 1.2, -0.4, 1.7);
+      // WASD first: W/S lower and raise the boom, A/D swing the arm. The arrow keys are the second stick: up/down reach the stick out and in, left/right open and curl the bucket.
+      // (R/F, T/G and Y/H still work as before)
+      h.boomA = cl(h.boomA + (d("KeyW", "KeyS") + d("KeyR", "KeyF")) * dt * 0.7, -0.35, 1.0);
+      h.stickA = cl(h.stickA + (d("ArrowDown", "ArrowUp") + d("KeyG", "KeyT")) * dt * 0.9, 0.4, 2.3);
+      h.bucketA = cl(h.bucketA + (d("ArrowRight", "ArrowLeft") + d("KeyY", "KeyH")) * dt * 1.2, -0.4, 1.7);
       h.swingA = cl(h.swingA + d("KeyA", "KeyD") * dt * 0.8, -1.3, 1.3);
     }
     this.poseHoe(v);
@@ -501,7 +503,7 @@ export class Vehicles {
     const h = v.bh; if (!h) return;
     if (!h.dig && Math.abs(v.speed) > 1.5) { this.game.ui.toast("TOO FAST", "Slow to a stop before setting the stabilizers."); return; }
     h.dig = !h.dig;
-    this.game.ui.toast(h.dig ? "DIG MODE" : "DRIVE MODE", h.dig ? "Stabilizers down, no driving. A/D swing · R/F boom · T/G stick · Y/H curl the bucket. Put the edge into the dig site by the gate road to scoop; open the bucket to dump a mound · X to drive." : "Stabilizers up. X to dig again.");
+    this.game.ui.toast(h.dig ? "DIG MODE" : "DRIVE MODE", h.dig ? "Stabilizers down, no driving. W/S boom · A/D swing · arrows: ↑↓ stick, ←→ bucket (curl to scoop, open to dump). Put the edge into the ground away from the pad, road and buildings · X to drive." : "Stabilizers up. X to dig again.");
     this.game.sfx.click();
   }
   /** a crash crumples the panels it hit: nearby body parts are pushed in, squashed along the impact direction and knocked slightly out of true. Nothing is added to the truck. */
@@ -640,7 +642,9 @@ export class Vehicles {
   }
   private exitPop = 0;
 
-  private sit(i = 0) {
+  isSeated(i = 0) { return this.chair.on && this.chair.idx === i; }
+  /** the driller's chair and the console are one thing: sitting down puts the console in front of you (C opens the panel again) */
+  sit(i = 0) {
     if (this.riding) return;
     const st = this.seats[i], npc = this.game.rig.humans[st.npc];
     this.chair.on = true; this.chair.idx = i; this.chair.hidden = npc.root.isEnabled(); npc.root.setEnabled(false);
@@ -648,7 +652,7 @@ export class Vehicles {
     this.player.yaw = st.yaw; this.player.pitch = 0.12;
     this.player.pos.set(st.pos.x, st.pos.y, st.pos.z);
     this.hud.style.display = "block";
-    if (i === 0) this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000);
+    if (i === 0 && !this.dalePing) { this.dalePing = true; this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000); }
     else this.game.radio("tex", "That's the steering seat. Small corrections, boss. Toolface is not a suggestion.", 7000);
   }
   private stand() {
@@ -1028,7 +1032,7 @@ export class Vehicles {
       if (side) s.flowTarget = Math.max(400, Math.min(1000, s.flowTarget + side * 150 * dt));
       this.hud.textContent = `DRILLER'S CHAIR — ${s.mode.toUpperCase()}   DEPTH ${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr\n`
         + `WOB ${s.wob.toFixed(1)} → ${s.wobTarget.toFixed(0)} klbs   PUMP ${Math.round(s.flowTarget)} gpm   SPP ${Math.round(s.spp)} psi   AUTO ${s.auto.on ? "ON" : "OFF"}\n`
-        + `W/S weight on bit  ·  A/D pump rate  ·  SPACE brake  ·  T autodriller  ·  E stand up`;
+        + `W/S weight on bit  ·  A/D pump rate  ·  SPACE brake  ·  T autodriller  ·  C console panel  ·  E stand up`;
       return;
     }
     // directional driller / MWD seat: pick a toolface and slide to steer; rotating straightens the hole back up

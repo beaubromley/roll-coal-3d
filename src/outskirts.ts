@@ -118,9 +118,9 @@ export class Outskirts {
       const th = (i / N) * Math.PI * 2, c = Math.cos(th), s = Math.sin(th), k = CELL_H / Math.max(Math.abs(c), Math.abs(s));
       for (const [px, pz] of [[CELL_R * c, CELL_R * s], [k * c, k * s]]) { pos.push(px, y, pz); nrm.push(0, 1, 0); uvs.push(...uv(px, pz)); }
     }
-    for (let i = 0; i < N; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, c, b, d, c); }
+    for (let i = 0; i < N; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; idx.push(a, c, b, b, c, d); }   // wound to face up
     const m = new Mesh("holering", this.scene); const vd = new VertexData(); vd.positions = pos; vd.indices = idx; vd.normals = nrm; vd.uvs = uvs; vd.applyToMesh(m);
-    m.material = mat; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
+    m.material = mat; m.overrideMaterialSideOrientation = 0; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();   // (clockwise, so the real textured ground material shows it from above)
   }
 
   // ---------------------------------------------------------------------------------------------- the cellar
@@ -136,7 +136,7 @@ export class Outskirts {
       m.setVerticesData(VertexBuffer.UVKind, uv); if (pmat) m.material = pmat; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
     };
     piece(-60, -65, -H, 65); piece(H, -65, 60, 65); piece(-H, H, H, 65); piece(-H, -65, H, -H);
-    if (pmat) { const rm = pmat.clone("padring")!; rm.backFaceCulling = false; this.holeRing(0.04, rm, (px, pz) => [(px + 60) / 120, (pz + 65) / 130]); }
+    if (pmat) this.holeRing(0.04, pmat, (px, pz) => [(px + 60) / 120, (pz + 65) / 130]);
     const mat = (hex: string, em = 0) => { const m = new StandardMaterial("cell" + hex, sc); m.diffuseColor = Color3.FromHexString(hex); m.specularColor = Color3.Black(); if (em) m.emissiveColor = Color3.FromHexString(hex).scale(em); return m; };
     // the liner: a corrugated steel ring from the floor to just above the pad
     const wall = MeshBuilder.CreateCylinder("cellarwall", { diameter: CELL_R * 2, height: CELL_D + 0.12, tessellation: 40, cap: Mesh.NO_CAP, sideOrientation: Mesh.DOUBLESIDE }, sc);
@@ -297,7 +297,7 @@ export class Outskirts {
     piece(-3000, -3000, bx0, 3000); piece(bx0, bz1, bx1, 3000); piece(bx0, -3000, bx1, bz0);
     // the strip that holds the rig has a round hole cut in it for the cellar: four pieces round a square, and a ring that squares up the circle
     piece(bx1, -3000, DIG.x0, 3000); piece(DIG.x0 + DIG.n, -3000, -CELL_H, 3000); piece(DIG.x0, -3000, DIG.x0 + DIG.n, DIG.z0); piece(DIG.x0, DIG.z0 + DIG.n, DIG.x0 + DIG.n, 3000); piece(CELL_H, -3000, 3000, 3000); piece(-CELL_H, CELL_H, CELL_H, 3000); piece(-CELL_H, -3000, CELL_H, -CELL_H);
-    if (gmat) { const rm = gmat.clone("groundring")!; rm.backFaceCulling = false; this.holeRing(0, rm, (px, pz) => [(px + 3000) / 6000, (pz + 3000) / 6000]); }
+    if (gmat) this.holeRing(0, gmat, (px, pz) => [(px + 3000) / 6000, (pz + 3000) / 6000]);
     const N = 110, bed = MeshBuilder.CreateGround("pondbed", { width: bx1 - bx0, height: bz1 - bz0, subdivisions: N, updatable: true }, sc);
     bed.position.set((bx0 + bx1) / 2, 0, (bz0 + bz1) / 2);
     const bp = bed.getVerticesData(VertexBuffer.PositionKind)!, col = new Float32Array((bp.length / 3) * 4);
@@ -520,6 +520,9 @@ export class Outskirts {
   interacts(): It[] {
     const g = this.g, v = (x: number, y: number, z: number) => new Vector3(x, y, z), cdOk = (k: string, s: number) => { const now = this.t; if ((this.cd[k] ?? -99) + s > now) return false; this.cd[k] = now; return true; };
     const out: It[] = [];
+    // the cellar ladder: down from the rim, up from the floor
+    out.push({ pos: () => v(CELL_R + 0.5, 1.0, 0), label: () => "Climb down into the cellar", r: 2.0, ok: () => g.player.pos.y > -0.5 && Math.hypot(g.player.pos.x, g.player.pos.z) > CELL_R, act: () => { g.sfx.click(); g.player.teleport(CELL_R - 0.6, -CELL_D + 0.02, 0, -Math.PI / 2); } });
+    out.push({ pos: () => v(CELL_R - 0.5, -CELL_D + 1.1, 0), label: () => "Climb up the ladder", r: 2.0, ok: () => g.player.pos.y < -0.5, act: () => { g.sfx.click(); g.player.teleport(CELL_R + 0.9, 0.05, 0, Math.PI / 2); } });
     // pond
     let skips = 0, fishN = 0;
     const shore = () => v(POND.x + POND.rx + 1.2, 1.2, POND.z + 6);

@@ -27,7 +27,7 @@ export interface Mission {
   trigger: () => boolean; start?: () => void; end?: () => void;
   a?: number; m?: number; priority?: boolean;
 }
-interface Interactable { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean; mission?: boolean }
+interface Interactable { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean; mission?: boolean; tv?: boolean }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 const money = (n: number) => "$" + (n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : fmt(n));
@@ -290,7 +290,9 @@ export class Game {
     const add = (pos: () => Vector3, label: string | (() => string), r: number, act: () => void, ok?: () => boolean) =>
       this.interacts.push({ pos, label: typeof label === "string" ? () => label : label, r, act, ok });
     add(() => S.board, "Work the board — rack a stand", 3.2, () => this.workBoard(), () => this.player.pos.y > 20);
-    add(() => S.cabin, "Driller's console", 3.2, () => this.openCabin());
+    // the console is the TVs in the driller's cabin: aim at one and click (or press E) and its screen opens, with the controls that go with it
+    const TVNAME: Record<string, string> = { params: "Drilling screen", trends: "Trends screen", pits: "Pits screen", alarms: "Alarms & well control screen" };
+    for (const m of this.rig.monitors) if (m.cabin && TVNAME[m.kind]) this.interacts.push({ pos: () => m.pos, label: () => TVNAME[m.kind], r: 3.8, act: () => this.openCabin(m.kind as "params"), tv: true });
     add(() => S.hopper, "Mud hopper", 3.4, () => this.openHopper());
     add(() => S.frac, "Frac tanks: transfer to the pits", 4.2, () => this.openFrac());
     add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
@@ -346,22 +348,25 @@ export class Game {
   // ---------- panels ----------
   statRow(k: string, v: string, cls = "") { return `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`; }
 
-  openCabin() {
+  openCabin(view: "all" | "params" | "trends" | "pits" | "alarms" = "all") {
+    // the chair and the console are the same thing: opening the console sits you in the driller's chair
+    if (!this.veh.isSeated(0) && !this.veh.riding) this.veh.sit(0);
     const s = this.sim.s;
     const render = () => {
       const k = s.kick, a = s.auto;
       const busy = s.mode === "tripping" || s.mode === "casing";
-      return `<div class="eyebrow">Driller's Cabin</div><h2>Driller's Console</h2>
-        <div class="grid2">
-          <div>
+      return `<div class="eyebrow">Driller's Cabin</div><h2>${{ all: "Driller's Console", params: "Drilling screen", trends: "Trends screen", pits: "Pits screen", alarms: "Alarms & well control" }[view]}</h2>
+        <div class="cabview" data-view="${view}"><canvas id="tvmirror" width="512" height="320"></canvas></div>
+        <div class="grid2 cabgrid">
+          <div class="cab-left">
             <div class="row"><span>Depth</span><b id="c_depth"></b></div><div class="row"><span>Formation</span><b id="c_form"></b></div>
             <div class="row"><span>ROP</span><b id="c_rop"></b></div><div class="row"><span>Diff pressure</span><b id="c_dp"></b></div><div class="row"><span>Surface torque</span><b id="c_tq"></b></div>
             <div class="row"><span>Bit health</span><b id="c_bit"></b></div><div class="row"><span>Standpipe pressure</span><b id="c_spp"></b></div>
             <div class="row"><span>Mud weight</span><b id="c_mw"></b></div><div class="row"><span>Pit volume</span><b id="c_pit"></b></div>
             <div class="row"><span>Mode</span><b id="c_mode"></b></div>
           </div>
-          <div>
-            <div class="autobox">
+          <div class="cab-right">
+            <div class="autobox cab-auto">
               <div class="row"><span>AUTODRILLER</span><b id="a_state" class="warn">${a.on ? "ON" : "OFF"}</b></div>
               <div class="hint">WOB set point: <b id="aw">${a.wob}</b> klbs</div>
               <input type="range" id="a_wob" min="5" max="60" step="1" value="${a.wob}" />
@@ -374,11 +379,11 @@ export class Game {
               <div class="hint" id="a_lim" style="min-height:18px"></div>
               <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button></div>
             </div>
-            <div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
+            <div class="cab-manual"><div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
             <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
             <div class="btns" style="margin:6px 0"><button class="b alt" id="wobDn" ${busy || a.on ? "disabled" : ""}>WOB ↓</button><button class="b" id="wobUp" ${busy || a.on ? "disabled" : ""}>WOB ↑</button></div>
             <div class="hint" style="margin-top:6px">Pump rate: <b id="fv">${s.flowTarget}</b> gpm</div>
-            <input type="range" id="flow" min="400" max="1000" step="50" value="${s.flowTarget}"/>
+            <input type="range" id="flow" min="400" max="1000" step="50" value="${s.flowTarget}"/></div>
           </div>
         </div>
         <div class="btns" id="cbtn"></div>`;
@@ -428,7 +433,9 @@ export class Game {
     };
     bind();
     let sig0 = "";
+    const mirror = view === "all" ? null : this.rig.monitors.find((m) => m.cabin && m.kind === view);
     (this.ui as any).panelTick = () => {
+      { const cv = p.querySelector<HTMLCanvasElement>("#tvmirror"); const src = mirror?.tex.getContext().canvas as HTMLCanvasElement | undefined; if (cv && src) cv.getContext("2d")?.drawImage(src, 0, 0, cv.width, cv.height); }
       const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
       if (sig !== sig0) { sig0 = sig; this.rerenderCabin(p, render, bind); }
       const set = (id: string, v: string, cls = "") => { const e = p.querySelector<HTMLElement>("#" + id); if (e) { e.textContent = v; if (cls !== undefined) e.className = cls; } };
@@ -1300,9 +1307,10 @@ export class Game {
     for (const it of this.interacts) consider(it);
     cand.sort((a, b) => a.score - b.score);
     // nothing can be used through a wall: take the closest candidate that has a clear line from the eyes
-    const clear = this.ui.panelOpen || !this.started || this.paused || this.veh.riding ? undefined : cand.find((c) => !this.blockedLOS(eye, c.it.pos()));
+    const seated = this.veh.isSeated(0), pool = this.veh.riding ? (seated ? cand.filter((c) => c.it.tv) : []) : cand;
+    const clear = this.ui.panelOpen || !this.started || this.paused ? undefined : pool.find((c) => !this.blockedLOS(eye, c.it.pos()));
     this.nearest = clear?.it ?? null;
-    this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused ? this.veh.promptLabel() : this.nearest ? this.nearest.label() : null);
+    this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused && !(seated && this.nearest) ? this.veh.promptLabel() : this.nearest ? this.nearest.label() : null);
 
     // task arrows: one per open task (the active job plus any jobs it interrupted)
     const PAL = ["#f4c04a", "#4aa3e8", "#e5483b", "#3dbb6a", "#c77dff"];
@@ -1370,7 +1378,7 @@ export class Game {
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }
     {   // third-person-aim style reticle: a dot at screen centre that eases onto whatever you can use, and opens into a gold ring while it is locked on
-      const ch = $("crosshair"), live = this.started && !this.ui.panelOpen && !this.paused && !this.veh.riding;
+      const ch = $("crosshair"), live = this.started && !this.ui.panelOpen && !this.paused && (!this.veh.riding || this.veh.isSeated(0));
       ch.style.display = live ? "block" : "none";
       if (live) {
         const eng = this.scene.getEngine(), cam = this.player.cam, W = document.documentElement.clientWidth || 1, Hh = document.documentElement.clientHeight || 1;
@@ -1461,7 +1469,7 @@ export class Game {
   }
 
   interact() {
-    if (this.started && !this.paused && !this.ui.panelOpen && this.veh.riding) { this.veh.leave(); return; }
+    if (this.started && !this.paused && !this.ui.panelOpen && this.veh.riding) { if (this.veh.isSeated(0) && this.nearest?.tv) { this.sfx.click(); this.nearest.act(); return; } this.veh.leave(); return; }
     if (!this.started || this.paused || this.ui.panelOpen || !this.nearest) return;
     this.sfx.click(); this.onInteract(); this.nearest.act();
   }

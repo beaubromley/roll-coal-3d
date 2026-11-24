@@ -32,6 +32,7 @@ export class Graphics {
   }
 
   set(level: Quality) {
+    level = 0;   // LOW only: one quality level for everyone
     this.level = level;
     try { localStorage.setItem("rcmh_gfx", String(level)); } catch { /* ignore */ }
     this.rig.setBump(level >= 1);

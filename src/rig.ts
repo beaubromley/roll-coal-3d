@@ -31,6 +31,8 @@ export interface Rig {
   setCasingTruck(on: boolean): void;
   /** the off-location windmill: spinning (true) or braked (false) */
   setWindmill(on: boolean): void;
+  /** the live monitors (desk screens in the driller's cabin): what they show, and where they are in the world */
+  monitors: { kind: ScreenKind; tex: DynamicTexture; pos: Vector3; cabin: boolean }[];
   /** the safety trailer's "days since last incident" board */
   setDaysSince(n: number): void;
   /** the hydraulic catwalk's controls (the ground station and the rig-floor remote both drive these) */
@@ -164,16 +166,17 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     brace(v(x[0], 0.2, -5.4), v(x[1], 3.9, -5.4)); brace(v(x[1], 0.2, -5.4), v(x[0], 3.9, -5.4));
     brace(v(x[0], 3.9, -5.4), v(x[1], F - 0.7, -5.4)); brace(v(x[1], 3.9, -5.4), v(x[0], F - 0.7, -5.4));
   }
-  b.label("AL DRILLING\nRIG 107", 0, 3.0, 5.7, 3.2, 1.2, Math.PI, "#233a52", "#ffd24a", 64);
+  // (the AL DRILLING board on the front of the substructure is gone)
   b.slab("steel", -6.5, 0, -6, -5.7, 0.3, 6); b.slab("steel", 5.7, 0, -6, 6.5, 0.3, 6);
 
   // ---- BOP stack in the cellar zone below the rotary ----
   // The stack stands on the wellhead in a 10 ft diameter, 6 ft deep cellar, so its bottom half is below ground; a longer bell nipple still reaches the floor.
   const CELL = 1.83;
   if (kit) {
-    kit.place("bop", 0, -CELL, 0, RYAW);                                  // Blender BOP stack: flanges, bonnets, hydraulics, valves
-    b.blocker(-0.9, 1.35 - CELL, -0.75, 0.9, 2.65 - CELL, 0.75);
-    b.cyl("steel", 0, 6.1, 0, 0.9, 2.0, { tess: 12 });                    // bell nipple extension up to the floor
+    const bopW = kit.place("bop", 0, -CELL, 0, RYAW);                     // Blender BOP stack: flanges, bonnets, hydraulics, valves
+    bopW.scaling.set(0.58, 1, 0.58);                                      // narrowed so none of it pokes through the 10 ft cellar wall (its hoses and outlets reached 2.5 m out)
+    b.blocker(-0.55, 1.35 - CELL, -0.45, 0.55, 2.65 - CELL, 0.45);
+    b.cyl("steel", 0, 6.1, 0, 0.7, 2.0, { tess: 12 });                    // bell nipple extension up to the floor
   } else {
     b.cyl("steel", 0, 0.5 - CELL, 0, 1.0, 1.0, { tess: 14 });       // wellhead / casing head
     b.cyl("black", 0, 1.15 - CELL, 0, 1.3, 0.3, { tess: 14 });      // flange
@@ -276,8 +279,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   /** a live monitor: black bezel and a unique emissive material whose canvas texture is redrawn from the sim */
   const tvScreens = new Screens(scene);
   let tvT = 0, lastScr: import("./screens").ScreenData | undefined;
+  const monitorList: Rig["monitors"] = [];
   const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens) => {
     const key = "scr" + scrN++, tex = scr.make(kind, false);
+    monitorList.push({ kind, tex, pos: rpos(v(cx + (face === "+x" ? 0.3 : -0.3), cy, cz)), cabin: scr === screens });
     tex.wAng = Math.PI / 2;   // the box side faces map the canvas turned a quarter turn
     const m = b.defMat(key, "#000000"); m.emissiveTexture = tex; m.diffuseTexture = tex; m.diffuseColor.set(0.4, 0.4, 0.4); m.emissiveColor.set(0.85, 0.85, 0.85); m.specularColor.set(0, 0, 0);
     b.slab("black", cx - 0.04, cy - h / 2 - 0.03, cz - w / 2 - 0.03, cx + 0.04, cy + h / 2 + 0.03, cz + w / 2 + 0.03);
@@ -1514,7 +1519,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const huddle = { ...(() => { const p = rv(40 + CDX + SAFE_DX, 0.75, 24 + CDZ + SAFE_DZ); return { x: p.x, y: 0.75, z: p.z }; })(), exit: (() => { const p = rv(33.5 + CDX + SAFE_DX, 0, 24 + CDZ + SAFE_DZ); return { x: p.x, z: p.z }; })() };
 
   return {
-    spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update, setDaysSince, huddle, huddleHold, catwalk: catCtl,
+    spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update, setDaysSince, huddle, huddleHold, monitors: monitorList, catwalk: catCtl,
     setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); }, setWindmill: (on) => { wmTarget = on ? 2.1 : 0; },
     heliState, shuttleState, buildShuttle: () => shuttle, deerNode, windsock,
   };

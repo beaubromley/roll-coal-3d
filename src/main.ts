@@ -71,8 +71,8 @@ glow.intensity = 0.45;
 // post-processing / detail level (LOW on phones by default; change it from the pause menu)
 const gfx = new Graphics(scene, player.cam, glow, rig);
 const gfxLabel = () => { $("pGfx").textContent = "GRAPHICS: " + QUALITY_NAMES[gfx.level]; };
-gfx.set(Graphics.saved(isTouch, String((engine.getGlInfo?.() ?? {}).renderer ?? ""))); gfxLabel();
-$("pGfx").addEventListener("click", () => { gfx.cycle(); gfxLabel(); });
+gfx.set(0); gfxLabel();   // the game runs on the LOW setting only
+$("pGfx").style.display = "none";
 (window as any).__gfx = gfx;
 
 // spawn at the lease-road gate looking at the rig
@@ -141,10 +141,10 @@ player.onLockLost = () => { if (game.started && !ui.panelOpen && !game.flags.fin
 document.addEventListener("visibilitychange", () => { if (document.hidden && game.started && !game.flags.finish) game.togglePause(true, { allowPanel: true }); });
 // mouse wheel swaps what you are holding, left click uses it
 let wheelAt = 0;
-const handsFree = () => game.started && !game.paused && !ui.panelOpen && !game.veh.riding && !game.astMode;
+const handsFree = () => game.started && !game.paused && !ui.panelOpen && (!game.veh.riding || game.veh.isSeated(0)) && !game.astMode;
 window.addEventListener("wheel", (e) => { if (!handsFree() || performance.now() - wheelAt < 130) return; wheelAt = performance.now(); ui.toast(game.held.cycle(e.deltaY > 0 ? 1 : -1), "Scroll to switch · click to use"); }, { passive: true });
 // left click is E when the reticle has locked onto something you can use; otherwise it uses what you are holding
-window.addEventListener("mousedown", (e) => { if (e.button === 0 && handsFree() && player.locked) { if (game.nearest) game.interact(); else game.useHeld(); } });
+window.addEventListener("mousedown", (e) => { if (e.button === 0 && handsFree() && player.locked) { if (game.nearest) game.interact(); else if (!game.veh.riding) game.useHeld(); } });
 window.addEventListener("keydown", (e) => {
   if ((e.code === "AltLeft" || e.code === "AltRight") && game.started) { e.preventDefault(); if (!e.repeat && !game.paused) player.unlock(); return; }
   if (e.repeat) return;

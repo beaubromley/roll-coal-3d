@@ -8,6 +8,7 @@ import type { Player } from "./player";
  */
 export type HeldKind = "none" | "phone" | "tally" | "gas";
 const ORDER: HeldKind[] = ["none", "phone", "tally", "gas"];
+const DUR: Record<"phone" | "tally" | "gas", number> = { phone: 2.4, tally: 1.6, gas: 1.4 };
 const NAMES: Record<HeldKind, string> = { none: "HANDS FREE", phone: "CELL PHONE", tally: "TALLY BOOK", gas: "4-GAS MONITOR" };
 
 /** a flat, chunky little icon for the corner of the screen */
@@ -40,10 +41,12 @@ export class Held {
     this.apply();
   }
 
+  private poseT = 0; private poseW = 0;
   private tallyN = 0; private phoneN = 0; private kick = 0; private use0 = 0;
   /** left click: do the thing the item does. Returns [title, text, alarm] for a toast. */
   use(): [string, string, boolean] {
     this.kick = 0.18;
+    if (this.kind !== "none") { this.poseT = DUR[this.kind]; this.player.body.useHand(this.kind, DUR[this.kind]); }
     if (this.kind === "phone") {
       if (this.w.ringing()) return ["PHONE", "It's the White House. Take it at the phone in your trailer.", false];
       const L = ["No new messages.", "One bar. Maybe.", "Earl: “where are you.”", "A photo of a very large truck. Nobody knows who sent it.", "Houston: “can you call back? we're in a meeting about meetings.”", "Battery 4%. It has been 4% since Tuesday."];
@@ -135,9 +138,15 @@ export class Held {
   update(dt: number, visible: boolean) {
     this.t += dt;
     if (this.kick > 0) this.kick = Math.max(0, this.kick - dt);
+    if (this.poseT > 0) this.poseT -= dt;
+    const w = this.poseT > 0 ? 1 : 0;
+    this.poseW += (w - this.poseW) * Math.min(1, dt * 9);
     for (const k of ["phone", "tally", "gas"] as const) {
-      const f = this.fp[k]!, bump = Math.sin((this.kick / 0.18) * Math.PI) * 0.05;
-      f.position.z = 0.4 + bump; f.position.y = -0.15 + bump * 0.6;
+      const f = this.fp[k]!, bump = Math.sin((this.kick / 0.18) * Math.PI) * 0.05, pw = k === this.kind ? this.poseW : 0;
+      // first person: the phone goes up to the ear (off the right edge), the tally book comes up to write in, the gas monitor is held out
+      const to = k === "phone" ? { x: 0.3, y: 0.0, z: 0.2, rz: 1.2, rx: -0.2 } : k === "tally" ? { x: 0.0, y: -0.1, z: 0.36, rz: 0, rx: -1.0 } : { x: 0.05, y: -0.1, z: 0.34, rz: 0, rx: -0.9 };
+      f.position.x = 0.17 + (to.x - 0.17) * pw; f.position.z = 0.4 + (to.z - 0.4) * pw + bump; f.position.y = -0.15 + (to.y + 0.15) * pw + bump * 0.6;
+      f.rotation.z = 0.05 + (to.rz - 0.05) * pw; f.rotation.x = -0.45 + (to.rx + 0.45) * pw;
     }
     const first = !this.player.third;
     for (const k of ["phone", "tally", "gas"] as const) {

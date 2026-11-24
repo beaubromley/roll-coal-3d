@@ -254,12 +254,12 @@ export class Human {
     if (o.hat) for (const p of hardHatParts(sc)) { p.mesh.position.set(p.x, HY + 0.072 + p.y, p.z); ppeAdd(mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root)); }
     // safety glasses: one clear wraparound lens that follows the curve of the face, with a dark brow bar along the top edge and temple arms back to the ears
     {
-      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.1, 0.17, 0.24); gm.emissiveColor = new Color3(0.02, 0.05, 0.08); gm.alpha = 0.82; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
+      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.1, 0.17, 0.24); gm.emissiveColor = new Color3(0.03, 0.07, 0.11); gm.alpha = 0.5; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
       const arcMesh = (h: number, dy: number, sx: number, sz: number, arc: number) => {
         const c = MeshBuilder.CreateCylinder("lensarc", { diameter: 1, height: h, tessellation: 48, arc, enclose: false, sideOrientation: Mesh.DOUBLESIDE }, sc);
         c.scaling.set(sx, 1, sz); c.position.set(0, HY + dy, 0); c.rotation.y = Math.PI + (Math.PI / 2 - arc * Math.PI); return c;   // centre the arc on the face
       };
-      const lens = arcMesh(0.036, 0.008, 0.222, 0.246, 0.3); lens.material = gm; ppeAdd(lens);
+      const lens = arcMesh(0.036, 0.008, 0.222, 0.246, 0.3); lens.material = gm; lens.parent = this.root; ppeAdd(lens);
       ppeAdd(mk(arcMesh(0.011, 0.0285, 0.224, 0.248, 0.3), "#15171a"));      // brow bar
       for (const s of [-1, 1]) {
         const tp = MeshBuilder.CreateBox("temple", { width: 0.006, height: 0.01, depth: 0.1 }, sc); tp.position.set(s * 0.1, HY + 0.018, -0.012); tp.rotation.y = 0; ppeAdd(mk(tp, "#15171a"));
@@ -556,7 +556,19 @@ export class Human {
     box(0.026, 0.008, 0.012, 0, 1.667, 0.129, "#15171a", undefined, true);                                        // bridge
   }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
-  animate(dt: number, speed: number) {
+  /** raise the right hand to use what it holds: the phone to the ear, the tally book up to write in, the gas monitor out in front */
+  handPose: "phone" | "tally" | "gas" | null = null; private handLeft = 0; private handW = 0;
+  useHand(kind: "phone" | "tally" | "gas", secs: number) { this.handPose = kind; this.handLeft = secs; }
+  private applyHand(dt: number) {
+    if (this.handLeft > 0) this.handLeft -= dt;
+    this.handW += ((this.handLeft > 0 ? 1 : 0) - this.handW) * Math.min(1, dt * 9);
+    if (this.handW < 0.01 || !this.handPose || !this.armR || !this.elbowR || this.ch) return;
+    const T = { phone: { s: -0.35, z: 0.45, e: -2.45 }, tally: { s: -0.95, z: 0.1, e: -1.5 }, gas: { s: -1.25, z: 0.05, e: -0.35 } }[this.handPose];
+    const w = this.handW;
+    this.armR.rotation.x += (T.s - this.armR.rotation.x) * w; this.armR.rotation.z = T.z * w; this.elbowR.rotation.x += (T.e - this.elbowR.rotation.x) * w;
+  }
+  animate(dt: number, speed: number) { this.baseAnimate(dt, speed); this.applyHand(dt); }
+  private baseAnimate(dt: number, speed: number) {
     if (this.ch) { this.animateChar(dt, speed); return; }
     if (this.seated) {
       this.phase += dt * 1.2;

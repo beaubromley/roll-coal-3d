@@ -38,7 +38,7 @@ export class Game {
   started = false;
   approval = 3; morale = 62; incidents = 0;
   interacts: Interactable[] = [];
-  held!: Held; private chX = 0; private chY = 0; private hudClock = ""; private hudCost = ""; private hudItem = "";
+  held!: Held; private chX = 0; private chY = 0; private hudDays = -1; private hudClock = ""; private hudCost = ""; private hudItem = "";
   queue: Mission[] = [];
   active: { m: Mission; i: number } | null = null;
   stack: { m: Mission; i: number }[] = [];
@@ -200,7 +200,7 @@ export class Game {
   }
 
   // ---------- helpers ----------
-  inc(n = 1, why = "") { this.incidents += n; this.approval = clamp(this.approval - 0.3 * n, 0, 5); this.sfx.bad(); if (why) this.ui.toast("INCIDENT", why); }
+  inc(n = 1, why = "") { this.incidents += n; this.flags.lastIncDay = clockString(this.sim.s.t).day; this.rig.setDaysSince(0); this.approval = clamp(this.approval - 0.3 * n, 0, 5); this.sfx.bad(); if (why) this.ui.toast("INCIDENT", why); }
   gain(a = 0, m = 0) { this.approval = clamp(this.approval + a, 0, 5); this.morale = clamp(this.morale + m, 0, 100); }
   say(who: Who, text: string, choices?: Choice[], eyebrow?: string, opts?: { closable?: boolean }) { this.player.enabled = false; this.player.unlock(); this.ui.say(who, text, choices, eyebrow, opts); this.sfx.radio(); }
   radio(who: Who, text: string, ms?: number) { this.ui.radio(who, text, ms); this.sfx.radio(); }
@@ -241,20 +241,26 @@ export class Game {
     return out;
   }
   /** Mandatory pause. The panel can't be dismissed until the clock runs out; then `reset` puts you back. */
-  standDown(why: string, cost: number, lostSec: number, reset: () => void) {
+  standDown(why: string, cost: number, lostSec: number, _reset: () => void) {
     this.sim.addCost(cost); this.sim.s.t += lostSec;
-    let left = 8;
-    const p = this.openMini(`<div class="eyebrow" style="color:#e5483b">Mandatory</div><h2>SAFETY STAND DOWN</h2>
-      <p>${why}</p>
-      <p>Work is stopped on location. Everyone gathers at the muster point to talk it through. Cost so far: <b>$${cost.toLocaleString("en-US")}</b> and about ${Math.round(lostSec / 60)} minutes of rig time.</p>
-      <div class="btns"><button class="b" id="sdGo" disabled>STANDING DOWN… ${left}</button></div>`);
-    const btn = p.querySelector<HTMLButtonElement>("#sdGo")!;
-    const t = window.setInterval(() => {
-      left--;
-      if (left > 0) { btn.textContent = `STANDING DOWN… ${left}`; return; }
-      window.clearInterval(t); btn.disabled = false; btn.textContent = "RETURN TO WORK";
-    }, 1000);
-    btn.onclick = () => { if (btn.disabled) return; window.clearInterval(t); this.closeMini(); reset(); this.radio("earl", "Alright. Everybody back to work. Be careful out there, Company Man.", 6000); };
+    this.flags.lastIncDay = clockString(this.sim.s.t).day; this.rig.setDaysSince(0);
+    // everybody huddles in the safety trailer
+    const h = this.rig.huddle, keys = ["pusher", "driller", "mudeng", "dd1", "hand1", "hand2", "hand3", "derrickman", "guard"];
+    const saved: { m: Human; x: number; y: number; z: number; ry: number }[] = [];
+    this.rig.huddleHold.on = true;
+    const who = keys.map((k) => this.rig.humans[k]).filter((m) => m && m.root.isEnabled());
+    who.forEach((m, i) => {
+      saved.push({ m, x: m.root.position.x, y: m.root.position.y, z: m.root.position.z, ry: m.root.rotation.y });
+      const a = (i / who.length) * Math.PI * 2 + 0.4; m.root.position.set(h.x + Math.cos(a) * 1.55, h.y, h.z + Math.sin(a) * 1.1); m.root.rotation.y = Math.atan2(h.x - m.root.position.x, h.z - m.root.position.z);
+    });
+    this.player.teleport(h.x, h.y + 0.05, h.z - 1.9, 0);
+    this.say("earl", `${why} Alright, everybody in here. Sit, stand, I don't care. Days since our last incident: zero. We've been there before. Look: we're lucky nobody was seriously injured today. Lucky. Let's not make a habit of needing luck. Go home the way you came. Back to work.`, [
+      { label: "Back to work", cls: "green", run: () => {
+        this.rig.huddleHold.on = false;
+        for (const s of saved) { s.m.root.position.set(s.x, s.y, s.z); s.m.root.rotation.y = s.ry; }
+        this.player.teleport(h.exit.x, 0.5, h.exit.z, Math.PI);
+      } },
+    ], "Safety Stand Down", { closable: false });
   }
 
   /** derrick hand on the monkey board: latch each stand as it swings into the fingers */
@@ -289,6 +295,8 @@ export class Game {
     add(() => S.frac, "Frac tanks: transfer to the pits", 4.2, () => this.openFrac());
     add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
     add(() => S.phone, "Phone", 2.6, () => this.openPhone());
+    add(() => S.catwalk, "Catwalk controls (ground station)", 3.0, () => this.openCatwalk(false));
+    add(() => S.catremote, "Catwalk remote", 3.0, () => this.openCatwalk(true), () => this.player.pos.y > 6);
     add(() => S.donuts, "Donuts", 2.4, () => { this.sfx.click(); this.ui.toast("DONUTS", "“No thanks, I just started a new diet.”"); });
     add(() => S.printer, "Printer", 2.4, () => { this.sfx.click(); this.ui.toast("PRINTER", "It's been broken since last hitch."); });
     add(() => S.bunk, "Rack out", 2.8, () => this.openBunk());
@@ -593,6 +601,24 @@ export class Game {
     const [title, text, alarm] = this.held.use();
     if (alarm) this.sfx.horn(); else this.sfx.click();
     this.ui.toast(title, text);
+  }
+  /** the hydraulic catwalk: the ground station and the rig-floor remote are the same controls */
+  openCatwalk(remote: boolean) {
+    const c = this.rig.catwalk;
+    const status = () => `Trough: <b>${c.lowered ? "LOWERED onto the V-door ramp" : "RAISED, level"}</b> · Joint: <b>${{ idle: "none on the trough", kicking: "rolling in…", loaded: "loaded, ready to push", pushing: "riding up the ramp…" }[c.phase]}</b> · Delivered to the floor: <b>${c.delivered}</b>`;
+    const p = this.open(`<div class="eyebrow">${remote ? "Rig floor remote" : "Catwalk · ground station"}</div><h2>HYDRAULIC CATWALK</h2>
+      <p>Kick arms roll a joint from the rack onto the trough. Lower the trough onto the V-door ramp. Then the pusher drives it up to the floor. ${remote ? "You're on the floor with the remote, so you can run it without a hand on the ground." : "You're on the ground at the station; the remote on the rig floor does the same thing."}</p>
+      <p id="cwStatus" class="hint">${status()}</p>
+      <div class="btns"><button class="b" data-a="kick">1 · KICK A JOINT ONTO THE TROUGH</button><button class="b alt" data-a="lift">2 · RAISE / LOWER THE TROUGH</button><button class="b green" data-a="push">3 · PUSH TO THE V-DOOR</button></div>
+      <div class="btns"><button class="b alt" data-close>Close</button></div>`, { live: true });
+    this.closeBtn(p);
+    const say = (m: string | null) => { if (m) this.ui.toast("CATWALK", m); };
+    p.querySelectorAll<HTMLButtonElement>("[data-a]").forEach((b) => b.onclick = () => {
+      this.sfx.click();
+      const a = b.dataset.a;
+      if (a === "kick") say(c.kick()); else if (a === "lift") { c.toggleLift(); this.ui.toast("CATWALK", c.lowered ? "Lowering the trough onto the ramp." : "Raising the trough."); } else if (a === "push") say(c.push());
+    });
+    (this.ui as any).panelTick = () => { const e = p.querySelector<HTMLElement>("#cwStatus"); if (e) e.innerHTML = status(); };
   }
   openPhone() {
     const m = this.flags.houstonPending;
@@ -1358,11 +1384,13 @@ export class Game {
       }
     }
     { // the corner: time of day, and what you are holding
+      { const day = clockString(this.sim.s.t).day, d = Math.max(0, day - ((this.flags.lastIncDay as number | undefined) ?? -141)); if (d !== this.hudDays) { this.hudDays = d; this.rig.setDaysSince(d); } }
       const cs = "$" + Math.round(this.sim.s.cost).toLocaleString("en-US"); if (cs !== this.hudCost) { this.hudCost = cs; $("cost").textContent = cs; }
       const ck = clockString(this.sim.s.t).hhmm; if (ck !== this.hudClock) { this.hudClock = ck; $("clock").textContent = ck; }
       if (this.held.kind !== this.hudItem) { this.hudItem = this.held.kind; drawHeldIcon($("itemcv") as HTMLCanvasElement, this.held.kind); }
     }
     if (this.started && !this.paused && !this.astMode) this.outskirts.update(Math.min(dt, 0.1));
+    { const ev = this.rig.catwalk.takeEvent(); if (ev === "loaded") this.ui.toast("CATWALK", "Joint on the trough."); else if (ev === "delivered") { this.sfx.good(); this.ui.toast("JOINT ON THE FLOOR", "Right at the V-door. The floor hands thank you."); } }
     this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen);
   }
 

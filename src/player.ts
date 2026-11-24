@@ -38,7 +38,8 @@ export class Player {
   private fallStart = 0;
   onFall: (m: number) => void = () => {};
   /** the V-door ramp is greased: you cannot walk up it, you slide down, and sliding down from height is an incident */
-  slick = { x0: -1.0, x1: 1.0, z0: 6.4, z1: 18.0 };
+  // (the rig is turned a quarter turn, so the ramp runs along world x: high at the rig floor (x = -6), down to the ground at x = -18)
+  slick = { x0: -18.2, x1: -6.2, z0: -1.2, z1: 1.2, dx: -1, dz: 0, end: 18.0 };
   slideV = 0; private slipTop = 0; private sliding = false;
   onRampFall: (heightFt: number) => void = () => {};
   onJump: () => void = () => {};
@@ -167,11 +168,14 @@ export class Player {
     const k = this.slick, onRamp = this.pos.y > 0.3 && this.pos.x > k.x0 - 0.2 && this.pos.x < k.x1 + 0.2 && this.pos.z > k.z0 && this.pos.z < k.z1 && this.grounded;
     if (onRamp) {
       this.slideV = Math.min(7.5, this.slideV + 9 * dt);
-      vz = Math.max(vz, 0) * 0.4 + this.slideV; vx *= 0.5;                        // any uphill effort is lost; the grease takes you down
+      // resolve the walking input along (down the ramp) and across it: any uphill effort is lost, the grease takes you down
+      const px = -k.dz, pz = k.dx, along = vx * k.dx + vz * k.dz, across = vx * px + vz * pz;
+      const a2 = Math.max(along, 0) * 0.4 + this.slideV, c2 = across * 0.5;
+      vx = a2 * k.dx + c2 * px; vz = a2 * k.dz + c2 * pz;
       this.sliding = true; this.slipTop = Math.max(this.slipTop, this.pos.y);
     } else {
       this.slideV = Math.max(0, this.slideV - 20 * dt);
-      if (this.sliding && (this.pos.y < 0.6 || this.pos.z >= k.z1 - 0.05)) { const h = this.slipTop; this.sliding = false; this.slipTop = 0; if (h > 1.5) this.onRampFall(h); }
+      if (this.sliding && (this.pos.y < 0.6 || (this.pos.x * k.dx + this.pos.z * k.dz) >= k.end - 0.05)) { const h = this.slipTop; this.sliding = false; this.slipTop = 0; if (h > 1.5) this.onRampFall(h); }
       else if (this.sliding && !this.grounded) { /* airborne off the side: let the fall logic judge it */ this.sliding = false; this.slipTop = 0; }
     }
     // jump

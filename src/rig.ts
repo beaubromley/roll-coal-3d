@@ -31,6 +31,14 @@ export interface Rig {
   setCasingTruck(on: boolean): void;
   /** the off-location windmill: spinning (true) or braked (false) */
   setWindmill(on: boolean): void;
+  /** the safety trailer's "days since last incident" board */
+  setDaysSince(n: number): void;
+  /** the hydraulic catwalk's controls (the ground station and the rig-floor remote both drive these) */
+  catwalk: { readonly phase: "idle" | "kicking" | "loaded" | "pushing"; readonly lowered: boolean; readonly delivered: number; takeEvent(): string; kick(): string | null; toggleLift(): void; push(): string | null };
+  /** where the crew huddles inside the safety trailer (world coords, floor height) and where you step out */
+  huddle: { x: number; y: number; z: number; exit: { x: number; z: number } };
+  /** while on, the walking crew stand still (for the stand-down huddle) */
+  huddleHold: { on: boolean };
   heliState: { phase: "hidden" | "landing" | "landed" | "leaving"; node: TransformNode };
   /** the finale's space shuttle: it comes down on the helipad, waits for you, then launches */
   shuttleState: { phase: "hidden" | "landing" | "landed" | "launching"; node: TransformNode; v: number; t: number };
@@ -537,38 +545,116 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const joint = MeshBuilder.CreateCylinder("tj", { diameter: 0.27, height: 0.4, tessellation: 8 }, scene);
   joint.material = b.getMat("pipeband"); joint.parent = rigRoot;
 
-  // ================= PIPE RACKS + CATWALK =================
+  // ================= PIPE RACKS + HYDRAULIC CATWALK =================
+  // Two empty racks flank the catwalk and feed it; the full pipe stacks live out at the edge of location, on the same line.
   const pipePos: Vector3[] = [];
-  for (const sx of [-1, 1]) {
-    const rx = sx * 6.5;
-    for (const z of [19, 26, 33]) b.slab("rust", rx - 3.3, 0, z - 0.2, rx + 3.3, 0.5, z + 0.2);
+  const rackStack = (sx: number, zc: number, full: boolean) => {
+    const rx = sx * 6.5, dz = zc - 26;
+    for (const z of [19, 26, 33]) b.slab("rust", rx - 3.3, 0, z + dz - 0.2, rx + 3.3, 0.5, z + dz + 0.2);
     // end stanchions that keep the stack from rolling off
-    for (const ex of [-3.3, 3.3]) for (const z of [19, 26, 33]) b.slab("rust", rx + ex - 0.06, 0, z - 0.1, rx + ex + 0.06, 2.0, z + 0.1);
+    for (const ex of [-3.3, 3.3]) for (const z of [19, 26, 33]) b.slab("rust", rx + ex - 0.06, 0, z + dz - 0.1, rx + ex + 0.06, 2.0, z + dz + 0.1);
+    if (!full) {
+      // empty racks: low rails along the lip toward the catwalk, so a joint rolls in from the rack when the kick arms push it
+      b.blocker(rx - 3.35, 0, 18.3, rx + 3.35, 0.6, 33.7);
+      return;
+    }
     // drill pipe, hex-packed (pitch ~ diameter) and parallel to the catwalk
     const D = 0.27, PITCH = 0.285;
     for (let layer = 0; layer < 6; layer++) {
       const n = 22 - layer;
       for (let i = 0; i < n; i++) {
         const x = rx - ((22 - 1) * PITCH) / 2 + i * PITCH + layer * (PITCH / 2), y = 0.5 + D / 2 + layer * PITCH * 0.866;
-        if (kit) pipePos.push(rpos(v(x, y, 26.0)));
+        if (kit) pipePos.push(rpos(v(x, y, zc)));
         else {
-          b.cyl("pipe", x, y, 26.0, D, 15.2, { axis: "z", tess: 6 });
-          b.cyl("pipeband", x, y, 18.7, D + 0.02, 0.4, { axis: "z", tess: 6 });
-          b.cyl("pipeband", x, y, 33.3, D + 0.02, 0.4, { axis: "z", tess: 6 });
+          b.cyl("pipe", x, y, zc, D, 15.2, { axis: "z", tess: 6 });
+          b.cyl("pipeband", x, y, zc - 7.3, D + 0.02, 0.4, { axis: "z", tess: 6 });
+          b.cyl("pipeband", x, y, zc + 7.3, D + 0.02, 0.4, { axis: "z", tess: 6 });
         }
       }
     }
     // solid so nobody walks through the stack
-    b.blocker(rx - 3.35, 0, 18.3, rx + 3.35, 2.0, 33.7);
-  }
+    b.blocker(rx - 3.35, 0, 18.3 + dz, rx + 3.35, 2.0, 33.7 + dz);
+  };
+  for (const sx of [-1, 1]) { rackStack(sx, 26, false); rackStack(sx, 52, true); }
   kit?.instances(["pipe_pipe", "band_band"], pipePos, false, RYAW);
-  b.slab("dsteel", -0.9, 0, 18, 0.9, 0.9, 34, true);
-  b.slab("deck", -0.7, 0.9, 18, 0.7, 0.95, 34);
-  b.cyl("pipe", 0, 1.15, 28, 0.24, 9.6, { axis: "z", tess: 6 });
-  spots.tally = v(0, 1.8, 24);
-  b.label("PIPE RACKS", 0, 3.2, 35, 3.2, 0.8, 0, "#233a52", "#ffd24a", 80);
+  // the catwalk skid: a long steel base with a rear trough fixed to it, a hydraulic power unit, and the ground control station
+  b.slab("dsteel", -1.1, 0, 18, 1.1, 0.45, 34, true);
+  b.slab("steel", -0.6, 0.45, 24, 0.6, 0.55, 34);                                        // trough floor (rear half; the front half lifts)
+  for (const sx of [-1, 1]) b.slab("dsteel", sx * 0.62 - 0.06, 0.45, 24, sx * 0.62 + 0.06, 1.0, 34);        // trough walls
+  b.slab("dsteel", -0.7, 0.45, 33.9, 0.7, 1.1, 34.1);                                    // end stop
+  b.blocker(-1.1, 0, 18, 1.1, 1.05, 34);
+  b.slab("blue", 1.4, 0, 31.6, 2.6, 1.0, 33.8, true); b.slab("black", 1.5, 1.0, 31.8, 2.5, 1.2, 33.6);   // hydraulic power unit: tank on top
+  b.cyl("steel", 2.0, 1.45, 32.7, 0.22, 0.5, { tess: 8 }); b.cyl("red", 1.7, 0.5, 31.4, 0.3, 0.3, { axis: "z", tess: 8 });
+  b.slab("dsteel", 1.5, 0, 21.8, 1.6, 1.25, 22.2); b.slab("black", 1.3, 1.25, 21.4, 1.9, 1.75, 22.6);   // ground control station: post and panel
+  b.slab("green", 1.32, 1.5, 21.5, 1.38, 1.62, 21.7); b.slab("yellow", 1.32, 1.5, 21.85, 1.38, 1.62, 22.05); b.slab("red", 1.32, 1.5, 22.2, 1.38, 1.62, 22.4);
+  b.label("HYDRAULIC CATWALK\nCLEAR THE TROUGH BEFORE YOU PUSH", 1.15, 2.3, 22, 2.4, 0.8, -Math.PI / 2, "#233a52", "#ffd24a", 28);
+  spots.tally = v(0, 1.8, 50);
+  spots.catwalk = v(1.9, 1.5, 22);
+  spots.catremote = v(2.1, F + 1.25, 3.9);
+  b.label("PIPE RACKS", 0, 3.2, 44, 3.2, 0.8, 0, "#233a52", "#ffd24a", 80);
   b.rot = 0;
-  for (const k of ["cabin", "doghouse", "coffee", "board", "geronimo", "floorSetback", "drawworks", "tally"]) spots[k] = rpos(spots[k]);
+  for (const k of ["cabin", "doghouse", "coffee", "board", "geronimo", "floorSetback", "drawworks", "tally", "catwalk", "catremote"]) spots[k] = rpos(spots[k]);
+
+  // ---- the catwalk's moving parts ----
+  const cwBlack = b.getMat("black"), cwSteel = b.getMat("steel"), cwDark = b.getMat("dsteel"), cwPipe = b.getMat("pipe"), cwRed = b.getMat("red"), cwYellow = b.getMat("yellow");
+  void cwBlack;
+  const cw = new TransformNode("catwalk", scene); cw.parent = rigRoot;
+  const cwBox = (m: StandardMaterial, w: number, h: number, d: number, x: number, y: number, z: number, par: TransformNode) => { const k = MeshBuilder.CreateBox("cwp", { width: w, height: h, depth: d }, scene); k.material = m; k.parent = par; k.position.set(x, y, z); k.isPickable = false; return k; };
+  // front half of the trough: hinged at z = 24, its free end lowers to meet the ramp
+  const front = new TransformNode("cwfront", scene); front.parent = cw; front.position.set(0, 0.5, 24);
+  cwBox(cwSteel, 1.2, 0.1, 6, 0, 0.0, -3, front);
+  for (const sx of [-1, 1]) cwBox(cwDark, 0.12, 0.55, 6, sx * 0.62, 0.22, -3, front);
+  // hydraulic lift rams under it
+  const rams = [-0.5, 0.5].map(() => { const r = MeshBuilder.CreateCylinder("cwram", { diameter: 0.14, height: 1, tessellation: 8 }, scene); r.material = cwPipe; r.parent = cw; r.isPickable = false; return r; });
+  const ramBase = [-0.5, 0.5].map(() => { const r = MeshBuilder.CreateCylinder("cwramb", { diameter: 0.2, height: 0.8, tessellation: 8 }, scene); r.material = cwDark; r.parent = cw; r.isPickable = false; return r; });
+  // kick arms: eight plates that swing up out of the trough walls and roll a joint in from the racks
+  const arms: { n: TransformNode; sx: number }[] = [];
+  for (const sx of [-1, 1]) for (const z of [20.4, 23.4, 26.6, 30.2]) {
+    const n = new TransformNode("cwarm", scene); n.parent = cw; n.position.set(sx * 0.7, 0.62, z);
+    cwBox(cwYellow, 0.95, 0.07, 0.34, sx * 0.5, 0, 0, n); arms.push({ n, sx });
+  }
+  // the pusher: a block and rod that drive the joint up the trough
+  const pusher = cwBox(cwRed, 0.9, 0.3, 0.34, 0, 0.72, 33.5, cw);
+  const pushRod = MeshBuilder.CreateCylinder("cwrod", { diameter: 0.12, height: 1, tessellation: 8 }, scene); pushRod.material = cwPipe; pushRod.parent = cw; pushRod.rotation.x = Math.PI / 2; pushRod.isPickable = false;
+  // the joint of drill pipe itself
+  const jt = MeshBuilder.CreateCylinder("cwjoint", { diameter: 0.24, height: 9.6, tessellation: 10 }, scene); jt.material = cwPipe; jt.parent = cw; jt.rotation.x = Math.PI / 2; jt.isPickable = false;
+  for (const dy of [-4.4, 4.4]) { const r = MeshBuilder.CreateCylinder("cwjb", { diameter: 0.27, height: 0.4, tessellation: 10 }, scene); r.material = b.getMat("pipeband"); r.parent = jt; r.position.y = dy; r.isPickable = false; }
+  jt.setEnabled(false);
+  const catwalk = { phase: "idle" as "idle" | "kicking" | "loaded" | "pushing", lowered: false, tilt: 0, kick: 0, side: 1, roll: 0, jz: 29.5, push: 0, delivered: 0, event: "" };
+  const RAMP_ANG = Math.atan2(F, 12);
+  const catUpdate = (dt: number) => {
+    // trough tilt: 0 level, 1 lowered onto the ramp (the far end drops about half a metre)
+    const tgt = catwalk.lowered ? 1 : 0; catwalk.tilt += Math.sign(tgt - catwalk.tilt) * Math.min(Math.abs(tgt - catwalk.tilt), dt * 0.45);
+    front.rotation.x = -catwalk.tilt * 0.082;
+    const dropY = Math.sin(catwalk.tilt * 0.082) * 3;
+    rams.forEach((r, i) => { const x = i ? 0.5 : -0.5, y0 = 0.1, y1 = 0.5 - dropY - 0.05; r.position.set(x, (y0 + y1) / 2, 21.0); r.scaling.y = Math.max(0.1, y1 - y0); });
+    ramBase.forEach((r, i) => { r.position.set(i ? 0.5 : -0.5, 0.35, 21.0); });
+    // kicking: the arm on the rack side lifts while the joint rolls across onto the trough
+    if (catwalk.phase === "kicking") {
+      catwalk.kick = Math.min(1, catwalk.kick + dt * 2.2); catwalk.roll = Math.min(1, catwalk.roll + dt * 0.7);
+      const k = catwalk.roll;
+      jt.setEnabled(true); jt.position.set(catwalk.side * (3.0 * (1 - k)), 0.75 - 0.08 * k + (1 - k) * 0.1, catwalk.jz); jt.rotation.set(Math.PI / 2, 0, 0);
+      if (catwalk.roll >= 1) { catwalk.phase = "loaded"; catwalk.event = "loaded"; }
+    } else catwalk.kick = Math.max(0, catwalk.kick - dt * 2.2);
+    for (const a of arms) a.n.rotation.z = a.sx * catwalk.kick * 0.85 * (a.sx === catwalk.side ? 1 : 0);
+    if (catwalk.phase === "pushing") {
+      // the joint rides the pusher: up the trough, then up the ramp to the rig floor
+      catwalk.push += dt * 2.6; const zc = catwalk.jz - catwalk.push;
+      let y = 0.67, pitch = 0;
+      if (zc < 18) { const u = Math.min(1, (18 - zc) / 12); y = 0.67 + (F - 0.4) * u; pitch = RAMP_ANG * Math.min(1, (18 - zc) / 4); }
+      jt.position.set(0, y + 0.12 * pitch, zc); jt.rotation.set(Math.PI / 2 - pitch, 0, 0);
+      const pz = zc + 5.0; pusher.position.z = Math.max(pz, 18.5); pusher.setEnabled(pz >= 18.5);
+      if (zc <= 6.4) { jt.setEnabled(false); catwalk.phase = "idle"; catwalk.delivered++; catwalk.event = "delivered"; catwalk.push = 0; pusher.setEnabled(true); }
+    } else { pusher.setEnabled(true); pusher.position.z += (33.5 - pusher.position.z) * Math.min(1, dt * 3); }
+    pushRod.scaling.y = Math.max(0.1, 34.1 - (pusher.position.z + 0.17)); pushRod.position.set(0, 0.72, (34.1 + pusher.position.z + 0.17) / 2);
+  };
+  const catCtl = {
+    get phase() { return catwalk.phase; }, get lowered() { return catwalk.lowered; }, get delivered() { return catwalk.delivered; },
+    takeEvent() { const e = catwalk.event; catwalk.event = ""; return e; },
+    kick(): string | null { if (catwalk.phase !== "idle") return "There's already a joint on the trough."; catwalk.phase = "kicking"; catwalk.side = Math.random() < 0.5 ? -1 : 1; catwalk.roll = 0; catwalk.kick = 0; catwalk.jz = 29.5; return null; },
+    toggleLift(): void { catwalk.lowered = !catwalk.lowered; },
+    push(): string | null { if (catwalk.phase === "idle") return "Nothing on the trough. Kick a joint over first."; if (catwalk.phase === "kicking") return "Wait for the joint to settle in the trough."; if (catwalk.phase === "pushing") return "It's already moving."; if (!catwalk.lowered) return "Lower the trough onto the ramp first, or the joint won't make the V-door."; catwalk.phase = "pushing"; catwalk.push = 0; return null; },
+  };
 
   // ================= PUMP ROOM (3 triplex mud pumps) =================
   const PDX = 21.5;   // pumps sit beside the mud hopper
@@ -947,7 +1033,15 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.label("MUD LOGGING\nLOCKED • KNOCK", 38.55, 3.1, 8.6, 2.0, 0.7, -Math.PI / 2, "#233a52", "#ffd24a", 40);
   b.label("NO ADMITTANCE\nSAMPLES IN PROGRESS", 38.55, 3.1, 14.6, 1.6, 0.6, -Math.PI / 2, "#7a1a14", "#ffffff", 34);
   // safety/change room + water frac tanks
-  b.slab("trailer", 37, 0.7, 20, 43, 3.4, 28, true); b.label("SAFETY", 36.85, 3.8, 24, 2.4, 0.6, -Math.PI / 2, "#1d5a30", "#ffffff", 64);
+  // the safety trailer: you can walk in (the stand-down huddle happens in here), with benches, a whiteboard and a steps-and-door on the camp side
+  b.room({ x0: 37, z0: 20, x1: 43, z1: 28, y0: 0.7, h: 2.7, wall: "trailer", roof: "dsteel", floor: "dsteel", door: { side: "-x", c: 24, w: 1.1 } });
+  b.slab("steel", 36.9, 0, 20, 43.1, 0.7, 28);
+  b.slab("steel", 35.5, 0, 23.1, 36.2, 0.35, 24.9, true); b.slab("steel", 36.2, 0, 23.1, 36.95, 0.7, 24.9, true);
+  b.label("SAFETY", 36.85, 3.8, 24, 2.4, 0.6, -Math.PI / 2, "#1d5a30", "#ffffff", 64);
+  for (const bz of [20.3, 27.3]) b.slab("wood", 37.2, 0.7, bz, 42.8, 1.15, bz + 0.5, true);               // benches along the long walls
+  b.slab("wood", 41.3, 0.7, 22.6, 42.1, 1.2, 25.4, true);                                                // a table with the sign-in binder
+  b.label("SAFETY MEETING\nDON'T DIE.", 42.88, 2.3, 24, 4.2, 1.5, Math.PI / 2, "#e8e4d4", "#1d3a5a", 38);   // whiteboard on the back wall
+  b.label("STOP WORK AUTHORITY", 37.12, 2.4, 21.6, 1.2, 0.5, -Math.PI / 2, "#1d5a30", "#ffffff", 22);
   });
   b.rot = 0;
   for (let i = 0; i < 2; i++) b.slab("tank", 38 + i * 4.2, 0.5, -34, 41.7 + i * 4.2, 3.2, -26, true);
@@ -1251,6 +1345,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const heliState: Rig["heliState"] = { phase: "hidden", node: heli };
 
   // walker paths
+  const huddleHold = { on: false };
   const walkers = [
     { h: humans.hand3, pts: [v(2.1, 0, 20), v(2.1, 0, 36), v(-2.1, 0, 36), v(-2.1, 0, 20), v(-2.1, 0, 36), v(2.1, 0, 36)].map(rpos), i: 0, speed: 1.1 },
     { h: humans.hand1, pts: [v(-0.4, F, 2.9), v(-0.4, F, 4.6), v(0.4, F, 4.6), v(0.4, F, 2.9)].map(rpos), i: 0, speed: 0.8 },
@@ -1311,9 +1406,11 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     pumpjacks.forEach((p, i) => { p.rotation.x = Math.sin(f.t * 0.9 + i) * 0.16; });
     windsock.rotation.y = Math.sin(f.t * 0.1) * 0.5 + 2.2;
     windsock.rotation.z = Math.sin(f.t * 2.0) * 0.06;
+    catUpdate(dt);
     // NPC idle & walkers
     for (const k in humans) if (!walkers.some((w) => w.h === humans[k])) humans[k].animate(dt, 0);   // walkers animate below (idle every frame would restart their clip)
     for (const w of walkers) {
+      if (huddleHold.on) { w.h.animate(dt, 0); continue; }
       const tgt = w.pts[w.i], p = w.h.root.position;
       const dx = tgt.x - p.x, dz = tgt.z - p.z, d = Math.hypot(dx, dz);
       if (d < 0.15) w.i = (w.i + 1) % w.pts.length;
@@ -1351,8 +1448,23 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     void f.pumpsOn;
   };
 
+  // the "days since last incident" board on the outside of the safety trailer
+  const dsTex = new DynamicTexture("daysSign", { width: 512, height: 160 }, scene, true);
+  const dsMat = new StandardMaterial("daysSignM", scene); dsMat.diffuseTexture = dsTex; dsMat.emissiveTexture = dsTex; dsMat.specularColor = Color3.Black(); dsMat.disableLighting = true;
+  const dsPlane = MeshBuilder.CreatePlane("daysSign", { width: 5.0, height: 1.56 }, scene); dsPlane.material = dsMat; dsPlane.isPickable = false;
+  { const sp = rv(48.8, 3.15, 34); dsPlane.position.copyFrom(sp); dsPlane.rotation.y = 0; }
+  const setDaysSince = (n: number) => {
+    const c = dsTex.getContext() as CanvasRenderingContext2D;
+    c.fillStyle = "#101418"; c.fillRect(0, 0, 512, 160); c.strokeStyle = "#ffffff"; c.lineWidth = 8; c.strokeRect(6, 6, 500, 148);
+    c.fillStyle = "#ffffff"; c.font = "bold 30px Arial"; c.textAlign = "center"; c.fillText("DAYS SINCE LAST INCIDENT", 256, 44);
+    c.fillStyle = n === 0 ? "#ff5a3d" : "#7dff7d"; c.font = "bold 92px monospace"; c.fillText(String(n).padStart(3, "0"), 256, 132);
+    dsTex.update();
+  };
+  setDaysSince(142);
+  const huddle = { ...(() => { const p = rv(40 + CDX, 0.75, 24 + CDZ); return { x: p.x, y: 0.75, z: p.z }; })(), exit: (() => { const p = rv(33.5 + CDX, 0, 24 + CDZ); return { x: p.x, z: p.z }; })() };
+
   return {
-    spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update,
+    spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update, setDaysSince, huddle, huddleHold, catwalk: catCtl,
     setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); }, setWindmill: (on) => { wmTarget = on ? 2.1 : 0; },
     heliState, shuttleState, buildShuttle: () => shuttle, deerNode, windsock,
   };

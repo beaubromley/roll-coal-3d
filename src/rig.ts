@@ -14,7 +14,7 @@ export const STAND_M = 28.35; // 93 ft stand
 
 export interface RigFrame {
   depth: number; startDepth: number; rotating: boolean; connecting: boolean; tripping: boolean;
-  tripFrac: number; standsRacked: number; night: number; t: number; pumpsOn: boolean; flaring: boolean;
+  tripFrac: number; standsRacked: number; night: number; t: number; pumpsOn: boolean; flaring: boolean; kicking?: boolean;
   /** live data for the cabin monitors; `near` = the player is close enough for them to be worth redrawing */
   screens?: import("./screens").ScreenData; near?: boolean;
 }
@@ -969,6 +969,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   for (const dz of [-62.6, -60.2]) b.slab("dsteel", -22.6, 0, dz - 0.1, -21.4, 0.3, dz + 0.1);
   for (const [dx, dz] of [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]]) b.beam("steel", v(-22, 17, -64), v(-22 + dx * 2.2, 0.2, -64 + dz * 2.2), 0.05);   // guy wires
   b.label("FLARE", -22, 2.4, -66.2, 1.6, 0.5, 0, "#7a1a14", "#ffffff", 50);
+  let flameK = 1;
   const flame = MeshBuilder.CreateCylinder("flame", { diameterTop: 0.1, diameterBottom: 1.3, height: 3, tessellation: 8 }, scene);
   const flameMat = new StandardMaterial("flamem", scene);
   flameMat.emissiveColor = new Color3(1, 0.55, 0.1); flameMat.diffuseColor = Color3.Black(); flameMat.alpha = 0.85;
@@ -1175,7 +1176,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     const e = 0.15 + f.night * 0.85;
     lampMat.emissiveColor.set(1 * e, 0.92 * e, 0.62 * e);
     const bm = b.getMat("beacon"); const blink = Math.sin(f.t * 4) > 0.2 ? 1 : 0.15; bm.emissiveColor.set(blink, 0.1 * blink, 0.05 * blink);
-    flame.scaling.set(0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.5, 0.8 + Math.random() * 0.4);
+    // taking a kick (or circulating one out): gas to the flare, a flame five times taller
+    flameK += ((f.kicking ? 5 : 1) - flameK) * Math.min(1, dt * 2.5);
+    const fy = (0.8 + Math.random() * 0.5) * flameK, fw = (0.8 + Math.random() * 0.4) * (1 + (flameK - 1) * 0.12);
+    flame.scaling.set(fw, fy, fw); flame.position.y = 18 + 1.5 * fy;
     flame.setEnabled(f.flaring || true);
     pumpjacks.forEach((p, i) => { p.rotation.x = Math.sin(f.t * 0.9 + i) * 0.16; });
     windsock.rotation.y = Math.sin(f.t * 0.1) * 0.5 + 2.2;

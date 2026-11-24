@@ -164,7 +164,7 @@ engine.runRenderLoop(() => {
     depth: s.depth, startDepth: WELL.startDepth,
     rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
     connecting: s.mode === "connection", tripping: s.mode === "tripping", tripFrac: 0,
-    standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true,
+    standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true, kicking: s.kick.active || s.kick.shut || s.mode === "killing",
     near: Math.hypot(player.pos.x - 4.8, player.pos.z + 3) < 22 && player.pos.y > 4,
     screens: { depth: s.depth, wob: s.wob, rop: s.rop, spp: s.spp, flow: s.flow, pit: s.pit, mw: s.mw, mode: s.mode, rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
       kicking: s.kick.active, dd: game.veh.dd, t: clock },

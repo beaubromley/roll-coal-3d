@@ -199,7 +199,12 @@ export class Human {
       add(MeshBuilder.CreateBox("vs2", { width: 0.41, height: 0.06, depth: 0.26 }, sc), "#cfd3d6", "Spine2", 0, 0.08, 0.02);
     }
     if (o.detail) {
-      add(MeshBuilder.CreateBox("gl", { width: 0.15, height: 0.05, depth: 0.03 }, sc), "#9fd3e8", "Head", 0, -0.18, 0.1);
+      for (const sx of [-1, 1]) {
+        add(MeshBuilder.CreateBox("gl", { width: 0.068, height: 0.046, depth: 0.018 }, sc), "#a9dcf0", "Head", sx * 0.042, -0.18, 0.105);
+        add(MeshBuilder.CreateBox("glr", { width: 0.074, height: 0.008, depth: 0.022 }, sc), "#15171a", "Head", sx * 0.042, -0.152, 0.106);
+        add(MeshBuilder.CreateBox("glt", { width: 0.01, height: 0.012, depth: 0.1 }, sc), "#15171a", "Head", sx * 0.092, -0.18, 0.055);
+      }
+      add(MeshBuilder.CreateBox("glb", { width: 0.03, height: 0.01, depth: 0.02 }, sc), "#15171a", "Head", 0, -0.172, 0.108);
     }
     this.chParts = parts;
     this.ppeLocal = new Vector3();
@@ -324,8 +329,8 @@ export class Human {
     const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: string, parent?: TransformNode, ppe = false) => {
       const b = MeshBuilder.CreateBox("dt", { width: w, height: h, depth: d }, sc); b.position.set(x, y, z); return add(b, hex, parent, ppe);
     };
-    const ball = (dia: number, x: number, y: number, z: number, hex: string, sx = 1, sy = 1, sz = 1, parent?: TransformNode) => {
-      const b = MeshBuilder.CreateSphere("dt", { diameter: dia, segments: 8 }, sc); b.position.set(x, y, z); b.scaling.set(sx, sy, sz); return add(b, hex, parent);
+    const ball = (dia: number, x: number, y: number, z: number, hex: string, sx = 1, sy = 1, sz = 1, parent?: TransformNode, ppe = false) => {
+      const b = MeshBuilder.CreateSphere("dt", { diameter: dia, segments: 10 }, sc); b.position.set(x, y, z); b.scaling.set(sx, sy, sz); return add(b, hex, parent, ppe);
     };
     const ring = (dia: number, hgt: number, y: number, hex: string, parent: TransformNode = this.root) => {
       const c = MeshBuilder.CreateCylinder("dt", { diameter: dia, height: hgt, tessellation: 14 }, sc); c.position.y = y; return add(c, hex, parent);
@@ -333,7 +338,7 @@ export class Human {
     // head: hair, ears, brows, mouth, stubble
     const hair = MeshBuilder.CreateSphere("hair", { diameter: 0.268, segments: 12, slice: 0.58 }, sc);
     hair.position.set(0, 1.645, -0.012); hair.scaling.set(0.92, 1, 1.02); add(hair, "#3b2a1c"); this.hairCap = hair;
-    box(0.24, 0.07, 0.05, 0, 1.6, -0.1, "#3b2a1c");                       // hair down the back of the neck
+    box(0.13, 0.06, 0.045, 0, 1.612, -0.092, "#3b2a1c");                       // hair down the back of the neck
     for (const sx of [-1, 1]) {
       ball(0.05, sx * 0.118, 1.615, 0.0, skin, 0.5, 1, 0.8);               // ears
       box(0.05, 0.011, 0.014, sx * 0.046, 1.668, 0.112, "#2a1d12");        // eyebrows
@@ -365,9 +370,16 @@ export class Human {
     ring(0.15, 0.035, -0.5, "#1a1a1c", this.armL);
     box(0.07, 0.02, 0.07, 0, -0.5, 0.05, "#9aa0a8", this.armL);
     // safety glasses ride with the PPE
-    box(0.125, 0.04, 0.012, 0, 1.635, 0.122, "#9fd3e8", undefined, true);
-    for (const sx of [-1, 1]) box(0.012, 0.012, 0.11, sx * 0.0625, 1.64, 0.07, "#15171a", undefined, true);
-    box(0.014, 0.012, 0.014, 0, 1.64, 0.126, "#15171a", undefined, true);
+    // wraparound lenses (slightly curved: flattened ellipsoids that follow the face), a dark brow rim, a bridge, and temples that hug the head to the ears
+    for (const sx of [-1, 1]) {
+      const lens = ball(0.072, sx * 0.043, 1.664, 0.119, "#a9dcf0", 1, 0.5, 0.3, undefined, true);
+      lens.rotation.y = sx * 0.28;
+      box(0.072, 0.007, 0.012, sx * 0.044, 1.681, 0.126, "#15171a", undefined, true).rotation.y = sx * 0.28;   // upper rim
+      box(0.07, 0.005, 0.01, sx * 0.044, 1.645, 0.122, "#2a2d31", undefined, true).rotation.y = sx * 0.28;     // lower rim, thinner
+      const tp = box(0.009, 0.012, 0.11, sx * 0.098, 1.668, 0.06, "#15171a", undefined, true); tp.rotation.y = sx * -0.38;   // temple arm
+      ball(0.016, sx * 0.012, 1.652, 0.127, "#d9d9d9", 0.6, 1, 0.6, undefined, true);                           // nose pad
+    }
+    box(0.026, 0.008, 0.012, 0, 1.667, 0.129, "#15171a", undefined, true);                                        // bridge
   }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
   animate(dt: number, speed: number) {

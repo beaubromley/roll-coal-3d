@@ -892,7 +892,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.at(-16, 0, () => {
     b.cyl("dsteel", 46, 1.7, 42, 0.12, 3.4, { tess: 6 });
     b.label("MUSTER\nPOINT A", 46, 3.5, 42, 2.4, 1.2, 0, "#1d7a3a", "#ffffff", 70);
-    b.slab("green", 43, 0.02, 40, 49, 0.05, 44);
+    b.defMat("musterg", "#1fb34a");
+    b.slab("musterg", 43, 0, 40, 49, 0.1, 44, true);                                   // a real raised pad you step up onto, in a colour that does not blend with the dirt
+    for (const [x0, z0, x1, z1] of [[43, 40, 49, 40.2], [43, 43.8, 49, 44], [43, 40, 43.2, 44], [48.8, 40, 49, 44]] as number[][]) b.slab("yellow", x0, 0.1, z0, x1, 0.115, z1);   // painted border
   });
   spots.muster = v(30, 1.2, 40.6);
   // wind sock

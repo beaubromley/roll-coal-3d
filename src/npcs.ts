@@ -151,7 +151,7 @@ export class Human {
     // Boots: the model's own feet are hidden. Our own boots hang off the SHIN bone (the one thing every clip animates correctly):
     // planted at the shin's lower end, tilted with the shin, always facing the way the body faces. No foot bones, no skinning.
     for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(false);
-    const bootParts: { node: TransformNode; knee: TransformNode | null | undefined; end: TransformNode | null | undefined }[] = [];
+    const bootParts: { node: TransformNode; knee: TransformNode | null | undefined; end: TransformNode | null | undefined; prev: Quaternion | null }[] = [];
     for (const side of ["Left", "Right"]) {
       const node = new TransformNode("boot", sc); node.parent = this.root;
       const part = (mesh: Mesh, hex: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { mesh.material = m(sc, hex); mesh.parent = node; mesh.position.set(x, y, z); mesh.scaling.set(sx, sy, sz); this.meshes.push(mesh); return mesh; };
@@ -164,7 +164,7 @@ export class Human {
       part(MeshBuilder.CreateSphere("bto", { diameter: 1, segments: 14 }, sc), toeCol, 0, 0.056, 0.2, 0.112, 0.082, 0.13);                              // toe cap, a shade lighter
       part(MeshBuilder.CreateCylinder("bhe", { diameter: 0.118, height: 0.034, tessellation: 18 }, sc), solCol, 0, 0.017, -0.035);                     // round heel block
       part(MeshBuilder.CreateCylinder("bso", { diameter: 1, height: 0.028, tessellation: 28 }, sc), solCol, 0, 0.014, 0.1, 0.122, 1, 0.33);              // oval sole: round in plan, wider at the ball of the foot
-      bootParts.push({ node, knee: this.bones[side + "Leg"], end: this.bones[side + "LegEnd"] });
+      bootParts.push({ node, knee: this.bones[side + "Leg"], end: this.bones[side + "LegEnd"], prev: null });
     }
     sc.onAfterAnimationsObservable.add(() => {
       if (!this.root.isEnabled()) return;
@@ -175,9 +175,14 @@ export class Human {
         bp.knee.computeWorldMatrix(true); bp.end.computeWorldMatrix(true);
         const e = Vector3.TransformCoordinates(bp.end.getAbsolutePosition(), inv), k = Vector3.TransformCoordinates(bp.knee.getAbsolutePosition(), inv);
         const up = k.subtract(e); if (up.lengthSquared() < 1e-6) continue; up.normalize();
+        // a foot does not swing as far as the shin does while running: blend the shin direction with straight up, so the boot stays under the leg instead of flicking
+        up.scaleInPlace(0.8).addInPlace(new Vector3(0, 0.2, 0)).normalize();
         const f = fwd.subtract(up.scale(Vector3.Dot(fwd, up))); if (f.lengthSquared() < 1e-6) continue; f.normalize();   // body-forward made perpendicular to the shin
         Quaternion.FromLookDirectionLHToRef(f.scale(-1), up, q);   // (this helper points -z along the look direction here, so give it the opposite)
-        bp.node.position.copyFrom(e); bp.node.rotationQuaternion = q.clone();
+        // low-pass the orientation too, so a fast shin swing cannot make the boot twitch
+        bp.node.position.copyFrom(e);
+        bp.prev = bp.prev ? Quaternion.Slerp(bp.prev, q, 0.75) : q.clone();
+        bp.node.rotationQuaternion = bp.prev.clone();
       }
     });
     if (band) tint(/^Red/, band);

@@ -577,6 +577,11 @@ export class Game {
 
   /** left click: use what you are holding */
   useHeld() {
+    // the White House is calling: the cell phone answers it, wherever you are
+    if (this.held.kind === "phone" && this.flags.ringing) {
+      const st = this.active ? this.active.m.steps[this.active.i] : null;
+      if (st?.act) { this.sfx.click(); this.held.use(); st.act(() => this.stepDone()); return; }
+    }
     const [title, text, alarm] = this.held.use();
     if (alarm) this.sfx.horn(); else this.sfx.click();
     this.ui.toast(title, text);
@@ -1323,7 +1328,7 @@ export class Game {
       this.flags.ringT = ((this.flags.ringT as number) || 0) + dt;
       const rt = this.flags.ringT as number, last = (this.flags.ringLast as number) ?? 0;
       if (rt - last >= 4) { this.flags.ringLast = rt; this.sfx.radio(); }
-      if (rt > 25 && !this.flags.ringNag) { this.flags.ringNag = true; this.radio("earl", "Boss. The phone. In your trailer. It has been ringing for a while.", 9000); }
+      if (rt > 25 && !this.flags.ringNag) { this.flags.ringNag = true; this.radio("earl", "Boss. Your phone. It has been ringing for a while. Click to pick it up.", 9000); }
     }
     // district banner
     const d = this.district();

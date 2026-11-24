@@ -65,6 +65,8 @@ export class Held {
     return ["HANDS FREE", "You flex. Nothing happens. Q or the scroll wheel to pick something up.", false];
   }
 
+  /** pull something out of your pocket */
+  equip(kind: HeldKind) { this.kind = kind; this.apply(); }
   cycle(dir = 1) {
     this.kind = ORDER[(ORDER.indexOf(this.kind) + dir + ORDER.length) % ORDER.length];
     this.apply();

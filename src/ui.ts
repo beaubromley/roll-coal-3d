@@ -20,6 +20,8 @@ export const CAST = {
   rockhound: { name: "Rockhound", img: "rockhound" },
   max: { name: "Max", img: "max" },
   ben: { name: "Ben Affleck", img: "nasa" },
+  aj: { name: "A.J.", img: "me" },
+  lev: { name: "Lev Andropov — Cosmonaut", img: "nasa" },
 } as const;
 export type Who = keyof typeof CAST;
 

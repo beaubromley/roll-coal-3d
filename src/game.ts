@@ -1,5 +1,6 @@
 import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
 import { Rig, F } from "./rig";
+import { Finale } from "./finale";
 import { Player } from "./player";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
@@ -62,6 +63,7 @@ export class Game {
     this.env = env;
     this.ui.onPanelOpen = () => { this.player.enabled = false; this.player.unlock(); };
     this.player.canLock = () => !this.ui.panelOpen && !this.paused;
+    this.finale = new Finale(this);
     this.ui.logClock = () => { const c = clockString(this.sim.s.t); return "Day " + c.day + " " + c.hhmm; };
     this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
@@ -761,7 +763,7 @@ export class Game {
     k.sun.position.copyFrom(d.scale(1000)); k.moon.position.copyFrom(d.scale(-1000));
     k.sun.setEnabled(!this.astMode && d.y > -0.1); k.moon.setEnabled(!this.astMode && d.y < 0.1);
     k.sunMat.emissiveColor = Color3.Lerp(new Color3(1, 0.55, 0.28), new Color3(1, 1, 0.92), clamp(d.y * 3.2, 0, 1));
-    k.starMat.alpha = this.astMode ? 0 : clamp(night * 1.1 - 0.1, 0, 1);
+    k.starMat.alpha = this.astMode ? 1 : clamp(night * 1.1 - 0.1, 0, 1);
   }
 
   // ---------- save / load ----------
@@ -870,18 +872,16 @@ export class Game {
   }
   // ---------- ARMAGEDDON (finale, from the original "Roll Coal Make Hole") ----------
   arm = {
-    site: null as Vector3 | null, console: v3(4000, 1.4, 4006), depth: 0, wob: 22, bit: 100, bombed: false, said: new Set<number>(),
+    site: null as Vector3 | null, console: v3(4000, 1.4, 4006), depth: 0, wob: 22, bit: 100, bombed: false, said: new Set<number>(), pauseT: 0,
     rig: null as any, pipe: null as Mesh | null, flash: 0,
   };
   armFormation(d: number) {
-    return d < 200 ? { name: "Asteroid Crust", hard: 7, abr: 0.25 } : d < 400 ? { name: "Metallic Core", hard: 10, abr: 0.5 } : { name: "Vibranium", hard: 15, abr: 1.0 };
+    return d < 150 ? { name: "Asteroid Crust", hard: 7, abr: 0.25 } : d < 560 ? { name: "Solid Iron Plate", hard: 12, abr: 0.55 } : { name: "Vibranium", hard: 15, abr: 1.0 };
   }
-  buildAsteroidSite() {
+  buildAsteroidSite(ox = 4000, oz = 4000) {
     if (this.arm.site) return;
-    const ox = 4000, oz = 4000, sc = this.scene;
+    const sc = this.scene;
     this.arm.site = v3(ox, 0, oz);
-    const gm = new StandardMaterial("astg", sc); gm.diffuseColor = Color3.FromHexString("#3a2622"); gm.specularColor = Color3.Black();
-    const ground = MeshBuilder.CreateGround("astground", { width: 400, height: 400 }, sc); ground.material = gm; ground.position.set(ox, 0, oz);
     const rm = new StandardMaterial("astr", sc); rm.diffuseColor = Color3.FromHexString("#2a1a18"); rm.emissiveColor = Color3.FromHexString("#2a0c06");
     let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     for (let i = 0; i < 60; i++) {
@@ -908,8 +908,11 @@ export class Game {
     for (const [x, z] of crew) { const h = new Human(sc, { shirt: "#e07010", pants: "#d0d0d0", hat: "#f2f2f2", skin: "#d9a77f" }); h.root.position.set(ox + x, 0.5, oz + z); h.root.rotation.y = Math.PI; this.armCrew.push(h); }
   }
   armCrew: Human[] = [];
+  finale!: Finale;
   colliders: import("./builder").AABB[] = [];
-  callUp(done: () => void) {
+  callUp(done: () => void) { this.finale.launch(done); }
+  /** (the old instant jump to the asteroid, no longer used) */
+  private oldCallUp(done: () => void) {
     this.player.enabled = false; this.player.unlock();
     this.rig.humans.vp.root.setEnabled(false);
     $("fade").style.opacity = "1";
@@ -934,28 +937,27 @@ export class Game {
   astMode = false;
   openArm() {
     const a = this.arm;
-    if (!a.bombed) { this.flags.armDrilling = true; a.depth = Math.max(a.depth, 0.1); }
+    if (a.depth < 800) { this.flags.armDrilling = true; a.depth = Math.max(a.depth, 0.1); }
     const render = () => {
       const f = this.armFormation(a.depth);
       return `<div class="eyebrow">ARMAGEDDON · Asteroid Drill</div><h2>${a.bombed ? "Detonation" : "Drilling Console"}</h2>
         ${this.statRow("Depth", a.depth.toFixed(0) + " / 800 ft")}${this.statRow("Formation", f.name)}${this.statRow("Bit health", Math.round(a.bit) + "%", a.bit < 25 ? "bad" : "")}
-        ${a.depth >= 800 && !a.bombed ? `<div class="note">TD. Plant the bomb — it's the only casing this well gets. ($5,000,000)</div>` : `<div class="hint">WOB: <b id="aw">${a.wob}</b> klbs — harder rock wears the bit. Vibranium hardness: 15.</div><input type="range" id="awob" min="0" max="80" value="${a.wob}"/>`}
-        <div class="btns">${a.depth >= 800 && !a.bombed ? `<button class="b red" id="bomb">Plant the bomb</button>` : ""}${a.bombed ? `<button class="b red" id="det">Detonate (Space)</button>` : ""}<button class="b alt" data-close>Close</button></div>`;
+        ${a.depth >= 800 ? `<div class="note">Eight hundred feet. TD.</div>` : `<div class="hint">WOB: <b id="aw">${a.wob}</b> klbs — iron and vibranium are hard on a bit. Watch the bit health.</div><input type="range" id="awob" min="0" max="80" value="${a.wob}"/>`}
+        <div class="btns"><button class="b alt" data-close>Close</button></div>`;
     };
     const p = this.open(render(), { live: false });
     const wire = () => {
       this.closeBtn(p);
       const w = p.querySelector<HTMLInputElement>("#awob"); if (w) w.oninput = () => { a.wob = Number(w.value); p.querySelector("#aw")!.textContent = w.value; };
-      p.querySelector<HTMLButtonElement>("#bomb")?.addEventListener("click", () => { a.bombed = true; this.sim.addCost(5_000_000); this.ui.toast("BOMB PLANTED", "Press SPACE to detonate"); p.innerHTML = render(); wire(); });
-      p.querySelector<HTMLButtonElement>("#det")?.addEventListener("click", () => this.detonate());
     };
     wire();
-    const key = (e: KeyboardEvent) => { if (e.code === "Space" && a.bombed) { e.preventDefault(); window.removeEventListener("keydown", key); this.detonate(); } };
-    if (a.bombed) window.addEventListener("keydown", key);
   }
   armUpdate(dt: number) {
     const a = this.arm;
-    if (!this.astMode || a.bombed) return;
+    if (!this.astMode || a.bombed || this.flags.armTD) return;
+    if (a.pauseT > 0) { a.pauseT -= dt; return; }
+    if (a.depth >= 560 && !this.flags.armGas) { this.flags.armGas = true; this.ui.closePanel(); this.finale.gasPocket(); return; }
+    if (a.depth >= 800 && !this.flags.armTD) { this.flags.armTD = true; this.ui.closePanel(); this.finale.detonatorFails(); return; }
     if (a.depth > 0 || this.flags.armDrilling) {
       const f = this.armFormation(a.depth);
       const rop = Math.max(2, (a.wob * 6 / f.hard) * (0.35 + 0.65 * a.bit / 100)) * 1.0; // ft/min-ish
@@ -1140,7 +1142,7 @@ export class Game {
         if (l > 0.4) { dn.position.addInPlace(d.scale((7 * realDt) / l)); pushOutXZ(this.player.colliders, dn.position, 0, 0.8); dn.rotation.y = Math.atan2(d.x, d.z); }
       } else dn.rotation.y += Math.sin(this.realT * 0.7) * 0.003;
     }
-    this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0));
+    this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0)); this.finale.update(realDt);
     if (this.asteroid) {
       this.asteroidT += realDt;                                            // (the rock itself stays put: only the tail flickers)
       this.asteroidTail.forEach((tl, i) => { const f = 1 + Math.sin(this.asteroidT * (3.1 + i * 1.7) + i) * 0.045 + (Math.random() - 0.5) * 0.03; tl.mesh.scaling.set(f, 1 + Math.sin(this.asteroidT * 1.9 + i * 2) * 0.03, f); });
@@ -1163,14 +1165,15 @@ export class Game {
     const dawn = clamp(1 - Math.abs(elev) * 4, 0, 1) * (elev > -0.2 ? 1 : 0);
     let col = sky(day, dawn);
     if (this.asteroidT >= 0) col = Color3.Lerp(col, new Color3(0.5, 0.15, 0.08), Math.min(0.7, this.asteroidT / 12));
-    if (this.astMode) { col = new Color3(0.16, 0.04, 0.03); }
+    if (this.astMode) { col = new Color3(0.008, 0.007, 0.018); }
     this.scene.clearColor.set(col.r, col.g, col.b, 1);
     this.scene.fogColor = col.clone();
-    this.env.hemi.intensity = this.astMode ? 0.55 : 0.5 + 0.4 * day;
-    this.env.sun.intensity = this.astMode ? 0.5 : 0.2 + 1.05 * day;
+    this.env.hemi.intensity = this.astMode ? 0.32 : 0.5 + 0.4 * day;
+    this.env.sun.intensity = this.astMode ? 1.15 : 0.2 + 1.05 * day;
     const az = (hour - 6.5) / 13.25 * Math.PI;
     const ex = Math.cos(az), ey = Math.max(0.12, elev);
     this.env.sun.direction.set(-ex * 0.8, -ey, -0.45);
+    if (this.astMode) this.env.sun.direction.set(-0.55, -0.4, -0.65);
     (this.env.sun as any).__night = night;
     this.nightFactor = night;
     this.updateSky(hour, night);

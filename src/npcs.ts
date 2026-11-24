@@ -71,6 +71,15 @@ export class Human {
   hairCap: Mesh | null = null;
   /** rigged model: the hair meshes (hidden under a hard hat so they cannot clip through the dome as the head moves) */
   hairMeshes: Mesh[] = [];
+  /** the spacesuit for the finale: a glass helmet, neck ring and life-support pack, with the clothes turned white and the hard hat, vest and glasses put away */
+  suitParts: Mesh[] = []; suitOn = false; private ppeOn = false;
+  private suitBase: { re: RegExp; hex: string }[] = []; private suitCloth: any[] = [];
+  setSuit(on: boolean) {
+    this.suitOn = on;
+    this.suitParts.forEach((p) => p.setEnabled(on));
+    for (const mt of this.suitCloth) { const base = this.suitBase.find((s) => s.re.test(String(mt.name).replace(/_c\d+$/, ""))); mt.set(on ? "#eef1f4" : base?.hex ?? "#808080"); }
+    if (on) this.ppe.forEach((x) => x.setEnabled(false)); else this.setPPE(this.ppeOn);
+  }
   phase = Math.random() * 6;
   walking = false;
   /** sitting pose (thighs forward, knees bent, hands on the controls) */
@@ -230,6 +239,19 @@ export class Human {
       }
       add(MeshBuilder.CreateBox("glb", { width: 0.03, height: 0.01, depth: 0.02 }, sc), "#15171a", "Head", 0, -0.153, 0.108);
     }
+    // spacesuit parts (hidden until setSuit(true)); they are not part of the PPE set
+    {
+      const sp: Mesh[] = [];
+      const helm = add(MeshBuilder.CreateSphere("helm", { diameter: 0.4, segments: 18 }, sc), "#ffffff", "Head", 0, -0.115, 0.01);
+      const gm = new StandardMaterial("helmglass", sc); gm.diffuseColor = new Color3(0.72, 0.86, 0.95); gm.alpha = 0.3; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 40; helm.material = gm; sp.push(helm);
+      sp.push(add(MeshBuilder.CreateCylinder("hring", { diameter: 0.28, height: 0.07, tessellation: 20 }, sc), "#e6eaee", "Head", 0, -0.3, 0.0));
+      sp.push(add(MeshBuilder.CreateBox("lpack", { width: 0.38, height: 0.52, depth: 0.2 }, sc), "#e6eaee", "Spine2", 0, -0.02, -0.22));
+      sp.push(add(MeshBuilder.CreateBox("lpackb", { width: 0.3, height: 0.1, depth: 0.22 }, sc), "#9aa3ad", "Spine2", 0, -0.2, -0.22));
+      sp.push(add(MeshBuilder.CreateBox("lchest", { width: 0.18, height: 0.13, depth: 0.04 }, sc), "#e07010", "Spine2", 0, 0.04, 0.16));
+      sp.forEach((m) => m.setEnabled(false)); this.suitParts = sp; this.ppe = this.ppe.filter((x) => !sp.includes(x));
+      this.suitBase = [{ re: /^Brown(?!2)/, hex: o.shirt }, { re: /^Beige/, hex: o.shirt }, { re: /^LightBlue/, hex: o.pants }];
+      this.suitCloth = (c.materials as any[]).filter((mt) => this.suitBase.some((s) => s.re.test(String(mt.name).replace(/_c\d+$/, ""))));
+    }
     this.chParts = parts;
     this.ppeLocal = new Vector3();
     const sc0 = o.scale ?? 1;
@@ -343,7 +365,7 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
-  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); }
+  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {

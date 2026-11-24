@@ -32,6 +32,9 @@ export interface Rig {
   /** the off-location windmill: spinning (true) or braked (false) */
   setWindmill(on: boolean): void;
   heliState: { phase: "hidden" | "landing" | "landed" | "leaving"; node: TransformNode };
+  /** the finale's space shuttle: it comes down on the helipad, waits for you, then launches */
+  shuttleState: { phase: "hidden" | "landing" | "landed" | "launching"; node: TransformNode; v: number; t: number };
+  buildShuttle(): TransformNode;
   deerNode: TransformNode;
   windsock: TransformNode;
 }
@@ -1084,6 +1087,29 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     ell("yellow", 0, 0.62, 1.85, 0.5, 0.05, 0.12);                                  // a landing-light strip in the nose
   }
   heli.setEnabled(false);
+  // the space shuttle stack (vertical, nose up): orange external tank, two white boosters, and the orbiter against the tank. Origin = the base of the stack.
+  const shuttle = node("shuttle", scene, 63, 0.17, 57.5);
+  const flames: Mesh[] = [];
+  {
+    const put = (m: Mesh, mat: string, x: number, y: number, z: number) => { m.material = b.getMat(mat); m.parent = shuttle; m.position.set(x, y, z); m.isPickable = false; return m; };
+    const cyl = (mat: string, x: number, y: number, z: number, dTop: number, dBot: number, h: number) => put(MeshBuilder.CreateCylinder("shc", { diameterTop: dTop, diameterBottom: dBot, height: h, tessellation: 24 }, scene), mat, x, y, z);
+    const box = (mat: string, x: number, y: number, z: number, w: number, h: number, d: number) => put(MeshBuilder.CreateBox("shb", { width: w, height: h, depth: d }, scene), mat, x, y, z);
+    cyl("orange", 0, 15, 0, 4.2, 4.2, 26); cyl("orange", 0, 31, 0, 0.5, 4.2, 6);                  // external tank and its nose
+    for (const s of [-1, 1]) { cyl("white", s * 3.7, 12, 0, 2.4, 2.4, 22); cyl("white", s * 3.7, 25, 0, 0.3, 2.4, 4); cyl("black", s * 3.7, 0.9, 0, 1.4, 2.0, 1.6); cyl("steel", s * 2.0, 15, 0, 0.5, 0.5, 14); }   // boosters, noses, nozzles, struts
+    cyl("white", 0, 11, 3.9, 3.4, 3.4, 18); cyl("white", 0, 22.5, 3.9, 0.5, 3.4, 5);              // orbiter fuselage and nose
+    cyl("black", 0, 22.5, 3.9, 0.2, 3.5, 5.2).scaling.set(0.99, 0.99, 0.99);                      // (dark underside tiles hint)
+    box("glass", 0, 20.2, 5.5, 2.0, 1.2, 0.5);                                                    // cockpit windows
+    box("white", 0, 4.5, 4.1, 12.5, 0.4, 7.5); box("black", 0, 4.3, 4.1, 12.7, 0.2, 7.7);       // delta wing, black underside
+    box("white", 0, 6.5, 8.0, 0.45, 8, 3.6);                                                      // vertical tail
+    for (const s of [-1, 1]) cyl("dsteel", s * 1.1, 1.6, 3.6, 1.0, 1.4, 2.0);                    // main engines
+    for (const [x, z, d, h] of [[0, 3.6, 3.2, 3], [-3.7, 0, 2.2, 2.6], [3.7, 0, 2.2, 2.6]] as number[][]) {
+      const f = MeshBuilder.CreateCylinder("shflame", { diameterTop: d, diameterBottom: 0.2, height: 1, tessellation: 12 }, scene);
+      const fm = new StandardMaterial("shfm", scene); fm.disableLighting = true; fm.emissiveColor = new Color3(1, 0.6, 0.2); fm.alpha = 0.85; fm.backFaceCulling = false; fm.fogEnabled = false;
+      f.material = fm; f.parent = shuttle; f.position.set(x, 0, z); f.scaling.set(1, 0.0001, 1); f.isPickable = false; flames.push(f);
+    }
+  }
+  shuttle.setEnabled(false);
+  const shuttleState: Rig["shuttleState"] = { phase: "hidden", node: shuttle, v: 0, t: 0 };
   // a proper raised concrete pad (well clear of the ground surface so nothing flickers), with a painted ring and an H
   b.slab("dsteel", 56, 0.0, 54, 70, 0.16, 68, true);
   b.cyl("yellow", 63, 0.17, 61, 8, 0.02, { tess: 32 });
@@ -1261,6 +1287,20 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       if (d < 0.15) w.i = (w.i + 1) % w.pts.length;
       else { p.x += (dx / d) * w.speed * dt; p.z += (dz / d) * w.speed * dt; pushOutXZ(b.colliders, p, p.y, 0.35); w.h.root.rotation.y = Math.atan2(dx, dz); w.h.animate(dt, w.speed * 2); }
     }
+    // space shuttle: lands on the pad on its engines, waits, then climbs away on a column of fire
+    if (shuttleState.phase !== "hidden") {
+      let flame = 0;
+      if (shuttleState.phase === "landing") {
+        shuttleState.v = Math.min(55, 55 * Math.max(0.12, (shuttle.position.y - 0.17) / 110)); shuttle.position.y = Math.max(0.17, shuttle.position.y - shuttleState.v * dt);
+        flame = Math.min(1, (shuttle.position.y - 0.17) / 20 + 0.35);
+        if (shuttle.position.y <= 0.18) { shuttleState.phase = "landed"; }
+      } else if (shuttleState.phase === "launching") {
+        shuttleState.t += dt; shuttleState.v += 9 * dt; shuttle.position.y += shuttleState.v * dt; flame = 1;
+        shuttle.rotation.z = Math.sin(shuttleState.t * 31) * 0.004 * Math.min(1, shuttleState.t);
+        if (shuttle.position.y > 700) { shuttleState.phase = "hidden"; shuttle.setEnabled(false); }
+      }
+      flames.forEach((fl, i) => { const L = (i === 0 ? 28 : 24) * flame * (0.85 + Math.random() * 0.3); fl.scaling.set(1 + Math.random() * 0.12, Math.max(0.0001, L), 1 + Math.random() * 0.12); fl.position.y = -L / 2 + 0.6; });
+    }
     // helicopter
     if (heliState.phase === "landing") {
       heli.position.y = Math.max(1.28, heli.position.y - dt * 12);
@@ -1282,6 +1322,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   return {
     spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update,
     setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); }, setWindmill: (on) => { wmTarget = on ? 2.1 : 0; },
-    heliState, deerNode, windsock,
+    heliState, shuttleState, buildShuttle: () => shuttle, deerNode, windsock,
   };
 }

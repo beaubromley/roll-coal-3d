@@ -265,11 +265,12 @@ export function defineMissions(g: Game) {
           { label: "Where do I sign?", cls: "green", run: () => { g.radio("earl", "Well, boss. It's been a good tour."); done(); } },
         ], "Incoming call — Priority One");
       } },
-      { text: "Board the helicopter at the helipad", at: sy(S.helipad), label: "Board the helicopter", r: 7, enter: () => { g.rig.heliState.node.setEnabled(true); g.rig.heliState.node.position.set(70, 80, 60); g.rig.heliState.phase = "landing"; g.radio("president", "A chopper is en route. Godspeed, Company Man.", 8000); },
-        act: (done) => { if (g.rig.heliState.phase !== "landed") { g.ui.toast("HOLD ON", "The helicopter is still landing"); return; } if (g.active) g.active.m.title = "Armageddon"; g.callUp(done); } },
-      { text: "Walk to the drill console on the asteroid", at: () => g.arm.console, label: "Take the driller's seat", r: 4, act: () => g.openArm(), watch: () => g.arm.depth > 0 },
-      { text: "Drill 800 feet through the asteroid", watch: () => g.arm.depth >= 800 },
-      { text: "Plant the bomb and detonate", at: () => g.arm.console, label: "Detonate", r: 4, act: () => g.openArm() },
+      { text: "Board the space shuttle at the helipad", at: sy(S.helipad), label: "Board the shuttle", r: 9, enter: () => { g.finale.callShuttle(); },
+        act: (done) => { if (g.rig.shuttleState.phase !== "landed") { g.ui.toast("HOLD ON", "The shuttle is still coming down"); return; } if (g.active) g.active.m.title = "Armageddon"; g.finale.launch(done); } },
+      { text: "Get in the Armadillo", at: () => g.finale.armPos, label: "Climb into the Armadillo", r: 5, act: (done) => { g.finale.startDrive(); done(); } },
+      { text: "Drive to Harry's rig: hit the ramp fast and hold SPACE for thrusters to jump the canyon", at: () => g.finale.siteTarget(), watch: () => g.finale.arrived },
+      { text: "Drill 800 feet at the console", at: () => g.arm.console, label: "Take the driller's seat", r: 4, act: () => g.openArm(), watch: () => g.arm.depth >= 799.5 },
+      { text: "The detonator is smashed. Draw straws.", watch: () => !!g.flags.finish },
     ] });
 
   g.missionTotal = g.queue.length;

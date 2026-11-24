@@ -298,7 +298,7 @@ export class Sim {
       case "killing": this.stepKill(dt); s.stats.npt += dt / 60; break;
       case "casing": {
         s.rop = 0;
-        const rate = s.casing.phase === "run" ? 1 / (14 * 60) : 1 / (4 * 60);
+        const rate = s.casing.phase === "run" ? 1 / (6 * 60) : 1 / (2 * 60);   // about 36 s to run the casing and 12 s to cement it at the casing time scale
         s.casing.progress += rate * dt;
         if (s.casing.progress >= 1) {
           if (s.casing.phase === "run") { s.casing = { progress: 0, phase: "cement" }; }

@@ -118,6 +118,8 @@ export class UI {
     $("mission").style.display = "block";
   }
   idleObjective = false;
+  /** change just the second line of the objective (live progress) */
+  setSub(text: string) { $("msub").textContent = text; }
   /** keep the standing objective current (depth to go) while no job is active */
   tickIdleObjective(text: string) { if (this.idleObjective) $("msub").textContent = text; }
   setPrompt(label: string | null) {

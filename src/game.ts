@@ -742,7 +742,7 @@ export class Game {
     const starMat = mat(starT); starMat.alpha = 0;
     const stars = MeshBuilder.CreateSphere("stars", { diameter: 1700, segments: 16, sideOrientation: Mesh.BACKSIDE }, sc);
     stars.material = starMat; stars.infiniteDistance = true; stars.isPickable = false; stars.alwaysSelectAsActiveMesh = true; stars.renderingGroupId = 0;
-    starT.uScale = 2; starT.vScale = 1;
+    starT.uScale = 2; starT.vScale = 1; starT.wrapU = 1; starT.wrapV = 1;   // repeat (dynamic textures clamp by default, which left the second half of the sky empty)
     this.sky = { sun, sunMat, moon, glow, stars, starMat };
   }
   private updateSky(hour: number, night: number) {
@@ -1239,6 +1239,10 @@ export class Game {
     if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(this.sim.s.depth > 8000 && !this.flags.chainDone ? `Drill to TD, and finish the open jobs (${this.queue.filter((m) => !m.priority && m.id !== "armageddon").length} left)` : `Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
     // roofs vanish while you are inside the room under them
     { const pp = p.pos; for (const r of this.rig.roofs) { const inside = pp.x > r.x0 && pp.x < r.x1 && pp.z > r.z0 && pp.z < r.z1 && pp.y > r.y0 && pp.y < r.y1; if (inside === r.mesh.isEnabled()) r.mesh.setEnabled(!inside); } }
+    // casing and cement: show live progress, since there is nothing to click while it runs
+    if (this.sim.s.mode === "casing" && this.started && !this.flags.finish) {
+      const cs = this.sim.s.casing; this.ui.setSub((cs.phase === "run" ? "Running casing: " : "Pumping cement: ") + Math.round(cs.progress * 100) + "%");
+    }
     // district banner
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }

@@ -653,11 +653,11 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("tank", CP.x0, 0.2, CP.z0, CP.x0 + 0.12, 1.3, CP.z1, true); b.slab("tank", CP.x1 - 0.12, 0.2, CP.z0, CP.x1, 1.3, CP.z1, true);
   b.slab("cuttings", CP.x0 + 0.12, 0.2, CP.z0 + 0.12, CP.x1 - 0.12, 0.85, CP.z1 - 0.12);
   for (const cx of [-16.6, -14.1, -11.6]) b.cyl("cuttings", cx, 1.05, -27.9, 1.7, 0.7, { tess: 12, dia2: 0.3 });
-  b.label("CUTTINGS PIT", -14.2, 1.9, -26.9, 2.6, 0.6, Math.PI, "#233a52", "#ffd24a", 54);
+  b.label("CUTTINGS PIT", -10.33, 0.78, -28.9, 2.6, 0.5, Math.PI / 2, "#233a52", "#ffd24a", 50);   // on the east side wall, clear of the chutes
 
-  // ---- two decanting centrifuges on stands as high as the pits, each with a solids tank underneath its discharge and a level centrate line into the active tanks ----
-  const centri = (cx: number, n: number) => {
-    const cz = -23.4, Y = 2.78, CY = 2.4;
+  // ---- a decanting centrifuge on a stand as high as the pits, with a solids tank underneath its discharge and a level centrate line into the last active tank ----
+  const centri = (cx: number, cz: number, n: number) => {
+    const Y = 2.78, CY = 2.4;
     // stand: legs, bracing, a walkable deck level with the pit roofs, rails, and a stair down on the south side
     b.slab("deck", cx - 2.9, Y - 0.2, cz - 1.5, cx + 2.0, Y, cz + 2.6, true);
     for (const px of [cx - 2.7, cx + 1.8]) for (const pz of [cz - 1.3, cz + 2.4]) b.slab("dsteel", px - 0.12, 0, pz - 0.12, px + 0.12, Y - 0.2, pz + 0.12, true);
@@ -693,12 +693,11 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     // the solids heap under the chute is visible through the chute throat
     b.cyl("cuttings", cx + 2.28, 1.62, cz, 0.45, 0.14, { tess: 10, dia2: 0.3 });
   };
-  centri(-27.0, 1); centri(-37.0, 2);
+  centri(13.0, -31.0, 1);                                           // one centrifuge, down the back of the pits toward the mud hopper
   // centrate lines run level at the height of the active tanks and go into their back walls
   const CY2 = 2.4;
-  b.beam("steel", v(-27.0, CY2, -22.3), v(-27.0, CY2, -20.5), 0.18); b.beam("steel", v(-37.0, CY2, -22.3), v(-37.0, CY2, -20.5), 0.18);
-  b.beam("steel", v(-37.0, CY2, -20.5), v(-17.95, CY2, -20.5), 0.18);                            // one centrate header straight into the west wall of the first pit
-  for (const px of [-37.0, -32.0, -27.0, -23.5, -19.5]) b.slab("dsteel", px - 0.06, 0, -20.56, px + 0.06, CY2 - 0.1, -20.44);
+  b.beam("steel", v(13.0, CY2, -29.9), v(13.0, CY2, -26.05), 0.18);                          // centrate goes straight into the back wall of the last pit
+  for (const pz of [-28.6, -27.0]) b.slab("dsteel", 13.0 - 0.06, 0, pz - 0.06, 13.0 + 0.06, CY2 - 0.1, pz + 0.06);
 
   // shale-shaker spot stays on the first pit roof
   spots.shakers = v(-13.7, 4.0, -19.9);

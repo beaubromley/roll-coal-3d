@@ -1019,7 +1019,7 @@ export class Game {
     }
     if (!this.active) {
       const head = this.queue.find((m) => !m.priority);
-      const held = this.sim.hold === 8300 && !this.flags.chainDone;     // held off bottom: do not wait on job timers
+      const held = this.sim.s.depth > 8000 && !this.flags.chainDone;   // close to TD: the remaining jobs start straight away instead of waiting on their timers
       if (head && (head.trigger() || held)) { this.queue.splice(this.queue.indexOf(head), 1); this.beginMission(head); }
       else if (this.stack.length) this.nextFromStack();
     }
@@ -1029,9 +1029,10 @@ export class Game {
       if (st.watch && st.watch()) this.stepDone();
     }
     // release the hold chain: once all scripted jobs before the finale are done
-    if ((this.holdPending || this.sim.hold === 8300) && !this.flags.chainDone && !this.queue.some((m) => !m.priority && m.id !== "armageddon") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
+    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.queue.some((m) => !m.priority && m.id !== "armageddon") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
     // hold the bit off bottom while the cast of characters is still queued
-    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.sim.hold) { this.sim.hold = 8300; this.holdPending = true; this.radio("dale", "We're 200 feet off TD. Holding here till you've handled whatever's on your plate, boss. Check the arrows: every open job has to be done before we drill the last 200.", 12000); }
+    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.flags.nearTD) { this.flags.nearTD = true; this.radio("dale", "Two hundred feet to TD, boss. Keep drilling. Wrap up whatever's on your plate and the finale starts when you're clear.", 11000); }
+    if (this.sim.hold === 8300) this.sim.hold = null;   // saves from the old version came back stuck at 8,300 ft
     // random scripted hazards
     if (this.sim.s.depth >= 6600 && !this.flags.accumFault) { this.flags.accumFault = true; this.sim.accumDead = true; this.sim.s.accum = 900; }
     if (this.sim.s.depth >= 6900 && !this.flags.accumHint) { this.flags.accumHint = true; this.radio("dale", "Hey boss, somebody ought to walk the accumulator before we get into that gas zone.", 10000); }
@@ -1235,7 +1236,7 @@ export class Game {
     this.ui.drawMap(p.pos.x, p.pos.z, p.yaw, markers.map((m) => ({ x: m.pos.x, z: m.pos.z, color: m.color })));
     const target = markers[0]?.pos ?? null; void target;
 
-    if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(this.sim.hold === 8300 && !this.flags.chainDone ? `Held at 8,300 ft: finish the open jobs (${this.queue.filter((m) => !m.priority && m.id !== "armageddon").length} left)` : `Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
+    if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(this.sim.s.depth > 8000 && !this.flags.chainDone ? `Drill to TD, and finish the open jobs (${this.queue.filter((m) => !m.priority && m.id !== "armageddon").length} left)` : `Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
     // roofs vanish while you are inside the room under them
     { const pp = p.pos; for (const r of this.rig.roofs) { const inside = pp.x > r.x0 && pp.x < r.x1 && pp.z > r.z0 && pp.z < r.z1 && pp.y > r.y0 && pp.y < r.y1; if (inside === r.mesh.isEnabled()) r.mesh.setEnabled(!inside); } }
     // district banner

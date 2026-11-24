@@ -1019,8 +1019,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     sk.material = b.getMat("dsteel"); sk.parent = heli; sk.position.y = -1.2;
   }
   heli.setEnabled(false);
-  b.slab("dsteel", 56, 0.0, 54, 70, 0.06, 68);
-  b.cyl("yellow", 63, 0.07, 61, 8, 0.02, { tess: 24 });
+  // a proper raised concrete pad (well clear of the ground surface so nothing flickers), with a painted ring and an H
+  b.slab("dsteel", 56, 0.0, 54, 70, 0.16, 68, true);
+  b.cyl("yellow", 63, 0.17, 61, 8, 0.02, { tess: 32 });
+  b.cyl("dsteel", 63, 0.175, 61, 7.5, 0.02, { tess: 32 });
+  for (const sx of [-1.4, 1.4]) b.slab("white", 63 + sx - 0.2, 0.17, 59.0, 63 + sx + 0.2, 0.19, 63.0);
+  b.slab("white", 61.6, 0.17, 60.8, 64.4, 0.19, 61.2);
   spots.helipad = v(63, 1.0, 61);
 
   // deer
@@ -1194,9 +1198,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     }
     // helicopter
     if (heliState.phase === "landing") {
-      heli.position.y = Math.max(0.7, heli.position.y - dt * 12);
+      heli.position.y = Math.max(0.82, heli.position.y - dt * 12);
       heli.position.x += (63 - heli.position.x) * Math.min(1, dt * 0.8); heli.position.z += (61 - heli.position.z) * Math.min(1, dt * 0.8);
-      if (heli.position.y <= 0.75) heliState.phase = "landed";
+      if (heli.position.y <= 0.87) heliState.phase = "landed";
     } else if (heliState.phase === "leaving") {
       heli.position.y += dt * 14; heli.position.x += dt * 18;
       if (heli.position.y > 90) { heliState.phase = "hidden"; heli.setEnabled(false); }

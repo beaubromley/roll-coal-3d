@@ -325,11 +325,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.rail("yellow", -3.0, 1.8, -3.0, 1.95, FB, 1.1);
   b.rail("yellow", -3.0, 5.8, -0.5, 5.8, FB, 1.1); b.rail("yellow", 0.5, 5.8, 3.0, 5.8, FB, 1.1);             // latches / back rail
   b.rail("yellow", -0.5, 6.0, 0.5, 6.0, FB, 1.1);                                                               // chain across the walkway end (the Geronimo post is right beside it)
-  // stabbing board on the mast face, at the top drive
-  b.slab("steel", -1.4, FB, -0.1, 1.4, FB + 0.12, 1.8); b.blocker(-1.4, FB - 0.15, -0.1, 1.4, FB + 0.12, 1.8);
-  // (no rails around the top drive end of the stabbing board)
-  for (const x of [-1.2, 1.2]) b.beam("dsteel", v(x, FB - 0.05, 1.2), Vector3.Lerp(v(x * 1.6, F, 1.2), v(x * 0.6, 46, 0.4), 0.66), 0.05);   // support struts to the mast
-  b.label("STABBING BOARD", 0, FB + 0.75, 1.76, 1.5, 0.3, Math.PI, "#233a52", "#ffd24a", 38);
+  // (the little platform at the top drive end of the board is gone: the board starts at the walkway)
   // ladder through the stabbing board hatch: floor -> board at (0, 1.45), struts back to the mast
   b.beam("steel", v(-3.45, F, 2.12), v(-3.45, FB + 1.2, 2.12), 0.07); b.beam("steel", v(-3.45, F, 2.68), v(-3.45, FB + 1.2, 2.68), 0.07);
   for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", -3.45, y, 2.4, 0.035, 0.035, 0.56);
@@ -1008,6 +1004,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   ];
 
   let tdY = F + 24;
+  // the top drive and the travelling block are solid: boxes (world axes: the rig is turned, local x -> world z, local z -> world -x) that ride up and down with them
+  const tdBox: AABB = { x0: -0.7, x1: 0.75, z0: -0.75, z1: 0.75, y0: 0, y1: 0 };
+  const blockBox: AABB = { x0: -0.18, x1: 0.78, z0: -0.8, z1: 0.8, y0: 0, y1: 0 };
+  b.colliders.push(tdBox, blockBox);
   const tmpQ = new Quaternion();
   let scrT = 0;
   const update = (dt: number, f: RigFrame) => {
@@ -1018,6 +1018,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       : f.connecting ? F + 26 : F + 2.6 + (1 - into / 93) * 24;
     tdY += (targetY - tdY) * Math.min(1, dt * (f.connecting || f.tripping ? 2.5 : 8));
     td.position.y = tdY;
+    tdBox.y0 = tdY - 2.3; tdBox.y1 = tdY + 1.8; blockBox.y0 = tdY + 2.85; blockBox.y1 = tdY + 3.9;
     tdSpin.rotation.y += f.rotating ? dt * 5 : 0;
     rotMark.rotation.y += f.rotating ? dt * 5 : 0;
     const blockY = tdY + 3.1;

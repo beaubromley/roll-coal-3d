@@ -563,7 +563,7 @@ export class Vehicles {
     if (c.y >= FB - 0.01 && dir > 0.2) { this.finishClimb(true); return; }
     if (c.y <= F + 0.01 && dir < -0.2) { this.finishClimb(false); return; }
     c.y = Math.max(F, Math.min(FB, c.y));
-    const cp = rv(-3.0, c.y, 2.4); p.pos.set(cp.x, cp.y, cp.z); p.vel.setAll(0); p.grounded = true;
+    const cp = rv(-3.95, c.y, 2.4); p.pos.set(cp.x, cp.y, cp.z); p.vel.setAll(0); p.grounded = true;
     const eye = new Vector3(cp.x, c.y + 1.5, cp.z);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     this.hud.textContent = `CLIMBING   ${Math.round(c.y * 3.281)} FT\nW/S climb  ·  SHIFT climb faster  ·  keep going to the top or bottom`;

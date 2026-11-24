@@ -17,14 +17,15 @@ let lastHist = -1;
 
 /** Owns one canvas texture per monitor and redraws them from live data. */
 export class Screens {
-  private list: { kind: ScreenKind; mirror: boolean; tex: DynamicTexture; ctx: CanvasRenderingContext2D }[] = [];
+  private list: { kind: ScreenKind; mirror: boolean; tex: DynamicTexture; ctx: CanvasRenderingContext2D; w: number; h: number }[] = [];
   constructor(private scene: Scene) {}
 
   make(kind: ScreenKind, mirror = false): DynamicTexture {
-    const tex = new DynamicTexture("scr_" + kind + this.list.length, { width: W, height: H }, this.scene, true);
+    const w = kind === "edr" ? 640 : W, h = kind === "edr" ? 364 : H;   // the EDR wall TV is big enough to deserve real resolution
+    const tex = new DynamicTexture("scr_" + kind + this.list.length, { width: w, height: h }, this.scene, true);
     tex.anisotropicFilteringLevel = 8;
     const ctx = tex.getContext() as CanvasRenderingContext2D;
-    this.list.push({ kind, mirror, tex, ctx });
+    this.list.push({ kind, mirror, tex, ctx, w, h });
     return tex;
   }
 
@@ -34,8 +35,9 @@ export class Screens {
       push(hist.rop, d.rop); push(hist.wob, d.wob); push(hist.spp, d.spp);
       push(hist.gr, 70 + 35 * Math.sin(d.depth / 90) + 14 * Math.sin(d.depth / 17) + (Math.random() - 0.5) * 12);
       push(hist.res, 8 + 5 * Math.sin(d.depth / 130 + 1) + (Math.random() - 0.5) * 2);
+      pushEdr(d);
     }
-    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(W, 0); c.scale(-1, 1); } draw(s.kind, c, d); c.restore(); s.tex.update(); }
+    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(s.w, 0); c.scale(-1, 1); } if (s.kind === "edr") drawEdr(c, d, s.w, s.h); else draw(s.kind, c, d); c.restore(); s.tex.update(); }
   }
 }
 
@@ -80,25 +82,7 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
         c.fillStyle = TX; c.font = "9px monospace"; c.textAlign = "center"; c.fillText(`${Math.round(lv * 760)}`, x + 17, 138); c.fillStyle = DIM; c.fillText(["ACT", "RSV", "TRIP", "SLUG"][i], x + 17, 150); }
       break;
     }
-    case "edr": {
-      frame(c, "EDR · RIG 107 · LIVE");
-      trace(c, hist.rop, 8, 26, 148, 34, 380, GR); trace(c, hist.wob, 8, 66, 148, 34, 60, CY); trace(c, hist.spp, 8, 108, 240, 40, 4000, AM);
-      c.font = "bold 9px monospace"; c.textAlign = "left"; c.fillStyle = GR; c.fillText(`ROP ${Math.round(d.rop)}`, 12, 33); c.fillStyle = CY; c.fillText(`WOB ${Math.round(d.wob)}`, 12, 73); c.fillStyle = AM; c.fillText(`SPP ${Math.round(d.spp)}`, 12, 115);
-      c.fillStyle = TX; c.textAlign = "right"; c.fillText(`${Math.round(d.depth)} FT`, W - 8, 9);
-      // rig-floor camera footage, top right: dusk sky, mast, and a top drive that rides up and down with the hole
-      { const x = 164, y = 24, w = 84, h = 76; c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
-        const g = c.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, "#27324a"); g.addColorStop(1, "#6b5a48"); c.fillStyle = g; c.fillRect(x, y, w, h);
-        c.strokeStyle = "#e8742a"; c.lineWidth = 3; c.beginPath(); c.moveTo(x + 26, y + h); c.lineTo(x + 38, y); c.moveTo(x + 58, y + h); c.lineTo(x + 46, y); c.stroke();
-        c.strokeStyle = "#cfd6dc"; c.lineWidth = 1; for (let k = 0; k < 6; k++) { const yy = y + 6 + k * 12; c.beginPath(); c.moveTo(x + 30 + k * 0.7, yy); c.lineTo(x + 54 - k * 0.7, yy + 6); c.stroke(); }
-        const ty = y + 12 + ((d.depth % 93) / 93) * 40 + (d.rotating ? Math.sin(d.t * 30) * 0.6 : 0);
-        c.fillStyle = "#c9ccd0"; c.fillRect(x + 36, ty, 12, 10); c.fillStyle = "#e8b923"; c.fillRect(x + 40, ty + 10, 4, y + h - ty - 22);
-        c.fillStyle = "#2a2f36"; c.fillRect(x, y + h - 14, w, 14); c.fillStyle = "#c4561a"; c.fillRect(x + 8, y + h - 24, 5, 10); c.fillRect(x + 66, y + h - 24, 5, 10);
-        c.fillStyle = "rgba(255,255,255,0.05)"; for (let k = 0; k < h; k += 3) c.fillRect(x, y + k, w, 1);
-        c.restore(); c.strokeStyle = GRID; c.strokeRect(x + 0.5, y + 0.5, w, h);
-        c.fillStyle = (Math.floor(d.t * 1.6) % 2) ? RD : "#5a1a14"; c.beginPath(); c.arc(x + 8, y + 7, 3, 0, 6.3); c.fill();
-        c.fillStyle = TX; c.font = "bold 8px monospace"; c.textAlign = "left"; c.fillText("CAM 1 · RIG FLOOR", x + 14, y + 8); }
-      break;
-    }
+    case "edr": break;   // drawn by drawEdr (it has its own, bigger canvas)
     case "news": {
       const heads = ["MAN WINS ARGUMENT WITH GPS, GPS DEMANDS RECOUNT", "BIGFOOT SPOTTED IN PERMIAN WALMART, BUYS ONLY ICE", "SENATOR CHALLENGES THE MOON TO A DEBATE", "GOAT ELECTED MAYOR; VOTER TURNOUT UP 400%", "SCIENTISTS CONFIRM MONDAY STILL MONDAY", "LOCAL TRUCK 'JUST NEEDS A LITTLE FREON'", "TOWN BANS SUNDAY AFTER 'TOO MANY MONDAYS'", "EXPERT: PROBABLY FINE. ANOTHER EXPERT: PROBABLY NOT",
         "TAXES: STILL EVIL, EXPERTS CONFIRM", "BREAKING: TAXES FOUND TO BE THE DEVIL'S ARITHMETIC", "WHY ARE TAXES EVIL? 'JUST ARE,' SAYS PANEL", "NEW STUDY: ALL EVIL TRACES BACK TO THE TAX CODE", "TAX MAN SEEN CACKLING NEAR PERMIAN ROYALTY CHECK", "TAXES: THEY TAKE YOUR MONEY AND NEVER EVEN SAY THANKS"];
@@ -188,4 +172,70 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
       break;
     }
   }
+}
+
+// ---------------------------------------------------------------------------------------------------- the EDR: seven tracks of strip charts, time running down the screen, newest at the bottom
+const EDR_N = 150;
+interface Chan { name: string; unit: string; col: string; max: number; get: (d: ScreenData, s: { rop2: number; wob2: number }) => number; }
+const EDR: [Chan, Chan][] = [
+  [{ name: "Hookload", unit: "klb", col: "#6cb4ff", max: 750, get: (d) => 250 - d.wob * 1.2 + (d.rotating ? 0 : 40) },
+   { name: "Block Height", unit: "ft", col: "#d8dde3", max: 150, get: (d) => 20 + ((d.depth % 93) / 93) * 100 }],
+  [{ name: "Avg ROP", unit: "ft/hr", col: "#22c06a", max: 500, get: (d) => d.rop },
+   { name: "Offsets ROP", unit: "ft/hr", col: "#ff6a7a", max: 500, get: (_d, s) => s.rop2 }],
+  [{ name: "WOB", unit: "klb", col: "#ff6a7a", max: 100, get: (d) => d.wob },
+   { name: "Offsets WOB", unit: "klb", col: "#2fd0d0", max: 100, get: (_d, s) => s.wob2 }],
+  [{ name: "Diff Press", unit: "psi", col: "#e8d34a", max: 1500, get: (d) => (d.rotating ? 150 + d.wob * 11 : 0) },
+   { name: "Offsets Diff", unit: "psi", col: "#2fd0d0", max: 1500, get: (d) => (d.rotating ? 130 + d.wob * 9 : 0) }],
+  [{ name: "TD Torque", unit: "ft-lbs", col: "#6cb4ff", max: 75000, get: (d) => (d.rotating ? 12000 + d.wob * 380 : 0) },
+   { name: "TD Speed", unit: "rpm", col: "#f0922b", max: 120, get: (d) => (d.rotating ? 82 : 0) }],
+  [{ name: "Flow In", unit: "gpm", col: "#2fd0d0", max: 1000, get: (d) => d.flow },
+   { name: "Pump Pressure", unit: "psi", col: "#22c06a", max: 8000, get: (d) => d.spp }],
+  [{ name: "Total Volume", unit: "bbl", col: "#ff6a7a", max: 1000, get: (d) => d.pit },
+   { name: "Flow Out", unit: "%", col: "#22c06a", max: 100, get: (d) => Math.min(100, d.flow / 16 + (d.kicking ? 18 : 0)) }],
+];
+const edrHist: number[][] = [];
+const edrState = { rop2: 0, wob2: 0 };
+function pushEdr(d: ScreenData) {
+  edrState.rop2 += (d.rop * 0.5 - edrState.rop2) * 0.2; edrState.wob2 += (d.wob * 0.95 - edrState.wob2) * 0.2;
+  const first = edrHist.length === 0;
+  if (first) for (let i = 0; i < 14; i++) edrHist.push([]);
+  EDR.forEach((pair, ti) => pair.forEach((ch, ci) => {
+    const a = edrHist[ti * 2 + ci], v = Math.max(0, ch.get(d, edrState) + (Math.random() - 0.5) * ch.max * 0.012);
+    if (first) for (let i = 0; i < EDR_N; i++) a.push(v); else { a.push(v); if (a.length > EDR_N) a.shift(); }
+  }));
+}
+function drawEdr(c: CanvasRenderingContext2D, d: ScreenData, w: number, h: number) {
+  c.fillStyle = "#0b0e12"; c.fillRect(0, 0, w, h);
+  c.textBaseline = "middle"; c.lineWidth = 1;
+  // header
+  c.fillStyle = "#14181e"; c.fillRect(0, 0, w, 30); c.fillStyle = "#2a313a"; c.fillRect(0, 30, w, 1);
+  c.font = "bold 13px monospace"; c.textAlign = "left"; c.fillStyle = "#e6ebf0"; c.fillText("ARMADILLO 107", 10, 15);
+  c.font = "11px monospace"; c.fillStyle = "#8d98a5"; c.fillText("COMPANY MAN 1H", 118, 15);
+  c.fillStyle = "#8d98a5"; c.fillText("HOLE", 250, 15); c.fillStyle = "#e6ebf0"; c.font = "bold 13px monospace"; c.fillText(Math.round(d.depth).toLocaleString("en-US") + " ft", 288, 15);
+  c.fillStyle = "#8d98a5"; c.font = "11px monospace"; c.fillText("BIT", 374, 15); c.fillStyle = "#3ddc84"; c.font = "bold 13px monospace"; c.fillText(Math.round(d.depth).toLocaleString("en-US") + " ft", 400, 15);
+  c.fillStyle = "#8d98a5"; c.font = "11px monospace"; c.fillText("STATE", 490, 15); c.fillStyle = d.rotating ? "#3ddc84" : "#ffb02a"; c.font = "bold 13px monospace"; c.fillText(d.mode, 532, 15);
+  const live = Math.floor(d.t * 1.5) % 2 === 0; c.fillStyle = "#3ddc84"; c.font = "bold 10px monospace"; c.textAlign = "right"; c.fillText("LIVE", w - 8, 15); c.fillStyle = live ? "#3ddc84" : "#1b5a38"; c.beginPath(); c.arc(w - 40, 15, 3, 0, 6.3); c.fill();
+  // layout
+  const top = 34, tl = 36, bottom = 52, gap = 3, tw = (w - tl - gap * 8) / 7, ph = h - top - bottom;
+  c.fillStyle = "#8d98a5"; c.font = "9px monospace"; c.textAlign = "left";
+  const mins0 = 11 * 60 + 5 + d.t / 60;
+  for (let k = 0; k < 5; k++) { const y = top + 8 + (k / 4) * (ph - 16), m = mins0 - (4 - k) * 12, hh = Math.floor(m / 60) % 24, mm = Math.floor(m % 60); c.fillText(String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0"), 3, y); }
+  EDR.forEach((pair, ti) => {
+    const x = tl + gap + ti * (tw + gap);
+    c.fillStyle = "#0e1217"; c.fillRect(x, top, tw, ph); c.strokeStyle = "#252c35"; c.strokeRect(x + 0.5, top + 0.5, tw - 1, ph - 1);
+    c.strokeStyle = "#1a2028"; for (let k = 1; k < 5; k++) { const y = Math.round(top + (k / 5) * ph) + 0.5; c.beginPath(); c.moveTo(x, y); c.lineTo(x + tw, y); c.stroke(); }
+    for (let k = 1; k < 4; k++) { const xx = Math.round(x + (k / 4) * tw) + 0.5; c.beginPath(); c.moveTo(xx, top); c.lineTo(xx, top + ph); c.stroke(); }
+    pair.forEach((ch, ci) => {
+      const a = edrHist[ti * 2 + ci]; if (!a) return;
+      c.strokeStyle = ch.col; c.lineWidth = 1.3; c.beginPath();
+      a.forEach((v, i) => { const px = x + 3 + Math.max(0, Math.min(1, v / ch.max)) * (tw - 6), py = top + (i / (EDR_N - 1)) * ph; i ? c.lineTo(px, py) : c.moveTo(px, py); }); c.stroke();
+    });
+    // readouts under the track: label small, value big, coloured like the trace
+    pair.forEach((ch, ci) => {
+      const y = top + ph + 3 + ci * 24, a = edrHist[ti * 2 + ci], v = a ? a[a.length - 1] : 0;
+      c.fillStyle = "#12171d"; c.fillRect(x, y, tw, 22); c.fillStyle = ch.col; c.fillRect(x, y, 2, 22);
+      c.font = "8px monospace"; c.textAlign = "center"; c.fillText(`${ch.name} (${ch.unit})`, x + tw / 2, y + 5);
+      c.font = "bold 12px monospace"; c.fillText(ch.max >= 10000 ? String(Math.round(v)) : v >= 100 ? v.toFixed(0) : v.toFixed(1), x + tw / 2, y + 16);
+    });
+  });
 }

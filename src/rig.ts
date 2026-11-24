@@ -1405,7 +1405,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // walker paths
   const huddleHold = { on: false };
   const walkers = [
-    { h: humans.hand3, pts: [v(2.1, 0, 20), v(2.1, 0, 36), v(-2.1, 0, 36), v(-2.1, 0, 20), v(-2.1, 0, 36), v(2.1, 0, 36)].map(rpos), i: 0, speed: 1.1 },
+    { h: humans.hand3, pts: [v(2.1, 0, 20), v(2.1, 0, 29.5)].map(rpos), i: 0, speed: 1.1 },
     { h: humans.hand1, pts: [v(-0.4, F, 2.9), v(-0.4, F, 4.6), v(0.4, F, 4.6), v(0.4, F, 2.9)].map(rpos), i: 0, speed: 0.8 },
   ];
 

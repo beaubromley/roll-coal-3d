@@ -326,22 +326,22 @@ export class Finale {
     this.shakeAmt = 0.7; g.sfx.horn();
     g.ui.toast("ASTEROID STORM", "Debris is hitting the site");
     g.radio("nasa", "Harry, you've hit eight hundred! But the storm — we've lost the remote detonator signal.", 8000);
-    setTimeout(() => g.say("harry", "The circuit's smashed. Somebody has to stay behind and trigger the bomb by hand. Nobody likes it. We draw straws.", [
+    setTimeout(() => this.say("harry", "The circuit's smashed. Somebody has to stay behind and trigger the bomb by hand. Nobody likes it. We draw straws.", [
       { label: "Take the left straw", run: () => this.straw() }, { label: "Take the middle straw", run: () => this.straw() }, { label: "Take the right straw", cls: "alt", run: () => this.straw() },
     ], "The Straw Draw"), 3200);
   }
   private straw() {
     const g = this.g;
-    g.say("chick", "Short straw. It's A.J.'s. …Kid, I'm sorry.", [{ label: "…Okay.", run: () => {
-      g.say("harry", "Hold on. I'll take A.J. down and help him set it. He's never done this by hand.", [{ label: "Follow Harry to the airlock", run: () => this.airlock() }], "Harry");
+    this.say("chick", "Short straw. It's A.J.'s. …Kid, I'm sorry.", [{ label: "…Okay.", run: () => {
+      this.say("harry", "Hold on. I'll take A.J. down and help him set it. He's never done this by hand.", [{ label: "Follow Harry to the airlock", run: () => this.airlock() }], "Harry");
     } }], "The Straw Draw");
   }
   private airlock() {
     const g = this.g;
     $("fade").style.transition = "opacity .8s"; $("fade").style.background = "#000"; $("fade").style.opacity = "1";
     setTimeout(() => {
-      g.say("harry", "A.J. — look at me. You take care of my little girl. You're the son I never had.", [{ label: "Harry, what are you —", run: () => {
-        g.say("aj", "HARRY! HARRY, NO! Open the hatch! HARRY!", [{ label: "Watch Freedom lift off", run: () => this.liftoff() }], "The Airlock");
+      this.say("harry", "A.J. — look at me. You take care of my little girl. You're the son I never had.", [{ label: "Harry, what are you —", run: () => {
+        this.say("aj", "HARRY! HARRY, NO! Open the hatch! HARRY!", [{ label: "Watch Freedom lift off", run: () => this.liftoff() }], "The Airlock");
       } }], "The Surface");
     }, 900);
   }
@@ -371,6 +371,9 @@ export class Finale {
       });
     }, 1800);
   }
+
+  /** a scripted dialog: it cannot be dismissed with Esc or a click outside, so the scene can never stall on a closed box */
+  private say(who: string, text: string, choices: { label: string; cls?: string; run: () => void }[], eyebrow: string) { this.g.say(who, text, choices, eyebrow, { closable: false }); }
 
   // ------------------------------------------------------------------------------------------------ per frame
   update(dt: number) {

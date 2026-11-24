@@ -198,7 +198,7 @@ export class Game {
   // ---------- helpers ----------
   inc(n = 1, why = "") { this.incidents += n; this.approval = clamp(this.approval - 0.3 * n, 0, 5); this.sfx.bad(); if (why) this.ui.toast("INCIDENT", why); }
   gain(a = 0, m = 0) { this.approval = clamp(this.approval + a, 0, 5); this.morale = clamp(this.morale + m, 0, 100); }
-  say(who: Who, text: string, choices?: Choice[], eyebrow?: string) { this.player.enabled = false; this.player.unlock(); this.ui.say(who, text, choices, eyebrow); this.sfx.radio(); }
+  say(who: Who, text: string, choices?: Choice[], eyebrow?: string, opts?: { closable?: boolean }) { this.player.enabled = false; this.player.unlock(); this.ui.say(who, text, choices, eyebrow, opts); this.sfx.radio(); }
   radio(who: Who, text: string, ms?: number) { this.ui.radio(who, text, ms); this.sfx.radio(); }
   open(html: string, o: { wide?: boolean; live?: boolean; tick?: () => void } = {}) {
     this.player.enabled = false; this.player.unlock(); this.live = !!o.live;
@@ -978,21 +978,26 @@ export class Game {
       a.bit = Math.max(0, a.bit - 1.3 * Math.pow(a.wob / 20, 2.2) * f.abr * dt * 0.35);
       if (a.bit <= 0) { a.bit = 100; this.radio("rockhound", "Bit's cooked! Swapped it for a new one. Don't tell the President.", 6000); this.sim.addCost(50000); }
     }
-    for (const d of [50, 100, 150, 200, 250, 300, 400, 500, 550, 600, 625, 798, 799]) {
+    for (const d of [50, 100, 150, 200, 250, 300, 400, 500, 550, 600, 625, 750, 790]) {
       if (a.depth >= d && !a.said.has(d)) { a.said.add(d); this.armSpeech(d); }
     }
     if (a.pipe && this.arm.site) { a.pipe.scaling.y = 20 + a.depth * 0.02; a.pipe.position.y = 10 - a.depth * 0.005; }
   }
   armSpeech(d: number) {
     const L: Record<number, [Who, string, number?]> = {
-      50: ["president", "We are faced with the very gravest of challenges."], 100: ["chick", "You know, Harry, I swore I'd never drill again after that last one."],
-      150: ["bear", "If this thing blows, I want my last meal to be a Twinkie."], 200: ["bear", "You stick that drill in the ground, and you make it sing!"],
-      250: ["rockhound", "I'm not crazy, I'm just a little unwell."], 300: ["max", "I got a bad feeling about this rock, Harry."],
-      400: ["harry", "I can't do it alone, Colonel. I need your help."],
+      50: ["harry", "That's the crust, A.J. Easy part. Keep the weight steady and let the bit do the work."],
+      100: ["chick", "You know, Harry, I swore I'd never drill again after that last one."],
+      150: ["harry", "You're into solid iron now, son. Watch the bit health. Too much weight and you'll cook it."],
+      200: ["bear", "You stick that drill in the ground, A.J., and you make it sing!"],
+      250: ["rockhound", "I'm not crazy, I'm just a little unwell."],
+      300: ["nasa", "Harry, the debris field is getting thicker on your side of the rock. Keep it moving."],
+      400: ["harry", "Four hundred feet. Halfway, kid. You drill like you've been doing it thirty years."],
       500: ["rockhound", "Guess what guys, it's time to embrace the horror! Look, we've got front row tickets to the end of the earth!"],
-      550: ["chick", "Harry, you ever miss a depth?"], 600: ["harry", "Not once, Chick. Not once."],
-      625: ["harry", "I have been drilling holes in the earth for 30 years. And I have never, NEVER missed a depth that I have aimed for. And by God, I am not gonna miss this one — I will make 800 feet.", 11000],
-      798: ["president", "Mission accomplished. Godspeed, gentlemen."], 799: ["harry", "Yeah one more thing, um… none of them wanna pay taxes again."],
+      550: ["chick", "Harry, you ever miss a depth?"],
+      600: ["harry", "Not once, Chick. Not once."],
+      625: ["harry", "I have been drilling holes in the earth for thirty years. And I have never, NEVER missed a depth that I have aimed for. And by God, I am not gonna miss this one — we will make 800 feet.", 11000],
+      750: ["nasa", "Fifty feet to go, Harry. The storm is almost on top of you. Hurry."],
+      790: ["harry", "Ten more feet, A.J. Hold her steady. Hold her steady…"],
     };
     const e = L[d]; if (e) this.radio(e[0], e[1], e[2] ?? 7000);
   }

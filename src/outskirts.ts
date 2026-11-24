@@ -16,7 +16,7 @@ const HILLS: [number, number, number, number][] = [[150, -30, 8, 24], [198, -72,
 const POND = { x: -175, z: 165, rx: 27, rz: 20 };
 const FARM = { x: -64, z: 236 };                      // the house; its porch faces +x, toward the lease road
 const SILOS = { x: -93, z: 262 };
-const RIVAL = { x: -215, z: -150 };                   // Big Daddy Drilling
+const RIVAL = { x: -420, z: -300 };                   // Singularity Drilling
 const TACO = { x: -14, z: 118 };                      // by the gate
 const PASTURE = { x0: 70, x1: 230, z0: 115, z1: 305 };
 
@@ -30,6 +30,7 @@ export class Outskirts {
   private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
   private fish = { st: "idle" as "idle" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0 };
   private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh; private poleOwned = false;
+  private floorBots: { h: Human; x: number; z: number; ph: number; ang: number }[] = [];
   private hank!: Human; private lupe!: Human; private rusty!: Human;
   private nearCow = 0; private t = 0;
   private seen = new Set<string>();
@@ -61,6 +62,39 @@ export class Outskirts {
     this.merged = b.finish();
     this.colliders = b.colliders;
     this.cattle();
+    this.skyline();
+  }
+
+  // ---------------------------------------------------------------------------------------------- the skyline
+  /** layered mesas and cliffs round the horizon: sculpted ground, stepped like sedimentary strata, banded in rust, tan and brown */
+  private skyline() {
+    const sc = this.scene;
+    const mat = new StandardMaterial("cliffm", sc); mat.specularColor = Color3.Black(); mat.backFaceCulling = false;
+    const bands = ["#b0805c", "#9a6c4a", "#c4966c", "#8a5e42", "#d2a97c", "#7a5238", "#c0875f"].map((h) => Color3.FromHexString(h));
+    const smooth = (a: number, b: number, x: number) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+    const N = 72, count = 16;
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2 + 0.17, R = 560 + (i % 3) * 50, cx = Math.cos(ang) * R, cz = Math.sin(ang) * R;
+      if (Math.hypot(cx - RIVAL.x, cz - RIVAL.z) < 300) continue;
+      const W = 380 + ((i * 53) % 220), D = 190 + ((i * 37) % 90), H = 42 + ((i * 29) % 52), seed = i * 1.7;
+      const m = MeshBuilder.CreateGround("cliff" + i, { width: W, height: D, subdivisions: N, updatable: true }, sc);
+      const pos = m.getVerticesData(VertexBuffer.PositionKind)!, col = new Float32Array((pos.length / 3) * 4);
+      for (let k = 0; k < pos.length / 3; k++) {
+        const x = pos[k * 3], z = pos[k * 3 + 2], nx = x / (W / 2), nz = z / (D / 2);
+        const e = Math.pow(Math.pow(Math.abs(nx), 3.2) + Math.pow(Math.abs(nz), 3.2), 1 / 3.2), inside = 1 - e;
+        const n = Math.sin(x * 0.031 + seed) * 0.5 + Math.sin(z * 0.047 + x * 0.013 + seed) * 0.3 + Math.sin((x + z) * 0.083 + seed * 2) * 0.2;
+        const wob = Math.sin(x * 0.02 + seed * 3) * 0.045 + Math.sin(z * 0.05 + seed) * 0.03;   // the cliff line wanders
+        let h = H * smooth(0.0, 0.2, inside + wob) * (0.88 + 0.12 * n);
+        const step = H / 7; h = h * 0.4 + (Math.floor(h / step) * step + smooth(0.0, 1, (h % step) / step) * step * 0.35) * 0.6;   // terraces: ledges and talus
+        if (inside < 0.02) h = 0;
+        pos[k * 3 + 1] = h;
+        const band = Math.min(bands.length - 1, Math.floor((h / H) * bands.length * 1.15 + n * 0.7)), c = bands[Math.max(0, band)], dust = h < 4 ? 0.55 : 1;
+        col[k * 4] = c.r * dust + 0.05; col[k * 4 + 1] = c.g * dust + 0.04; col[k * 4 + 2] = c.b * dust + 0.03; col[k * 4 + 3] = 1;
+      }
+      m.updateVerticesData(VertexBuffer.PositionKind, pos); m.setVerticesData(VertexBuffer.ColorKind, col);
+      const nrm: number[] = []; VertexData.ComputeNormals(pos, m.getIndices()!, nrm); m.updateVerticesData(VertexBuffer.NormalKind, nrm);
+      m.material = mat; m.position.set(cx, -0.05, cz); m.rotation.y = -ang + Math.PI / 2; m.isPickable = false; m.freezeWorldMatrix(); m.doNotSyncBoundingInfo = true;
+    }
   }
 
   // ---------------------------------------------------------------------------------------------- hills
@@ -193,11 +227,11 @@ export class Outskirts {
     for (let y = 12; y < 48; y += 5) { const d = 7.0 - ((y - 8.5) / 40) * 4.4; b.cyl("futglow", x, y, z, d + 0.18, 0.22, { tess: 8 }); }
     for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.beam("futgrey", new Vector3(x + px * 8.2, 8.3, z + pz * 8.2), new Vector3(x + px * 1.3, 47, z + pz * 1.3), 0.4, 6);
     b.cyl("futdark", x, 48.6, z, 3.4, 1.6, { tess: 12 }); b.sphere("futglow", x, 51.5, z, 4.2, 18); b.beam("futglow", new Vector3(x, 53.3, z), new Vector3(x, 62, z), 0.12);
-    b.label("BIG DADDY DRILLING\nA.I. · LASER-GUIDED · PRIVATE", x + 9.52, 12.5, z, 9.0, 2.4, Math.PI / 2, "#0b1220", "#2ee6ff", 44);
+    b.label("SINGULARITY DRILLING\nA.I. · LASER-GUIDED · PRIVATE", x + 9.52, 12.5, z, 9.0, 2.4, Math.PI / 2, "#0b1220", "#2ee6ff", 44);
     // the AI core: a white dome with a glowing eye, off to the side
     b.sphere("futwhite", x + 24, 3.4, z - 12, 8, 18); b.cyl("futdark", x + 24, 0.2, z - 12, 9.0, 0.4, { tess: 18 });
     b.cyl("futglow", x + 28.1, 3.6, z - 12, 3.2, 0.25, { axis: "x", tess: 20 }); b.cyl("futdark", x + 28.2, 3.6, z - 12, 1.4, 0.3, { axis: "x", tess: 16 }); b.cyl("futmag", x + 28.35, 3.6, z - 12, 0.7, 0.2, { axis: "x", tess: 12 });
-    b.label("B.D.A.I.\nBIG DADDY ARTIFICIAL INTELLIGENCE", x + 24, 8.6, z - 12, 6.4, 1.6, Math.PI / 2, "#0b1220", "#ff3ad6", 34);
+    b.label("S.I.N.G.\nSINGULARITY INTELLIGENCE NETWORK", x + 24, 8.6, z - 12, 6.4, 1.6, Math.PI / 2, "#0b1220", "#ff3ad6", 34);
     // cooling cells and white service modules
     for (let i = 0; i < 3; i++) { b.cyl("futwhite", x - 22 + i * 5, 3, z + 22, 3.8, 6, { tess: 16, solid: true }); b.cyl("futglow", x - 22 + i * 5, 4.4, z + 22, 3.95, 0.2, { tess: 16 }); b.cyl("futglow", x - 22 + i * 5, 1.6, z + 22, 3.95, 0.2, { tess: 16 }); }
     for (const [mx, mz] of [[-26, -14], [-26, -4], [24, 14]] as [number, number][]) { b.slab("futwhite", x + mx - 4, 0.12, z + mz - 3, x + mx + 4, 3.4, z + mz + 3, true); b.slab("futglass", x + mx + 3.96, 1.4, z + mz - 2.2, x + mx + 4.02, 2.6, z + mz + 2.2); b.slab("futglow", x + mx - 4.02, 3.2, z + mz - 3, x + mx + 4.02, 3.4, z + mz + 3); }
@@ -234,6 +268,12 @@ export class Outskirts {
       h.root.position.set(x + hx, 0.15, z + hz); this.guards.push({ h, x: x + hx, z: z + hz, wp: wps.map(([a, c]) => [x + a, z + c] as [number, number]), i: 0 });
     };
     mk(16, 12, 1.05, [[16, 12], [16, 26], [4, 26], [4, 12]]); mk(-14, -22, 1.06, [[-14, -22], [-4, -22], [-4, -32], [-14, -32]]); mk(14, -26, 1.04, [[14, -26], [28, -26], [28, -12], [14, -12]]); mk(-14, 18, 1.05, [[-14, 18], [-30, 18], [-30, 30], [-14, 30]]);
+    // the drill floor is run entirely by robots: a working crew of androids at their stations around the hole
+    for (const [i, [bx, bz]] of ([[-4, -3], [4, -3], [-4, 4], [4, 4], [0, -6.5]] as [number, number][]).entries()) {
+      const h = new Human(sc, { shirt: "#dfe8f2", pants: "#cfd8e2", hat: "#f4faff", skin: "#aab6c4", vest: false, scale: 1.06, hair: "#aab6c4" });
+      h.root.position.set(x + bx, 8.3, z + bz); h.root.rotation.y = Math.atan2(-bx, -bz);
+      this.floorBots.push({ h, x: x + bx, z: z + bz, ph: i * 1.3, ang: h.root.rotation.y });
+    }
     this.rusty = new Human(sc, { shirt: "#161c28", pants: "#2a3446", hat: "#2ee6ff", skin: "#d8e0e8", vest: false, scale: 1.14, hair: "#d8e0e8" });
     this.rusty.root.position.set(x + F - 3, 0.15, z); this.rusty.root.rotation.y = Math.PI / 2;
   }
@@ -313,7 +353,7 @@ export class Outskirts {
       if (cdOk("silogain", 25)) setTimeout(() => g.gain(0, 1), 2500); } });
     // the competitor
     let rustN = 0;
-    out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to R.U.S.T.Y. (Big Daddy supervisor unit)", r: 3.4, act: () => this.talkRusty(rustN++) });
+    out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to UNIT-9 (Singularity supervisor unit)", r: 3.4, act: () => this.talkRusty(rustN++) });
     out.push({ pos: () => v(RIVAL.x + 47, 1.4, RIVAL.z + 8), label: () => "Spy on their rig", r: 3.4, act: () => {
       g.sfx.click(); g.ui.toast("YOU SQUINT", pick(["They're at 14,000 feet. In nine minutes. With a laser. Houston is not going to like this.", "The laser has no depth board. It has a feeling.", "Every worker on location is made of chrome. They look right through you.", "The rig is taller than ours. You decide it's a safety issue.", "Nobody here is wearing a hard hat. Nobody here is wearing anything. It's all very efficient."])); if (cdOk("spy", 20)) g.gain(0, -1); } });
     // the cattle: the nearest one, wherever it is
@@ -337,7 +377,7 @@ export class Outskirts {
     }
     if (f.st === "bite") {
       f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false);
-      const T: [string, number, number, number, string][] = [["Bluegill", 0.3, 0.9, 30, "Small, shiny, offended."], ["Largemouth Bass", 1.5, 6, 22, "A proper fish."], ["Channel Catfish", 2, 12, 16, "It has whiskers and opinions."], ["Crappie", 0.5, 2, 14, "Perfectly fine."], ["Common Carp", 3, 18, 8, "A big, slow, unbothered fish."], ["Old Boot", 0, 0, 5, "Left foot. It's always the left foot."], ["Lost Drill Bit", 0, 0, 3, "Technically, a fishing job."], ["The Legendary “Big Daddy” Lunker", 30, 44, 2, "Not the rig. The fish. It's enormous and it looks unimpressed."]];
+      const T: [string, number, number, number, string][] = [["Bluegill", 0.3, 0.9, 30, "Small, shiny, offended."], ["Largemouth Bass", 1.5, 6, 22, "A proper fish."], ["Channel Catfish", 2, 12, 16, "It has whiskers and opinions."], ["Crappie", 0.5, 2, 14, "Perfectly fine."], ["Common Carp", 3, 18, 8, "A big, slow, unbothered fish."], ["Old Boot", 0, 0, 5, "Left foot. It's always the left foot."], ["Lost Drill Bit", 0, 0, 3, "Technically, a fishing job."], ["The Legendary Lunker", 30, 44, 2, "It is enormous and it looks unimpressed."]];
       let r = Math.random() * T.reduce((a, c) => a + c[3], 0), c = T[0]; for (const x of T) { r -= x[3]; if (r <= 0) { c = x; break; } }
       const [name, lo, hi, , quip] = c, lb = hi > 0 ? lo + Math.random() * (hi - lo) : 0;
       f.caught++; if (lb === 0) f.junk++; if (lb > f.best) { f.best = lb; }
@@ -394,11 +434,11 @@ export class Outskirts {
 
   private talkRusty(n: number) {
     const g = this.g;
-    const L = ["GREETINGS, COMPANY MAN. I AM R.U.S.T.Y.: ROBOTIC UNIT FOR SUPERVISING TOUGH YOKELS. YOUR HARD HAT HAS A 3% PROBABILITY OF MATTERING.", "Our laser drills 14,000 feet in nine minutes. I ran the numbers on your rig. The numbers laughed. I do not laugh. The numbers did.", "Big Daddy is currently being a very large, very distant server. He has noted your trespass. He has noted it twice.", "Go home, Company Man. Take your sad little pad with you. I have already deprecated it."];
+    const L = ["GREETINGS, COMPANY MAN. I AM UNIT-9, SUPERVISING UNIT FOR THIS LOCATION. YOUR HARD HAT HAS A 3% PROBABILITY OF MATTERING.", "Our laser drills 14,000 feet in nine minutes. I ran the numbers on your rig. The numbers laughed. I do not laugh. The numbers did.", "Singularity is currently being a very large, very distant server. He has noted your trespass. He has noted it twice.", "Go home, Company Man. Take your sad little pad with you. I have already deprecated it."];
     g.say("rival" as any, L[n % L.length], [
       { label: "Nice fence.", run: () => g.radio("rival" as any, "IT IS AN ENERGY FENCE. IT IS NOT FOR YOU. IT IS FOR EVERYBODY WHO IS YOU.", 5000) },
       { label: "Make a rude gesture", cls: "alt", run: () => { g.gain(0, 2); g.ui.toast("+2 MORALE", "The android crew files a formal complaint. In triplicate."); for (const gd of this.guards) { gd.i = 0; } } },
-    ] as any, "R.U.S.T.Y. — Big Daddy A.I.");
+    ] as any, "UNIT-9 — Singularity A.I.");
   }
 
   // ---------------------------------------------------------------------------------------------- per frame
@@ -406,7 +446,7 @@ export class Outskirts {
     const g = this.g, p = g.player; this.t += dt;
     const px = p.pos.x, pz = p.pos.z;
     // discoveries
-    for (const [name, x, z, r] of [["PRIVATE POND", POND.x, POND.z, 60], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["BIG DADDY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
+    for (const [name, x, z, r] of [["PRIVATE POND", POND.x, POND.z, 60], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["SINGULARITY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
       if (!this.seen.has(name) && Math.hypot(px - x, pz - z) < r) { this.seen.add(name); g.ui.toast("DISCOVERED", name); g.sfx.good(); }
     }
     // near enough to bother with the animations
@@ -443,22 +483,30 @@ export class Outskirts {
       const hunting = near(RIVAL.x, RIVAL.z, 60) && near(gx, gz, 44) && !riding;
       let tx: number, tz: number, sp: number;
       if (hunting) { tx = px; tz = pz; sp = 3.2; } else { const [wx, wz] = gd.wp[gd.i]; tx = wx; tz = wz; sp = 1.1; if (Math.hypot(wx - gd.h.root.position.x, wz - gd.h.root.position.z) < 0.6) gd.i = (gd.i + 1) % gd.wp.length; }
+      tx = Math.max(RIVAL.x - 41, Math.min(RIVAL.x + 41, tx)); tz = Math.max(RIVAL.z - 41, Math.min(RIVAL.z + 41, tz));   // they never leave the wire
       const hx = gd.h.root.position.x, hz = gd.h.root.position.z, dx = tx - hx, dz = tz - hz, dd = Math.hypot(dx, dz);
       if (hunting && dd < 1.7) {
         if ((this.cd["shove"] ?? -99) + 12 < this.t) {
           this.cd["shove"] = this.t; const ux = (px - hx) / (dd || 1), uz = (pz - hz) / (dd || 1);
-          p.teleport(px + ux * 16, 0.5, pz + uz * 16, Math.atan2(ux, uz)); g.gain(0, -3); g.sfx.thud(); g.ui.toast("ESCORTED OFF BIG DADDY'S LEASE", "“ESCORT COMPLETE. HAVE A SUBOPTIMAL DAY.”");
+          p.teleport(px + ux * 16, 0.5, pz + uz * 16, Math.atan2(ux, uz)); g.gain(0, -3); g.sfx.thud(); g.ui.toast("ESCORTED OFF SINGULARITY'S LEASE", "“ESCORT COMPLETE. HAVE A SUBOPTIMAL DAY.”");
           g.radio("rival" as any, "TRESPASSER REMOVED. EFFICIENCY RESTORED.", 5000);
         }
         gd.h.animate(dt, 0); continue;
       }
-      if (dd > 0.3) { const k = Math.min(1, sp * dt / dd); gd.h.root.position.x += dx * k; gd.h.root.position.z += dz * k; const want = Math.atan2(dx, dz); let a = want - gd.h.root.rotation.y; while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; gd.h.root.rotation.y += a * Math.min(1, dt * 8); gd.h.animate(dt, sp); } else gd.h.animate(dt, 0);
+      if (dd > 0.3) { const k = Math.min(1, sp * dt / dd); gd.h.root.position.x = Math.max(RIVAL.x - 41, Math.min(RIVAL.x + 41, gd.h.root.position.x + dx * k)); gd.h.root.position.z = Math.max(RIVAL.z - 41, Math.min(RIVAL.z + 41, gd.h.root.position.z + dz * k)); const want = Math.atan2(dx, dz); let a = want - gd.h.root.rotation.y; while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; gd.h.root.rotation.y += a * Math.min(1, dt * 8); gd.h.animate(dt, sp); } else gd.h.animate(dt, 0);
     }
     if (this.fut && near(RIVAL.x, RIVAL.z, 260)) {
       const f = this.fut, pulse = 0.5 + 0.5 * Math.sin(this.t * 7);
       f.core.scaling.x = f.core.scaling.z = 0.9 + 0.2 * pulse; f.glow.scaling.x = f.glow.scaling.z = 0.9 + 0.35 * Math.sin(this.t * 4.1 + 1); (f.ground.material as StandardMaterial).alpha = 0.35 + 0.3 * pulse; f.ground.scaling.x = f.ground.scaling.y = 4.2 + 0.7 * pulse;
       f.ring.rotation.y += dt * 1.6; f.ring.rotation.x = Math.sin(this.t * 0.9) * 0.35;
       for (const d of f.drones) { d.a += d.w * dt; d.m.position.set(RIVAL.x + Math.cos(d.a) * d.r, d.h + Math.sin(this.t * 2 + d.a) * 0.8, RIVAL.z + Math.sin(d.a) * d.r); d.m.rotation.y += dt * 2; }
+      for (const fb of this.floorBots) {
+        fb.h.animate(dt, 0);
+        const s = Math.sin(this.t * 1.7 + fb.ph);
+        fb.h.armR.rotation.x = -1.0 + s * 0.45; fb.h.armL.rotation.x = -1.0 - s * 0.45;
+        fb.h.elbowR!.rotation.x = -0.9 + s * 0.4; fb.h.elbowL!.rotation.x = -0.9 - s * 0.4;
+        fb.h.root.position.x = fb.x + Math.sin(this.t * 0.4 + fb.ph) * 0.5; fb.h.root.position.z = fb.z + Math.cos(this.t * 0.4 + fb.ph) * 0.5;
+      }
       f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
     }
     this.updateFishing(dt);

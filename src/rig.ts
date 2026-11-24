@@ -1169,15 +1169,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     const s = 0.8 + rnd() * 1.6;
     scrub.thinInstanceAdd(Matrix.Compose(new Vector3(s * 1.4, s * 0.7, s * 1.4), Quaternion.Identity(), new Vector3(x, s * 0.3, z)));
   }
-  // distant mesas
-  for (let i = 0; i < 9; i++) {
-    const ang = (i / 9) * Math.PI * 2 + 0.3, r = 420;
-    const w = 90 + rnd() * 120, h = 14 + rnd() * 26;
-    const mesa = MeshBuilder.CreateBox("mesa", { width: w, height: h, depth: 70 }, scene);
-    const mm = new StandardMaterial("mesam", scene); mm.diffuseColor = Color3.FromHexString("#a07a58"); mm.specularColor = Color3.Black();
-    mesa.material = mm; mesa.position.set(Math.cos(ang) * r, h / 2, Math.sin(ang) * r); mesa.rotation.y = -ang; mesa.freezeWorldMatrix();
-  }
-
   // helicopter (for the VP of Operations)
   const heli = node("heli", scene, 70, 80, 60);
   // a light turbine helicopter (Bell 407 style, forward is +z): rounded white cabin with a blue stripe and a wide glass bubble, engine cowl, a tapering

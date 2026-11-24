@@ -312,7 +312,9 @@ export class Sim {
     this.dist += (Math.random() - 0.5) * 0.9 * dt;
     this.dist *= 1 - 0.02 * dt;
     const d = this.dist * 65;
-    const target = k.cpIdeal * (0.35 + 1.3 * k.choke) + d;
+    // the choke setting that holds the right bottom-hole pressure moves as the gas comes up and the kill mud goes down: leaving the choke alone drifts out of the band
+    const off = 0.3 * Math.sin(2 * Math.PI * p * 0.9);
+    const target = k.cpIdeal * (0.35 + 1.3 * (k.choke - off)) + d;
     k.cp += (target - k.cp) * Math.min(1, 0.5 * dt);
     k.dpp = k.dppTarget + (k.cp - k.cpIdeal) * 0.9;
     s.spp = k.dpp;

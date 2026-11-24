@@ -212,7 +212,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // stairs: east (to ground) and west
   b.stairs("dsteel", "yellow", FX, 3.8, "+x", F, 1.5);
   // the stairs off the pit side: one flight down to a landing level with the pit roofs, then a bridge straight over to the pits and a second flight down to the ground
-  b.stairs("dsteel", "yellow", -FX, -0.9, "-x", F, 1.5, 0.26, 0.3, 2.78);
+  b.stairs("dsteel", "yellow", -FX, -0.9, "-x", F, 1.5, 0.26, 0.3, 2.78, true);
   {
     const LX0 = -15.4, LX1 = -12.2, LZ0 = -2.4, LZ1 = 0.6;
     b.slab("deck", LX0, 2.58, LZ0, LX1, 2.78, LZ1, true);                                              // landing
@@ -220,7 +220,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.rail("yellow", LX1, LZ1, LX0 + 0.0, LZ1, 2.78, 1.1);                                              // south side, solid
     b.rail("yellow", LX1, LZ0, -13.05, LZ0, 2.78, 1.1); b.rail("yellow", -14.55, LZ0, LX0, LZ0, 2.78, 1.1);   // north side, open where flight B starts
     b.rail("yellow", LX0, LZ0, LX0, -1.65, 2.78, 1.1); b.rail("yellow", LX0, -0.15, LX0, LZ1, 2.78, 1.1);   // far end, open where the bridge starts
-    b.stairs("dsteel", "yellow", -13.8, LZ0, "-z", 2.78, 1.5);                                          // flight B: landing to the ground
+    b.stairs("dsteel", "yellow", -13.8, LZ0, "-z", 2.78, 1.5, 0.26, 0.3, 0, true);                                          // flight B: landing to the ground
     // bridge straight to the pit roofs
     b.slab("deck", -19.7, 2.63, -1.65, LX0, 2.78, -0.15, true);
     b.rail("yellow", LX0, -1.65, -19.6, -1.65, 2.78, 1.1); b.rail("yellow", LX0, -0.15, -19.6, -0.15, 2.78, 1.1);

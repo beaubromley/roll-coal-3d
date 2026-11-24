@@ -155,7 +155,7 @@ export class Builder {
    * Grated staircase descending from (x,z) at topY to ground. dir = unit axis direction of descent.
    */
   stairs(m: string, matSide: string, x: number, z: number, dir: "+x" | "-x" | "+z" | "-z",
-         topY: number, width = 1.2, rise = 0.26, run = 0.3, botY = 0) {
+         topY: number, width = 1.2, rise = 0.26, run = 0.3, botY = 0, under = false) {
     const n = Math.round((topY - botY) / rise);
     const dx = dir === "+x" ? 1 : dir === "-x" ? -1 : 0;
     const dz = dir === "+z" ? 1 : dir === "-z" ? -1 : 0;
@@ -165,11 +165,12 @@ export class Builder {
       const cx = x + dx * (k - 0.5) * run, cz = z + dz * (k - 0.5) * run;
       const w = alongX ? run : width, d = alongX ? width : run;
       this.box(m, cx, top - 0.03, cz, w, 0.06, d);
-      this.blocker(cx - w / 2, 0, cz - d / 2, cx + w / 2, top, cz + d / 2);
+      const y0 = under ? Math.max(0, top - 0.15) : 0;   // under = true: only the tread is solid, so you can walk beneath the flight
+      this.blocker(cx - w / 2, y0, cz - d / 2, cx + w / 2, top, cz + d / 2);
       // handrails on both sides are solid, from the tread up past hip height
       for (const s of [-1, 1]) {
         const ox = alongX ? 0 : s * (width / 2 + 0.05), oz = alongX ? s * (width / 2 + 0.05) : 0;
-        this.blocker(cx + ox - (alongX ? w / 2 : 0.06), 0, cz + oz - (alongX ? 0.06 : d / 2), cx + ox + (alongX ? w / 2 : 0.06), top + 1.7, cz + oz + (alongX ? 0.06 : d / 2));
+        this.blocker(cx + ox - (alongX ? w / 2 : 0.06), y0, cz + oz - (alongX ? 0.06 : d / 2), cx + ox + (alongX ? w / 2 : 0.06), top + 1.7, cz + oz + (alongX ? 0.06 : d / 2));
       }
     }
     const ex = x + dx * n * run, ez = z + dz * n * run;

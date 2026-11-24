@@ -190,14 +190,22 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const slips = node("slips", scene, 1.25, F + 0.01, -0.8); slips.parent = rigRoot;
   for (let k = 0; k < 3; k++) {
     const a = (k * 2 * Math.PI) / 3 + 0.5, sx = Math.sin(a), sz = Math.cos(a);
-    const seg = MeshBuilder.CreateBox("slipseg", { width: 0.16, height: 0.34, depth: 0.075 }, scene);
+    const seg = MeshBuilder.CreateBox("slipseg", { width: 0.215, height: 0.34, depth: 0.075 }, scene);
     seg.material = b.getMat("dsteel"); seg.parent = slips; seg.position.set(sx * 0.135, 0.17, sz * 0.135); seg.rotation.y = a;
-    const teeth = MeshBuilder.CreateBox("slipteeth", { width: 0.13, height: 0.24, depth: 0.012 }, scene);
+    const teeth = MeshBuilder.CreateBox("slipteeth", { width: 0.18, height: 0.24, depth: 0.012 }, scene);
     teeth.material = b.getMat("steel"); teeth.parent = slips; teeth.position.set(sx * 0.098, 0.15, sz * 0.098); teeth.rotation.y = a;
     const post = MeshBuilder.CreateBox("slipposts", { width: 0.03, height: 0.22, depth: 0.03 }, scene);
     post.material = b.getMat("yellow"); post.parent = slips; post.position.set(sx * 0.19, 0.42, sz * 0.19);
     const grip = MeshBuilder.CreateBox("slipgrip", { width: 0.13, height: 0.03, depth: 0.03 }, scene);
     grip.material = b.getMat("yellow"); grip.parent = slips; grip.position.set(sx * 0.19, 0.54, sz * 0.19); grip.rotation.y = a + Math.PI / 2;
+    // hinge between this segment and the next: a pin and two straps across the gap, so the three segments are one linked set
+    const m2 = a + Math.PI / 3, hx = Math.sin(m2), hz = Math.cos(m2);
+    const pin = MeshBuilder.CreateCylinder("slippin", { diameter: 0.032, height: 0.38, tessellation: 8 }, scene);
+    pin.material = b.getMat("steel"); pin.parent = slips; pin.position.set(hx * 0.118, 0.18, hz * 0.118);
+    for (const hy of [0.06, 0.3]) {
+      const strap = MeshBuilder.CreateBox("slipstrap", { width: 0.17, height: 0.035, depth: 0.024 }, scene);
+      strap.material = b.getMat("dsteel"); strap.parent = slips; strap.position.set(hx * 0.128, hy, hz * 0.128); strap.rotation.y = m2;
+    }
   }
   // red zone ring on the deck
   b.cyl("red", 0, F + 0.005, 0, 4.6, 0.01, { tess: 28 });
@@ -562,30 +570,111 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   spots.pumps = v(-6.8 + PDX, 1.6, -9.2);
 
   // ================= MUD TANKS + SHAKERS + HOPPER =================
+  // Pits: open-top steel tanks with grated walkways. The mud inside is a moving surface (scrolling texture) with agitator paddles turning at the surface.
   const tanks = [[-18, -9], [-9, 0], [0, 9], [9, 18]];
+  const mudTex = noiseTex(scene, "#4a3826", ["#5d4630", "#3a2a1c", "#6e553a", "#2e2218", "#7a6244"], 2200, 256, 3);
+  const mudMat = new StandardMaterial("pitmud", scene); mudMat.diffuseTexture = mudTex; mudMat.specularColor = new Color3(0.35, 0.3, 0.25); mudMat.specularPower = 24;
+  const agiNodes: TransformNode[] = [];
   tanks.forEach(([x0, x1], i) => {
-    b.slab("tank", x0 + 0.05, 0.4, -26, x1 - 0.05, 2.7, -19.6, true);          // solid tank body (walkable roof is the deck below)
-    b.slab("dsteel", x0 + 0.05, 2.7, -26, x1 - 0.05, 2.78, -19.6, true);
+    const cx = (x0 + x1) / 2, W = x1 - x0 - 0.1;
+    // tank shell: walls and floor, hollow, with a solid collider so nobody walks through the sides
+    b.slab("tank", x0 + 0.05, 0.4, -26, x1 - 0.05, 2.7, -25.9);
+    b.slab("tank", x0 + 0.05, 0.4, -19.7, x1 - 0.05, 2.7, -19.6);
+    b.slab("tank", x0 + 0.05, 0.4, -26, x0 + 0.15, 2.7, -19.6);
+    b.slab("tank", x1 - 0.15, 0.4, -26, x1 - 0.05, 2.7, -19.6);
     b.slab("steel", x0 + 0.05, 0, -26, x1 - 0.05, 0.4, -19.6);
+    b.blocker(x0 + 0.05, 0.4, -26, x1 - 0.05, 2.78, -19.6);                       // sides and walking surface
+    // the mud
+    const mud = MeshBuilder.CreateGround("pitmud", { width: W - 0.3, height: 6.1 }, scene); mud.position.set(cx, 2.3, -22.8); mud.material = mudMat;
+    // agitator: shaft down to turning paddles at the surface
+    b.cyl("steel", cx, 3.3, -22.8, 0.2, 2.0, { tess: 8 });
+    b.box("bopblue", cx, 4.3, -22.8, 0.7, 0.5, 0.5);
+    b.blocker(cx - 0.4, 2.78, -23.2, cx + 0.4, 4.6, -22.4);
+    const ag = node("agi" + i, scene, cx, 2.3, -22.8);
+    for (let k = 0; k < 2; k++) {
+      const blade = MeshBuilder.CreateBox("agb", { width: 2.8, height: 0.06, depth: 0.3 }, scene); blade.material = b.getMat("steel"); blade.parent = ag; blade.rotation.y = k * Math.PI / 2; blade.position.y = 0.02;
+    }
+    const hub = MeshBuilder.CreateCylinder("agh", { diameter: 0.32, height: 0.2, tessellation: 10 }, scene); hub.material = b.getMat("dsteel"); hub.parent = ag;
+    agiNodes.push(ag);
+    // grated walkway: bars along the tank with cross ties and a frame, so you can see the mud turning below
+    const nb = Math.floor(W / 0.2);
+    for (let k = 0; k <= nb; k++) b.box("dsteel", x0 + 0.1 + (W * k) / nb, 2.74, -22.8, 0.035, 0.06, 6.3);
+    for (let z = -25.8; z <= -19.7; z += 1.2) b.box("steel", cx, 2.715, z, W, 0.035, 0.05);
+    for (const zz of [-25.95, -19.65]) b.slab("steel", x0 + 0.05, 2.7, zz - 0.05, x1 - 0.05, 2.78, zz + 0.05);
+    for (const xx of [x0 + 0.1, x1 - 0.1]) b.slab("steel", xx - 0.05, 2.7, -26, xx + 0.05, 2.78, -19.6);
     if (x0 === 0) b.rail("yellow", x0 + 1.8, -19.7, x1 - 0.05, -19.7, 2.78, 1.1);                  // open where the rig bridge lands
     else b.rail("yellow", x0 + 0.05, -19.7, x1 - 0.05, -19.7, 2.78, 1.1);
     b.rail("yellow", x0 + 0.05, -25.9, x1 - 0.05, -25.9, 2.78, 1.1);
-    b.cyl("steel", (x0 + x1) / 2, 3.5, -22.8, 0.2, 1.4, { tess: 6 });          // agitator shaft
-    b.box("bopblue", (x0 + x1) / 2, 4.3, -22.8, 0.7, 0.5, 0.5);
-    b.blocker((x0 + x1) / 2 - 0.4, 2.78, -23.2, (x0 + x1) / 2 + 0.4, 4.6, -22.4);   // agitator only, not the whole roof
-    void i;
   });
   // tank-roof stairs at east end
   b.stairs("dsteel", "yellow", 18.0, -22.8, "+x", 2.78, 1.1, 0.25, 0.3);
   b.rail("yellow", -17.95, -25.9, -17.95, -19.7, 2.78, 1.1);   // west end of the pit roof
   b.label("ACTIVE PITS", 0, 1.8, -19.5, 3.0, 0.7, Math.PI, "#233a52", "#ffd24a", 70);
-  // shale shakers on tank 1
-  for (let i = 0; i < 3; i++) {
-    const x = -16.6 + i * 2.5;
-    b.slab("dsteel", x - 1.0, 2.78, -24.5, x + 1.0, 3.3, -21.0, true);
-    b.slab("steel", x - 0.9, 3.3, -24.3, x + 0.9, 3.5, -21.2);
-    b.slab("green", x - 0.8, 3.5, -24.2, x + 0.8, 3.58, -21.3);
+
+  // ---- shale shakers (linear-motion, three on pit 1): possum belly at the feed end, a screen deck on rubber mounts that rises toward the discharge,
+  //      a pair of vibrator motors across the basket, and a discharge lip over a chute into the cuttings pit ----
+  b.defMat("cuttings", "#4d443b");
+  const flowY = 3.75;
+  b.beam("steel", v(0, 5.0, -2.6), v(-10.4, flowY, -20.1), 0.42);                                  // flow line from the bell nipple, over the choke manifold, to the shaker header
+  b.beam("steel", v(-17.3, flowY, -20.1), v(-10.4, flowY, -20.1), 0.42);                           // header across the three shakers
+  b.cyl("dsteel", -10.4, flowY, -20.1, 0.55, 0.08, { axis: "z", tess: 12 });
+  for (const [px, pz] of [[-3.0, -9.0], [-7.0, -14.5]]) b.slab("dsteel", px - 0.1, 0, pz - 0.1, px + 0.1, 4.8 - ((Math.abs(px) / 10.4) * 1.25), pz + 0.1);   // flow-line supports
+  b.label("FLOW LINE", -5.3, 4.9, -11.1, 1.8, 0.35, Math.PI / 2, "#7a1a14", "#ffffff", 40);
+  for (const cx of [-16.6, -14.1, -11.6]) {
+    b.blocker(cx - 0.95, 2.78, -25.5, cx + 0.95, 4.1, -20.5);
+    b.slab("dsteel", cx - 0.95, 2.78, -25.5, cx + 0.95, 2.9, -20.5);                                 // skid
+    for (const sx of [-0.72, 0.72]) for (const sz of [-21.4, -24.6]) b.cyl("black", cx + sx, 3.05, sz, 0.18, 0.3, { tess: 8 });   // rubber mounts
+    for (const s of [-1, 1]) b.slab("steel", cx + s * 0.88 - 0.05, 3.2, -25.3, cx + s * 0.88 + 0.05, 3.75, -21.0);   // basket sides
+    b.ramp("black", cx, 1.7, -21.0, 3.3, -25.3, 3.56, 0.06);                                        // screen deck, higher at the discharge end
+    for (let k = 0; k < 4; k++) { const zz = -21.4 - k * 1.0, yy = 3.3 + ((zz * -1 - 21.0) / 4.3) * 0.26 + 0.045; b.box("steel", cx, yy, zz, 1.5, 0.02, 0.05); }   // screen panel frames
+    b.slab("steel", cx - 0.85, 3.1, -20.95, cx + 0.85, 3.8, -20.45);                                 // possum belly (feed box)
+    b.slab("dsteel", cx - 0.9, 3.8, -21.0, cx + 0.9, 3.86, -20.4);
+    b.cyl("steel", cx, 3.55, -20.25, 0.38, 0.5, { axis: "z", tess: 12 });                           // inlet from the header
+    b.slab("dsteel", cx - 0.95, 3.75, -23.45, cx + 0.95, 3.85, -22.95);                              // vibrator beam
+    for (const s of [-1, 1]) { b.cyl("orange", cx + s * 0.4, 4.05, -23.2, 0.3, 0.55, { axis: "x", tess: 12 }); b.cyl("steel", cx + s * 0.72, 4.05, -23.2, 0.36, 0.1, { axis: "x", tess: 12 }); }   // vibrator motors and weights
+    b.ramp("steel", cx, 1.7, -25.3, 3.56, -27.6, 1.3, 0.05);                                        // discharge lip and chute to the cuttings pit
+    for (const s of [-1, 1]) b.slab("steel", cx + s * 0.85 - 0.04, 1.3, -27.6, cx + s * 0.85 + 0.04, 3.2, -25.3);
   }
+  // cuttings pit under the chutes, with mounds where each chute lands
+  const CP = { x0: -18.0, x1: -10.4, z0: -30.8, z1: -27.0 };
+  b.slab("steel", CP.x0, 0, CP.z0, CP.x1, 0.2, CP.z1);
+  b.slab("tank", CP.x0, 0.2, CP.z0, CP.x1, 1.3, CP.z0 + 0.12, true); b.slab("tank", CP.x0, 0.2, CP.z1 - 0.12, CP.x1, 1.3, CP.z1, true);
+  b.slab("tank", CP.x0, 0.2, CP.z0, CP.x0 + 0.12, 1.3, CP.z1, true); b.slab("tank", CP.x1 - 0.12, 0.2, CP.z0, CP.x1, 1.3, CP.z1, true);
+  b.slab("cuttings", CP.x0 + 0.12, 0.2, CP.z0 + 0.12, CP.x1 - 0.12, 0.85, CP.z1 - 0.12);
+  for (const cx of [-16.6, -14.1, -11.6]) b.cyl("cuttings", cx, 1.05, -27.9, 1.7, 0.7, { tess: 12, dia2: 0.3 });
+  b.label("CUTTINGS PIT", -14.2, 1.9, -26.9, 2.6, 0.6, Math.PI, "#233a52", "#ffd24a", 54);
+
+  // ---- two decanting centrifuges south of the pits, each with a solids catch pit under its discharge and a centrate line back to the active tanks ----
+  const centri = (cx: number, n: number) => {
+    const cz = -34.0;
+    b.slab("dsteel", cx - 2.7, 0, cz - 1.2, cx + 2.7, 0.3, cz + 1.2, true);                          // skid
+    b.cyl("steel", cx - 0.3, 1.25, cz, 0.9, 2.8, { axis: "x", tess: 20 });                          // bowl
+    b.cyl("steel", cx + 1.55, 1.25, cz, 0.35, 0.8, { axis: "x", tess: 16, dia2: 0.9 });             // conical beach, narrow end toward the solids discharge
+    for (const dx of [-1.4, 0.8]) b.cyl("dsteel", cx + dx, 1.25, cz, 1.02, 0.1, { axis: "x", tess: 20 });    // bearing rings
+    b.slab("steel", cx - 1.7, 0.3, cz - 0.55, cx + 1.0, 0.8, cz + 0.55);                             // pedestal / hood
+    b.box("orange", cx - 2.05, 1.0, cz, 0.8, 0.9, 0.95);                                              // gearbox
+    b.cyl("blue", cx - 2.7, 1.0, cz, 0.7, 0.9, { axis: "x", tess: 14 });                              // main drive motor
+    b.cyl("red", cx - 2.0, 0.6, cz + 1.0, 0.5, 0.5, { axis: "z", tess: 12 });                         // back-drive motor
+    b.slab("steel", cx + 1.9, 0.6, cz - 0.3, cx + 2.5, 1.0, cz + 0.3);                                // solids discharge housing
+    b.ramp("steel", cx + 2.25, 0.5, cz - 1.0, 0.9, cz + 1.0, 0.3, 0.04);                              // (chute lip, small)
+    b.slab("steel", cx - 0.5, 0.3, cz + 0.6, cx + 0.5, 0.9, cz + 1.1);                                // liquid (centrate) discharge box
+    b.cyl("red", cx + 0.2, 0.55, cz + 1.9, 0.55, 0.7, { tess: 12 }); b.cyl("blue", cx + 0.2, 0.9, cz + 1.9, 0.62, 0.3, { tess: 12 });   // feed pump
+    b.beam("steel", v(cx + 0.2, 0.9, cz + 1.9), v(cx + 0.2, 0.9, cz + 3.0), 0.18);                  // feed line stub toward the tanks
+    b.label("CENTRIFUGE " + n, cx - 0.2, 2.3, cz - 1.25, 2.4, 0.5, Math.PI, "#233a52", "#ffd24a", 46);
+    // solids catch pit under the discharge
+    const px0 = cx + 2.8, px1 = cx + 5.2, pz0 = cz - 1.3, pz1 = cz + 1.3;
+    b.slab("steel", px0, 0, pz0, px1, 0.2, pz1);
+    for (const [x0, z0, x1, z1] of [[px0, pz0, px1, pz0 + 0.12], [px0, pz1 - 0.12, px1, pz1], [px0, pz0, px0 + 0.12, pz1], [px1 - 0.12, pz0, px1, pz1]] as number[][]) b.slab("tank", x0, 0.2, z0, x1, 1.2, z1, true);
+    b.slab("cuttings", px0 + 0.12, 0.2, pz0 + 0.12, px1 - 0.12, 0.7, pz1 - 0.12);
+    b.cyl("cuttings", cx + 3.1, 0.9, cz, 1.4, 0.6, { tess: 12, dia2: 0.3 });
+    b.label("SOLIDS", (px0 + px1) / 2, 1.7, pz0 - 0.05, 1.4, 0.4, Math.PI, "#7a1a14", "#ffffff", 40);
+  };
+  centri(-17.0, 1); centri(-8.5, 2);
+  // centrate lines: the cleaned liquid goes back into the active tanks
+  b.beam("steel", v(-8.0, 0.7, -32.9), v(-8.0, 0.7, -26.3), 0.18);
+  b.beam("steel", v(-16.5, 0.7, -32.9), v(-16.5, 0.7, -31.7), 0.18); b.beam("steel", v(-16.5, 0.7, -31.7), v(-9.7, 0.7, -31.7), 0.18); b.beam("steel", v(-9.7, 0.7, -31.7), v(-9.7, 0.7, -26.3), 0.18);
+
+  // shale-shaker spot stays on the first pit roof
   spots.shakers = v(-13.7, 4.0, -19.9);
   spots.pits = v(4.5, 3.7, -20.2);
   // degasser (poor boy) + vent to flare
@@ -1051,6 +1140,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       ? F + 3 + (0.5 + 0.5 * Math.sin(f.t * 3)) * 22
       : f.connecting ? F + 26 : F + 2.6 + (1 - into / 93) * 24;
     tdY += (targetY - tdY) * Math.min(1, dt * (f.connecting || f.tripping ? 2.5 : 8));
+    mudTex.uOffset += dt * 0.012; mudTex.vOffset += dt * 0.008;
+    agiNodes.forEach((n, i) => { n.rotation.y += dt * (1.1 + i * 0.07); });
     td.position.y = tdY;
     { const inHole = f.connecting || f.tripping; slips.position.set(inHole ? 0 : 1.25, inHole ? F + 0.4 : F + 0.01, inHole ? 0 : -0.8); slips.rotation.y = inHole ? 0 : 0.7; }
     tdBox.y0 = tdY - 2.3; tdBox.y1 = tdY + 1.8; blockBox.y0 = tdY + 2.85; blockBox.y1 = tdY + 3.9;

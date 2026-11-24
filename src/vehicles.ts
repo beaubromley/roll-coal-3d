@@ -135,6 +135,7 @@ export class Vehicles {
     this.list.push(this.buildManlift(-7, 13, 0.4));
     this.buildPallet(9.2, 51.5, -0.6);
     for (let i = 0; i < 8; i++) this.buildPallet(11.9 + i * 2.3, -61.4, i % 2 ? 0.04 : -0.03, true);   // mud products in the yard
+    this.list.push(this.buildBackhoe(-3.6, -29.2, -Math.PI / 2));   // parked by the cuttings pit under the shakers
     this.list.push(this.buildDrone(-20.5, 36.4, Math.PI / 2 + RYAW));
     for (const v of this.list) {
       for (let i = 0; i < v.pts.length; i++) { const b: AABB = { x0: 0, x1: 0, y0: 0, y1: v.boxH, z0: 0, z1: 0 }; v.boxes.push(b); this.colliders.push(b); }
@@ -181,6 +182,46 @@ export class Vehicles {
     this.box(v, r, "#14171c", 0.5, 0.25, 0.04, 0, 1.65, -3.4 - EXT);
     const W = 1.35;
     for (const s of [-1, 1]) { this.wheel(v, r, s * 1.12, W / 2, 2.0, W, 0.55, 1); this.wheel(v, r, s * 1.12, W / 2, -3.0, W, 0.55, null); }
+    return v;
+  }
+
+  /** Backhoe-loader: front bucket, rear hoe folded up, stabilizer legs, enclosed cab. Forward is +z. */
+  private buildBackhoe(x: number, z: number, yaw: number): Veh {
+    const v = this.blank("backhoe", "Backhoe", "car", x, z, yaw), r = v.root;
+    Object.assign(v, { wheelbase: 2.4, maxFwd: 11, maxRev: 5, accel: 4, radius: 1.3, pts: [2.0, 0, -2.2], camDist: 12, camHeight: 4.0, eye: { x: 0, y: 2.25, z: -0.15 }, boxH: 2.6,
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  V camera  ·  E get out" });
+    const Y = "#e8b100", D = "#2a2d31", G = "#9fc3d6", H = "#bfc3c8";
+    this.box(v, r, D, 1.5, 0.3, 4.2, 0, 0.7, -0.2);                                  // frame
+    this.box(v, r, Y, 2.0, 0.7, 3.0, 0, 1.15, -0.3);                                 // body
+    this.box(v, r, Y, 1.5, 0.55, 1.4, 0, 1.35, 1.4);                                 // engine hood
+    this.box(v, r, D, 1.2, 0.08, 0.9, 0, 1.66, 1.4);                                 // hood vent
+    this.box(v, r, "#0b0d10", 1.3, 0.35, 0.1, 0, 1.3, 2.15);                         // grille
+    this.cyl(v, r, H, 0.12, 0.9, 0.55, 2.0, 1.9, "y", 8, { spec: 0.7 });             // exhaust stack
+    // cab: glass box with dark pillars and a roof, and a seat inside
+    this.box(v, r, G, 1.7, 1.45, 1.6, 0, 2.1, -0.3, { alpha: 0.45 });
+    for (const sx of [-0.84, 0.84]) for (const sz of [-1.05, 0.45]) this.box(v, r, D, 0.08, 1.5, 0.08, sx, 2.1, sz);
+    this.box(v, r, D, 1.9, 0.1, 1.85, 0, 2.88, -0.3);
+    this.box(v, r, "#3b3f46", 0.7, 0.15, 0.6, 0, 1.58, -0.15);                       // seat cushion
+    this.box(v, r, "#3b3f46", 0.7, 0.55, 0.12, 0, 1.9, -0.5);                        // seat back
+    this.box(v, r, "#ffe9a8", 1.0, 0.1, 0.2, 0, 2.97, 0.4, { emissive: 0.9 });       // work light
+    // front loader: two lift arms, a wide bucket on a hinge, hydraulic rams
+    for (const sx of [-1, 1]) {
+      const arm = this.box(v, r, Y, 0.16, 0.22, 2.6, sx * 1.02, 1.05, 2.0); arm.rotation.x = 0.1;
+      this.cyl(v, r, H, 0.1, 1.3, sx * 0.9, 1.35, 1.7, "z", 8, { spec: 0.7 });
+    }
+    this.box(v, r, Y, 2.3, 0.5, 0.18, 0, 0.5, 3.35);                                 // bucket back
+    this.box(v, r, Y, 2.3, 0.08, 0.7, 0, 0.27, 3.6);                                 // bucket floor
+    for (const sx of [-1.14, 1.14]) this.box(v, r, Y, 0.06, 0.45, 0.7, sx, 0.5, 3.6);
+    this.box(v, r, H, 2.3, 0.05, 0.1, 0, 0.26, 3.98, { spec: 0.6 });                  // cutting edge
+    // rear hoe: swing frame, boom up and back, stick folded down, bucket tucked in, stabilizer legs
+    this.box(v, r, D, 1.1, 0.6, 0.8, 0, 1.2, -2.0);
+    const boom = this.box(v, r, Y, 0.3, 0.3, 2.6, 0, 2.0, -3.2); boom.rotation.x = 0.55;
+    const stick = this.box(v, r, Y, 0.24, 0.24, 2.0, 0, 2.0, -4.6); stick.rotation.x = -1.2;
+    this.box(v, r, D, 0.7, 0.55, 0.6, 0, 1.05, -5.0); this.box(v, r, H, 0.7, 0.06, 0.1, 0, 0.75, -5.25, { spec: 0.6 });   // hoe bucket
+    this.cyl(v, r, H, 0.1, 1.4, 0.2, 2.05, -3.2, "z", 8, { spec: 0.7 });
+    for (const sx of [-1, 1]) { this.box(v, r, Y, 0.2, 0.2, 0.9, sx * 1.3, 0.85, -2.1); this.box(v, r, D, 0.18, 0.7, 0.18, sx * 1.65, 0.5, -2.1); this.box(v, r, D, 0.7, 0.08, 0.7, sx * 1.65, 0.05, -2.1); }
+    // wheels: small steered fronts, big rears
+    for (const s of [-1, 1]) { this.wheel(v, r, s * 0.98, 0.5, 1.4, 1.0, 0.42, 1); this.wheel(v, r, s * 1.05, 0.8, -1.0, 1.6, 0.6, null); }
     return v;
   }
 
@@ -708,7 +749,7 @@ export class Vehicles {
     }
     // the driver is visible, seated at the wheel (standing in the manlift basket); first person hides the body
     if (v.kind !== "drone" && !this.blend) {
-      const seat = v.kind === "car" ? { x: -0.5, y: 1.35, z: -0.12 } : v.kind === "forklift" ? { x: -0.75, y: 1.0, z: 0.3 } : { x: 0, y: 0.05, z: 0 };
+      const seat = v.id === "backhoe" ? { x: 0, y: 0.52, z: -0.15 } : v.kind === "car" ? { x: -0.5, y: 1.35, z: -0.12 } : v.kind === "forklift" ? { x: -0.75, y: 1.0, z: 0.3 } : { x: 0, y: 0.05, z: 0 };
       const bd = this.player.body, ry = v.yaw;
       bd.root.setEnabled(p.third); bd.seated = v.kind !== "lift";
       bd.root.position.set(v.x + fz * seat.x + fx * seat.z, y + seat.y, v.z - fx * seat.x + fz * seat.z); bd.root.rotation.y = ry;

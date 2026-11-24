@@ -352,7 +352,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   }
   // ---- setback under the board: racked stands in two blocks either side of the V-door aisle (x -0.7..0.7), tops in the fingers above ----
   b.slab("dsteel", -2.9, F, 2.6, -0.7, F + 0.1, 5.8); b.slab("dsteel", 0.7, F, 2.6, 2.9, F + 0.1, 5.8);
-  b.blocker(-2.9, F, 2.55, -0.7, F + 2.2, 5.85); b.blocker(0.7, F, 2.55, 2.9, F + 2.2, 5.85);              // racked stands: not walkable
+  // (racked stands are solid one by one, only where a stand is actually standing: see setStands below)
   const FB = F + 25;
   // ---- monkey board, centred on the well (x = 0, the top drive's line): a central walkway with fingers either side, a stabbing board
   //      on the mast face right at the top drive, rails all round, and a ladder through the stabbing board ----
@@ -399,12 +399,16 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const standSlots: Vector3[] = [];
   for (let zi = 0; zi < 6; zi++) for (const x of [-2.6, -2.1, -1.6, -1.1, 1.1, 1.6, 2.1, 2.6]) standSlots.push(v(x, F + 0.1, 2.85 + zi * 0.5));
   const standMats = standSlots.map(() => Matrix.Identity());
+  // one small solid box per stand slot (world axes: the rig is turned, so local x -> world z and local z -> world -x); it is only tall while a stand is in that slot
+  const standBoxes: AABB[] = standSlots.map((p) => ({ x0: -(p.z + 0.14), x1: -(p.z - 0.14), z0: p.x - 0.14, z1: p.x + 0.14, y0: F, y1: F }));
+  b.colliders.push(...standBoxes);
   standSlots.forEach((p, i) => { standBase.thinInstanceAdd(Matrix.Identity()); void p; void i; });
   let shownStands = -1;
   const setStands = (n: number) => {
     n = Math.max(0, Math.min(standSlots.length, Math.round(n)));
     if (n === shownStands) return;
     shownStands = n;
+    standBoxes.forEach((bx, i) => { bx.y1 = i < n ? F + 2.2 : F; });
     standSlots.forEach((p, i) => {
       const hgt = STAND_M - 0.8;
       const mat = Matrix.Compose(new Vector3(1, i < n ? hgt : 0.0001, 1), Quaternion.Identity(), new Vector3(p.x, p.y + (i < n ? hgt / 2 : 0), p.z));

@@ -271,7 +271,7 @@ export class Outskirts {
   /** big steel-and-dirt launch ramps in the pasture, built to be hit at speed heading north: you get air, and the cattle are right where you land */
   private kickers(b: Builder) {
     b.defMat("kickdirt", "#8a7050"); b.defMat("kickyellow", "#e8b923");
-    for (const [kx, z0, z1, H] of [[78, 132, 158, 6.5], [58, 212, 240, 7.5], [98, 288, 316, 7]] as [number, number, number, number][]) {
+    for (const [kx, z0, z1, H] of [[64, 132, 158, 6.5], [58, 212, 240, 7.5], [52, 292, 318, 7]] as [number, number, number, number][]) {
       b.rampSolid(kx, 10, z0, 0, z1, H, 30);
       b.ramp("kickdirt", kx, 10, z0, 0, z1, H, 0.3);
       for (const sx of [-4.7, 4.7]) b.ramp("kickyellow", kx + sx, 0.6, z0, 0.02, z1, H + 0.02, 0.12);

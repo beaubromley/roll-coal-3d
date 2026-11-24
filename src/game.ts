@@ -398,7 +398,7 @@ export class Game {
       const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
       if (sig !== sig0) { sig0 = sig; this.rerenderCabin(p, render, bind); }
       const set = (id: string, v: string, cls = "") => { const e = p.querySelector<HTMLElement>("#" + id); if (e) { e.textContent = v; if (cls !== undefined) e.className = cls; } };
-      set("c_depth", fmt(s.depth) + " ft"); set("c_form", formationAt(s.depth).name); set("c_rop", fmt(s.rop) + " ft/hr");
+      set("c_depth", fmt(s.depth) + " ft" + (s.mode === "tripping" ? "  ·  bit at " + fmt(this.sim.bitDepth) + " ft" : "")); set("c_form", formationAt(s.depth).name); set("c_rop", fmt(s.rop) + " ft/hr");
       set("c_dp", fmt(s.dp) + " psi" + (s.stallT > 0 ? " · STALLED" : ""), s.dp > STALL_DP * 0.9 || s.stallT > 0 ? "bad" : "");
       set("c_tq", fmt(s.torque) + " ft-lb", s.torque > TORQUE_MAX * 0.9 ? "bad" : "");
       set("c_bit", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : ""); set("c_spp", fmt(s.spp) + " psi"); set("c_mw", s.mw.toFixed(2) + " ppg");
@@ -1133,7 +1133,7 @@ export class Game {
     const s = this.sim.s, c = clockString(s.t);
     const k = s.kick;
     const items = [
-      { k: "Day " + c.day, v: c.hhmm }, { k: "Depth", v: fmt(s.depth) + " ft" }, { k: "ROP", v: fmt(s.rop) }, { k: "WOB", v: String(Math.round(s.wob)) },
+      { k: "Day " + c.day, v: c.hhmm }, { k: s.mode === "tripping" ? "Bit depth" : "Depth", v: fmt(this.sim.bitDepth) + " ft" }, { k: "ROP", v: fmt(s.rop) }, { k: "WOB", v: String(Math.round(s.wob)) },
       { k: "MW ppg", v: s.mw.toFixed(1) }, { k: "SPP psi", v: fmt(s.spp) }, { k: "Diff psi", v: fmt(s.dp), warn: s.dp > STALL_DP * 0.9 }, { k: "Auto", v: s.auto.on ? "ON" : "OFF" }, { k: "Pits Δ", v: (s.pit - s.pitBase >= 0 ? "+" : "") + fmt(s.pit - s.pitBase), warn: k.active || s.loss.active },
       { k: "Bit", v: Math.round(s.bit) + "%", warn: s.bit < 20 }, { k: "Cost / AFE", v: money(s.cost) + "/" + (WELL.afe / 1e6).toFixed(1) + "M", warn: s.cost > WELL.afe },
     ];

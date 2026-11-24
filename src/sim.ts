@@ -156,6 +156,15 @@ export class Sim {
     this.dist = 0;
   }
 
+  /** where the bit is in the hole: the hole depth normally, but it comes up the hole on a trip out and goes back down on the way in */
+  get bitDepth(): number {
+    const s = this.s;
+    if (s.mode !== "tripping") return s.depth;
+    const frac = Math.min(1, s.tripT / Math.max(1, s.tripTotal));
+    const out = Math.min(1, frac * (s.tripTotal / (s.tripTotal - 60 + 1e-6)));
+    return frac < 0.5 ? s.depth * (1 - out) : s.depth * Math.min(1, (frac - 0.5) * 2);
+  }
+
   openBopResume() {
     const s = this.s;
     s.kick.shut = false; s.kick.active = false; s.kick.gain = 0; s.kick.alarm = false;

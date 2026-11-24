@@ -1209,7 +1209,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     tvT -= dt; if (tvT <= 0) { tvT = 0.5; if (f.screens) lastScr = f.screens; if (lastScr) tvScreens.update({ ...lastScr, t: f.t }); }
     // iron roughneck swings in on connection
     rough.rotation.y = f.connecting ? -0.6 : 0;
-    setStands(f.tripping ? f.standsRacked : 40 + Math.min(0, 0));
+    // pipe racked in the derrick is the inverse of the depth: lots of pipe on the board when the string is out of the hole, almost none when it is deep
+    const rackedBase = Math.round(48 * Math.max(0, 1 - f.depth / 8500));
+    setStands(f.tripping ? Math.max(rackedBase, f.standsRacked) : rackedBase);
     // night lighting
     const e = 0.15 + f.night * 0.85;
     lampMat.emissiveColor.set(1 * e, 0.92 * e, 0.62 * e);

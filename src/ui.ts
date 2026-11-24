@@ -182,7 +182,8 @@ export class UI {
   }
 
   drawMap(px: number, pz: number, yaw: number, targets: MapTarget[]) {
-    const c = this.mctx, S = 300, scale = 1.57; // px per metre
+    // px per metre: close up near the rig, zooming out the farther you get from it (down to ~1.2 km across)
+    const c = this.mctx, S = 300, scale = Math.max(0.25, 1.57 / (1 + Math.max(0, Math.hypot(px, pz) - 40) / 60));
     c.save(); c.clearRect(0, 0, S, S);
     c.fillStyle = "#cdb98f"; c.fillRect(0, 0, S, S);
     c.translate(S / 2, S / 2); c.rotate(-yaw); // heading-up

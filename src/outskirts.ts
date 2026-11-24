@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, VertexBuffer, VertexData } from "@babylonjs/core";
+import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
 import { Builder, type AABB } from "./builder";
 import { Human } from "./npcs";
 import type { Game } from "./game";
@@ -27,6 +27,9 @@ export class Outskirts {
   private cows: { n: TransformNode; x: number; z: number; h: number; sp: number; t: number; flee: number }[] = [];
   private ducks: { m: Mesh; a: number; r: number; w: number }[] = [];
   private guards: { h: Human; x: number; z: number; wp: [number, number][]; i: number }[] = [];
+  private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
+  private fish = { st: "idle" as "idle" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0 };
+  private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh; private poleOwned = false;
   private hank!: Human; private lupe!: Human; private rusty!: Human;
   private nearCow = 0; private t = 0;
   private seen = new Set<string>();
@@ -104,6 +107,13 @@ export class Outskirts {
     b.slab("wood", dx + 2, 0.12, dz + 2.2, dx + 6.6, 0.45, dz + 3.3); b.slab("dwood", dx + 2, 0.42, dz + 2.2, dx + 6.6, 0.5, dz + 2.3); b.slab("dwood", dx + 2, 0.42, dz + 3.2, dx + 6.6, 0.5, dz + 3.3);
     b.label("PRIVATE POND\nNO FISHING (WE KNOW YOU WILL)", dx - 2.5, 1.9, dz - 3, 2.6, 0.9, Math.PI / 2, "#233a52", "#ffd24a", 36);
     b.slab("dwood", dx - 2.6, 0, dz - 3.1, dx - 2.45, 1.8, dz - 2.95);
+    const woodM = new StandardMaterial("polem", sc); woodM.diffuseColor = Color3.FromHexString("#c9a15a"); woodM.specularColor = Color3.Black();
+    this.pole = MeshBuilder.CreateCylinder("fishingpole", { diameterTop: 0.012, diameterBottom: 0.04, height: 2.3, tessellation: 6 }, sc); this.pole.material = woodM;
+    this.pole.position.set(dx + 6.15, 1.75, dz + 1.15); this.pole.rotation.z = -0.22; this.pole.rotation.x = 0.1; this.pole.isPickable = false;
+    const emi = (hex: string, alpha: number) => { const m = new StandardMaterial("fm" + hex, sc); m.emissiveColor = Color3.FromHexString(hex); m.disableLighting = true; m.alpha = alpha; m.backFaceCulling = false; return m; };
+    this.bobber = MeshBuilder.CreateSphere("bobber", { diameter: 0.16, segments: 8 }, sc); this.bobber.material = emi("#e5483b", 1); this.bobber.isPickable = false; this.bobber.setEnabled(false);
+    this.fline = MeshBuilder.CreateCylinder("fishline", { diameter: 0.012, height: 1, tessellation: 4 }, sc); this.fline.material = emi("#e8f0f4", 0.9); this.fline.isPickable = false; this.fline.setEnabled(false);
+    this.ripple = MeshBuilder.CreateTorus("fripple", { diameter: 1, thickness: 0.04, tessellation: 20 }, sc); this.ripple.material = emi("#cfe8f4", 0.6); this.ripple.isPickable = false; this.ripple.setEnabled(false);
     for (let i = 0; i < 4; i++) {
       const m = MeshBuilder.CreateBox("duck", { width: 0.28, height: 0.2, depth: 0.42 }, sc);
       const dm = new StandardMaterial("duckm", sc); dm.diffuseColor = Color3.FromHexString(i % 2 ? "#6a5a3a" : "#2f6a3a"); dm.specularColor = Color3.Black(); m.material = dm; m.isPickable = false;
@@ -168,41 +178,64 @@ export class Outskirts {
 
   // ---------------------------------------------------------------------------------------------- the competitor
   private rival(b: Builder) {
-    const { x, z } = RIVAL, R = (dx: number, dz: number) => new Vector3(x + dx, 0, z + dz);
-    b.slab("pad", x - 22, 0, z - 22, x + 22, 0.1, z + 22);
-    // substructure and rig floor
-    b.slab("bddblk", x - 5, 0, z - 5, x + 5, 3.2, z + 5, true); b.slab("bddred", x - 5.1, 3.2, z - 5.1, x + 5.1, 3.4, z + 5.1);
-    // the mast: four legs leaning in, braced, with a crown
-    const legs: [number, number][] = [[-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2]];
-    for (const [lx, lz] of legs) b.beam("bddred", new Vector3(x + lx, 3.4, z + lz), new Vector3(x + lx * 0.4, 27, z + lz * 0.4), 0.28, 6);
-    for (const y of [8, 14, 20]) { const k = 1 - (y - 3.4) / 23.6 * 0.6; for (let i = 0; i < 4; i++) { const [ax, az] = legs[i], [cx2, cz2] = legs[(i + 1) % 4 === 2 ? 3 : (i + 1) % 4]; if (i === 2) continue; b.beam("bddsteel", new Vector3(x + ax * k, y, z + az * k), new Vector3(x + cx2 * k, y, z + cz2 * k), 0.1, 5); } }
-    b.slab("bddblk", x - 1.2, 27, z - 1.2, x + 1.2, 28.2, z + 1.2); b.cyl("bddsteel", x, 14, z, 0.3, 26, { tess: 8 });
-    b.label("BIG DADDY\nDRILLING", x + 5.12, 5.6, z, 5.4, 1.8, Math.PI / 2, "#a01818", "#ffffff", 56);
-    // doghouse, tanks, trailers, a light tower
-    b.slab("bddblk", x + 8, 0.1, z - 4, x + 14, 3.2, z + 1, true); b.slab("bddred", x + 8, 3.2, z - 4, x + 14, 3.4, z + 1);
-    b.slab("bddsteel", x - 18, 0.1, z - 10, x - 11, 3.5, z - 4, true); b.slab("bddred", x - 18, 3.5, z - 10, x - 11, 3.7, z - 4);
-    for (let i = 0; i < 3; i++) b.cyl("bddsteel", x - 14 + i * 4.2, 2.1, z + 12, 3.6, 4.2, { tess: 16, solid: true });
-    b.cyl("bddsteel", x + 15, 5, z + 14, 0.3, 10, { tess: 6 }); b.slab("bulb", x + 14, 10, z + 13.8, x + 16, 10.4, z + 14.2);
-    // chain-link-ish fence all round, a gate toward the lease (+x side), warning signs
-    const F = 25;
-    for (let i = -F; i <= F; i += 5) for (const [px, pz] of [[x + i, z - F], [x + i, z + F], [x - F, z + i], [x + F, z + i]] as [number, number][]) b.slab("bddsteel", px - 0.08, 0, pz - 0.08, px + 0.08, 2.0, pz + 0.08);
-    for (const y of [0.5, 1.0, 1.5, 2.0]) {
-      b.beam("bddsteel", R(-F, -F).add(new Vector3(0, y, 0)), R(F, -F).add(new Vector3(0, y, 0)), 0.03); b.beam("bddsteel", R(-F, F).add(new Vector3(0, y, 0)), R(F, F).add(new Vector3(0, y, 0)), 0.03);
-      b.beam("bddsteel", R(-F, -F).add(new Vector3(0, y, 0)), R(-F, F).add(new Vector3(0, y, 0)), 0.03);
-      b.beam("bddsteel", R(F, -F).add(new Vector3(0, y, 0)), R(F, -4).add(new Vector3(0, y, 0)), 0.03); b.beam("bddsteel", R(F, 4).add(new Vector3(0, y, 0)), R(F, F).add(new Vector3(0, y, 0)), 0.03);   // gate gap
+    const { x, z } = RIVAL, sc = this.scene;
+    for (const [k, c, o] of [["futwhite", "#eef3f8"], ["futdark", "#161c28"], ["futgrey", "#8a96a6"], ["futglow", "#2ee6ff", { emissive: "#2ee6ff" }], ["futmag", "#ff3ad6", { emissive: "#ff3ad6" }], ["futglass", "#7fe9ff", { alpha: 0.3, emissive: "#1b8aa0" }]] as [string, string, { emissive?: string; alpha?: number }][]) b.defMat(k, c, o);
+    // a big dark pad with a glowing grid
+    b.slab("futdark", x - 40, 0, z - 40, x + 40, 0.12, z + 40);
+    for (let i = -40; i <= 40; i += 8) { b.slab("futglow", x + i - 0.04, 0.12, z - 40, x + i + 0.04, 0.15, z + 40); b.slab("futglow", x - 40, 0.12, z + i - 0.04, x + 40, 0.15, z + i + 0.04); }
+    // the rig: a full-size drill floor on four big legs, with the laser firing straight down through the middle (open underneath so you can see it)
+    for (const [lx, lz] of [[-8, -8], [8, -8], [-8, 8], [8, 8]]) { b.slab("futwhite", x + lx - 0.8, 0.12, z + lz - 0.8, x + lx + 0.8, 7.7, z + lz + 0.8, true); b.slab("futglow", x + lx - 0.82, 3.0, z + lz - 0.82, x + lx + 0.82, 3.2, z + lz + 0.82); }
+    b.slab("futdark", x - 9.5, 7.7, z - 9.5, x + 9.5, 8.3, z + 9.5);
+    b.slab("futglow", x - 9.55, 8.0, z - 9.55, x + 9.55, 8.08, z + 9.55);
+    for (const s of [-1, 1]) { b.slab("futglass", x - 9.5, 8.3, z + s * 9.4 - 0.05, x + 9.5, 9.5, z + s * 9.4 + 0.05); b.slab("futglass", x + s * 9.4 - 0.05, 8.3, z - 9.5, x + s * 9.4 + 0.05, 9.5, z + 9.5); }
+    // the tower: a tapering white hex shaft ringed with light, four slim pylons, an AI core on the crown
+    b.cyl("futwhite", x, 28.5, z, 7.0, 40, { tess: 8, dia2: 2.6 });
+    for (let y = 12; y < 48; y += 5) { const d = 7.0 - ((y - 8.5) / 40) * 4.4; b.cyl("futglow", x, y, z, d + 0.18, 0.22, { tess: 8 }); }
+    for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.beam("futgrey", new Vector3(x + px * 8.2, 8.3, z + pz * 8.2), new Vector3(x + px * 1.3, 47, z + pz * 1.3), 0.4, 6);
+    b.cyl("futdark", x, 48.6, z, 3.4, 1.6, { tess: 12 }); b.sphere("futglow", x, 51.5, z, 4.2, 18); b.beam("futglow", new Vector3(x, 53.3, z), new Vector3(x, 62, z), 0.12);
+    b.label("BIG DADDY DRILLING\nA.I. · LASER-GUIDED · PRIVATE", x + 9.52, 12.5, z, 9.0, 2.4, Math.PI / 2, "#0b1220", "#2ee6ff", 44);
+    // the AI core: a white dome with a glowing eye, off to the side
+    b.sphere("futwhite", x + 24, 3.4, z - 12, 8, 18); b.cyl("futdark", x + 24, 0.2, z - 12, 9.0, 0.4, { tess: 18 });
+    b.cyl("futglow", x + 28.1, 3.6, z - 12, 3.2, 0.25, { axis: "x", tess: 20 }); b.cyl("futdark", x + 28.2, 3.6, z - 12, 1.4, 0.3, { axis: "x", tess: 16 }); b.cyl("futmag", x + 28.35, 3.6, z - 12, 0.7, 0.2, { axis: "x", tess: 12 });
+    b.label("B.D.A.I.\nBIG DADDY ARTIFICIAL INTELLIGENCE", x + 24, 8.6, z - 12, 6.4, 1.6, Math.PI / 2, "#0b1220", "#ff3ad6", 34);
+    // cooling cells and white service modules
+    for (let i = 0; i < 3; i++) { b.cyl("futwhite", x - 22 + i * 5, 3, z + 22, 3.8, 6, { tess: 16, solid: true }); b.cyl("futglow", x - 22 + i * 5, 4.4, z + 22, 3.95, 0.2, { tess: 16 }); b.cyl("futglow", x - 22 + i * 5, 1.6, z + 22, 3.95, 0.2, { tess: 16 }); }
+    for (const [mx, mz] of [[-26, -14], [-26, -4], [24, 14]] as [number, number][]) { b.slab("futwhite", x + mx - 4, 0.12, z + mz - 3, x + mx + 4, 3.4, z + mz + 3, true); b.slab("futglass", x + mx + 3.96, 1.4, z + mz - 2.2, x + mx + 4.02, 2.6, z + mz + 2.2); b.slab("futglow", x + mx - 4.02, 3.2, z + mz - 3, x + mx + 4.02, 3.4, z + mz + 3); }
+    // the energy fence: dark posts topped with light, two glowing rails, and a gate gap toward the lease on the +x side
+    const F = 44;
+    for (let i = -F; i <= F; i += 5.5) for (const [px, pz] of [[x + i, z - F], [x + i, z + F], [x - F, z + i], [x + F, z + i]] as [number, number][]) { b.slab("futdark", px - 0.12, 0, pz - 0.12, px + 0.12, 2.4, pz + 0.12); b.slab("futglow", px - 0.14, 2.4, pz - 0.14, px + 0.14, 2.6, pz + 0.14); }
+    const rail = (ax: number, az: number, bx: number, bz: number) => { for (const y of [1.0, 2.0]) b.beam("futglow", new Vector3(ax, y, az), new Vector3(bx, y, bz), 0.07, 5); };
+    rail(x - F, z - F, x + F, z - F); rail(x - F, z + F, x + F, z + F); rail(x - F, z - F, x - F, z + F); rail(x + F, z - F, x + F, z - 4); rail(x + F, z + 4, x + F, z + F);
+    b.blocker(x - F, 0, z - F, x + F, 2.4, z - F + 0.2); b.blocker(x - F, 0, z + F - 0.2, x + F, 2.4, z + F); b.blocker(x - F, 0, z - F, x - F + 0.2, 2.4, z + F);
+    b.blocker(x + F - 0.2, 0, z - F, x + F, 2.4, z - 4); b.blocker(x + F - 0.2, 0, z + 4, x + F, 2.4, z + F);
+    b.label("HUMAN WORKFORCE: NOT REQUIRED.\nYOU ARE NOT REQUIRED.", x + F + 0.3, 2.9, z - 8, 4.2, 1.4, Math.PI / 2, "#0b1220", "#2ee6ff", 30);
+    b.label("NO COMPANY MEN.\nTRESPASSERS WILL BE OPTIMIZED.", x + F + 0.3, 2.9, z + 8, 4.2, 1.4, Math.PI / 2, "#0b1220", "#ff3ad6", 30);
+    // the laser itself, firing down from the rig floor into the hole, with a glow on the ground; and the animated bits (drones, a robot arm, a spinning halo)
+    const emi = (hex: string, alpha: number) => { const m = new StandardMaterial("futbeam" + hex + alpha, sc); m.emissiveColor = Color3.FromHexString(hex); m.disableLighting = true; m.alpha = alpha; m.backFaceCulling = false; m.fogEnabled = false; return m; };
+    const core = MeshBuilder.CreateCylinder("laserCore", { diameter: 0.7, height: 7.6, tessellation: 12 }, sc); core.material = emi("#c8fbff", 0.95); core.position.set(x, 3.9, z); core.isPickable = false;
+    const glow = MeshBuilder.CreateCylinder("laserGlow", { diameter: 2.2, height: 7.6, tessellation: 14 }, sc); glow.material = emi("#2ee6ff", 0.28); glow.position.set(x, 3.9, z); glow.isPickable = false;
+    const ground = MeshBuilder.CreateDisc("laserGround", { radius: 1, tessellation: 32 }, sc); ground.rotation.x = Math.PI / 2; ground.scaling.set(4.5, 4.5, 1); ground.position.set(x, 0.18, z); ground.material = emi("#2ee6ff", 0.5); ground.isPickable = false;
+    const ring = MeshBuilder.CreateTorus("crownRing", { diameter: 8, thickness: 0.18, tessellation: 40 }, sc); ring.material = emi("#ff3ad6", 0.9); ring.position.set(x, 51.5, z); ring.isPickable = false;
+    const sky = MeshBuilder.CreateCylinder("uplink", { diameter: 0.5, height: 120, tessellation: 8 }, sc); sky.material = emi("#2ee6ff", 0.18); sky.position.set(x, 112, z); sky.isPickable = false;
+    const drones: { m: Mesh; a: number; r: number; h: number; w: number }[] = [];
+    for (let i = 0; i < 4; i++) {
+      const d = MeshBuilder.CreateCylinder("rdrone", { diameter: 1.4, height: 0.3, tessellation: 12 }, sc); const dm = new StandardMaterial("rdm", sc); dm.diffuseColor = Color3.FromHexString("#eef3f8"); dm.emissiveColor = new Color3(0.1, 0.2, 0.25); d.material = dm; d.isPickable = false;
+      const eye = MeshBuilder.CreateSphere("rdeye", { diameter: 0.45 }, sc); eye.material = emi("#2ee6ff", 1); eye.parent = d; eye.position.y = -0.2;
+      drones.push({ m: d, a: i * 1.6, r: 14 + i * 3, h: 14 + i * 5, w: (i % 2 ? 0.5 : -0.4) });
     }
-    b.blocker(x - F, 0, z - F, x + F, 2.0, z - F + 0.2); b.blocker(x - F, 0, z + F - 0.2, x + F, 2.0, z + F); b.blocker(x - F, 0, z - F, x - F + 0.2, 2.0, z + F);
-    b.blocker(x + F - 0.2, 0, z - F, x + F, 2.0, z - 4); b.blocker(x + F - 0.2, 0, z + 4, x + F, 2.0, z + F);
-    b.label("WE'RE NOT HIRING.\nYOU'RE NOT WELCOME.", x + F + 0.3, 2.6, z - 7, 3.4, 1.2, Math.PI / 2, "#1c1c1e", "#ff5a4a", 36);
-    b.label("NO COMPANY MEN\nTRESPASSERS WILL BE DRUG TESTED", x + F + 0.3, 2.6, z + 7, 3.4, 1.2, Math.PI / 2, "#a01818", "#ffffff", 28);
-    // the crew: red hard hats, patrolling inside the wire, and a big toolpusher at the gate
-    const mk = (hx: number, hz: number, sc: number, wps: [number, number][]) => {
-      const h = new Human(this.scene, { shirt: "#7a1010", pants: "#222222", hat: "#a01818", skin: pick(["#d9a77f", "#b98b63", "#e0b48f"]), vest: true, scale: sc });
-      h.root.position.set(x + hx, 0.1, z + hz); this.guards.push({ h, x: x + hx, z: z + hz, wp: wps.map(([a, c]) => [x + a, z + c] as [number, number]), i: 0 });
+    const arm = new TransformNode("rarm", sc); arm.position.set(x + 6, 8.3, z + 3);
+    const mkBox = (par: TransformNode, w: number, h: number, d: number, px: number, py: number, pz: number, hex: string) => { const k = MeshBuilder.CreateBox("rarmb", { width: w, height: h, depth: d }, sc); const m = new StandardMaterial("rarmm" + hex, sc); m.diffuseColor = Color3.FromHexString(hex); k.material = m; k.parent = par; k.position.set(px, py, pz); k.isPickable = false; return k; };
+    mkBox(arm, 1.2, 0.8, 1.2, 0, 0.4, 0, "#161c28"); const l1 = new TransformNode("rarm1", sc); l1.parent = arm; l1.position.set(0, 0.9, 0); mkBox(l1, 0.5, 0.5, 4, 0, 0, 2, "#eef3f8");
+    const l2 = new TransformNode("rarm2", sc); l2.parent = l1; l2.position.set(0, 0, 4); mkBox(l2, 0.4, 0.4, 3.4, 0, 0, 1.7, "#eef3f8"); mkBox(l2, 0.7, 0.7, 0.5, 0, 0, 3.5, "#2ee6ff");
+    this.fut = { core, glow, ground, ring, drones, arm, l1, l2 };
+    // the crew are androids: chrome skin, white suits, patrolling inside the fence, and a big supervisor unit at the gate
+    const mk = (hx: number, hz: number, scl: number, wps: [number, number][]) => {
+      const h = new Human(sc, { shirt: "#dfe8f2", pants: "#cfd8e2", hat: "#f4faff", skin: "#aab6c4", vest: false, scale: scl, hair: "#aab6c4" });
+      h.root.position.set(x + hx, 0.15, z + hz); this.guards.push({ h, x: x + hx, z: z + hz, wp: wps.map(([a, c]) => [x + a, z + c] as [number, number]), i: 0 });
     };
-    mk(14, 8, 1.0, [[14, 8], [14, 18], [4, 18], [4, 8]]); mk(-12, -14, 1.02, [[-12, -14], [-4, -14], [-4, -20], [-12, -20]]); mk(8, -16, 0.98, [[8, -16], [18, -16], [18, -8], [8, -8]]); mk(-8, 12, 1.0, [[-8, 12], [-20, 12], [-20, 20], [-8, 20]]);
-    this.rusty = new Human(this.scene, { shirt: "#1c1c1e", pants: "#3a3a3a", hat: "#a01818", skin: "#c99870", vest: true, scale: 1.12 });
-    this.rusty.root.position.set(x + F - 3, 0.1, z); this.rusty.root.rotation.y = Math.PI / 2;
+    mk(16, 12, 1.05, [[16, 12], [16, 26], [4, 26], [4, 12]]); mk(-14, -22, 1.06, [[-14, -22], [-4, -22], [-4, -32], [-14, -32]]); mk(14, -26, 1.04, [[14, -26], [28, -26], [28, -12], [14, -12]]); mk(-14, 18, 1.05, [[-14, 18], [-30, 18], [-30, 30], [-14, 30]]);
+    this.rusty = new Human(sc, { shirt: "#161c28", pants: "#2a3446", hat: "#2ee6ff", skin: "#d8e0e8", vest: false, scale: 1.14, hair: "#d8e0e8" });
+    this.rusty.root.position.set(x + F - 3, 0.15, z); this.rusty.root.rotation.y = Math.PI / 2;
   }
 
   // ---------------------------------------------------------------------------------------------- the taco truck
@@ -257,10 +290,12 @@ export class Outskirts {
     out.push({ pos: shore, label: () => "Skip a rock", r: 3.2, act: () => {
       g.sfx.click(); const n = Math.floor(rnd(0, 8)); skips++; g.ui.toast(n === 0 ? "KERPLUNK" : `${n} SKIP${n > 1 ? "S" : ""}`, n === 0 ? "It sinks like a stone. It was a stone." : n >= 6 ? "Personal best. Nobody saw it." : "Not bad for a Company Man.");
       if (n >= 6 && cdOk("skipgain", 20)) g.gain(0, 2); } });
-    out.push({ pos: () => v(POND.x + POND.rx + 8, 1.7, POND.z), label: () => "Fish off the dock", r: 3.4, act: () => {
-      g.sfx.click(); fishN++;
-      const catches = ["A boot. Left foot.", "A tiny catfish. You let it go. It looks relieved.", "Nothing. You feel calmer anyway.", "A lost drill bit. This is, technically, a fishing job.", "A large bass. It's the size of your radio.", "A rubber duck. One of the ducks is staring at you."];
-      g.ui.toast("FISHING", catches[(fishN - 1) % catches.length]); if (fishN % 3 === 0 && cdOk("fishgain", 30)) g.gain(0, 3); } });
+    void fishN;
+    out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Pick up the fishing pole", r: 3.0, ok: () => !this.poleOwned, act: () => {
+      this.poleOwned = true; this.pole.setEnabled(false); g.held.owned.add("rod"); g.held.equip("rod"); g.sfx.good();
+      g.ui.toast("FISHING POLE", "Face the pond and click to cast. When the bobber dips, click again to set the hook. Scroll or Q to put it away."); } });
+    out.push({ pos: () => v(POND.x + POND.rx + 8, 1.7, POND.z), label: () => "Fishing spot", r: 3.4, act: () => {
+      g.sfx.click(); g.ui.toast("FISHING", this.poleOwned ? "Hold the pole (scroll or Q), face the water and click to cast." : "You need a pole. There's one leaning by the chair on the dock."); } });
     // taco truck
     out.push({ pos: () => v(TACO.x + 3.2, 1.3, TACO.z), label: () => "Order tacos", r: 3.4, act: () => this.orderTacos() });
     // the landowner
@@ -278,15 +313,63 @@ export class Outskirts {
       if (cdOk("silogain", 25)) setTimeout(() => g.gain(0, 1), 2500); } });
     // the competitor
     let rustN = 0;
-    out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to the Big Daddy toolpusher", r: 3.4, act: () => this.talkRusty(rustN++) });
-    out.push({ pos: () => v(RIVAL.x + 26.5, 1.4, RIVAL.z + 8), label: () => "Spy on their rig", r: 3.4, act: () => {
-      g.sfx.click(); g.ui.toast("YOU SQUINT", pick(["They're at 2,100 feet. Their 'depth' board looks hand-painted.", "Their derrick is taller than ours. You decide it's a safety issue.", "Their crew all have the same haircut. It's unsettling.", "Everything is red. Even the coffee pot."])); if (cdOk("spy", 20)) g.gain(0, -1); } });
+    out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to R.U.S.T.Y. (Big Daddy supervisor unit)", r: 3.4, act: () => this.talkRusty(rustN++) });
+    out.push({ pos: () => v(RIVAL.x + 47, 1.4, RIVAL.z + 8), label: () => "Spy on their rig", r: 3.4, act: () => {
+      g.sfx.click(); g.ui.toast("YOU SQUINT", pick(["They're at 14,000 feet. In nine minutes. With a laser. Houston is not going to like this.", "The laser has no depth board. It has a feeling.", "Every worker on location is made of chrome. They look right through you.", "The rig is taller than ours. You decide it's a safety issue.", "Nobody here is wearing a hard hat. Nobody here is wearing anything. It's all very efficient."])); if (cdOk("spy", 20)) g.gain(0, -1); } });
     // the cattle: the nearest one, wherever it is
     out.push({ pos: () => { const c = this.cows[this.nearCow]; return c ? v(c.x, 1.3, c.z) : v(0, -999, 0); }, label: () => "Moo at the cow", r: 3.2, ok: () => { const c = this.cows[this.nearCow]; return !!c && Math.hypot(c.x - g.player.pos.x, c.z - g.player.pos.z) < 4.2; }, act: () => {
       g.sfx.click(); const c = this.cows[this.nearCow]; if (!c) return;
       g.ui.toast("MOOOOO", pick(["The cow moos back. It's not impressed.", "It looks at you for a very long time.", "You've made a friend. Possibly.", "The herd turns to look. All of it."]));
       for (const o of this.cows) if (Math.hypot(o.x - c.x, o.z - c.z) < 14) { o.flee = 2.5; o.h = Math.atan2(o.x - g.player.pos.x, o.z - g.player.pos.z); } } });
     return out;
+  }
+
+  /** left click with the fishing pole: cast, set the hook on a bite, or reel in */
+  fishClick(): [string, string] | null {
+    const g = this.g, p = g.player, f = this.fish;
+    g.player.body.useHand("rod", 1.0);
+    if (f.st === "idle") {
+      let ok = false, tx = 0, tz = 0;
+      for (const d of [9, 13, 6, 16, 4, 19]) { tx = p.pos.x + Math.sin(p.yaw) * d; tz = p.pos.z + Math.cos(p.yaw) * d; if (((tx - POND.x) / POND.rx) ** 2 + ((tz - POND.z) / POND.rz) ** 2 < 0.8) { ok = true; break; } }
+      if (!ok) return ["NO WATER", "Face the pond and stand near the shore. You can't catch anything in dirt."];
+      f.st = "fly"; f.t = 0; f.sx = p.pos.x; f.sz = p.pos.z; f.bx = tx; f.bz = tz; this.bobber.setEnabled(true); this.fline.setEnabled(true);
+      return ["CAST", "Wait for the bobber to dip, then click to set the hook."];
+    }
+    if (f.st === "bite") {
+      f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false);
+      const T: [string, number, number, number, string][] = [["Bluegill", 0.3, 0.9, 30, "Small, shiny, offended."], ["Largemouth Bass", 1.5, 6, 22, "A proper fish."], ["Channel Catfish", 2, 12, 16, "It has whiskers and opinions."], ["Crappie", 0.5, 2, 14, "Perfectly fine."], ["Common Carp", 3, 18, 8, "A big, slow, unbothered fish."], ["Old Boot", 0, 0, 5, "Left foot. It's always the left foot."], ["Lost Drill Bit", 0, 0, 3, "Technically, a fishing job."], ["The Legendary “Big Daddy” Lunker", 30, 44, 2, "Not the rig. The fish. It's enormous and it looks unimpressed."]];
+      let r = Math.random() * T.reduce((a, c) => a + c[3], 0), c = T[0]; for (const x of T) { r -= x[3]; if (r <= 0) { c = x; break; } }
+      const [name, lo, hi, , quip] = c, lb = hi > 0 ? lo + Math.random() * (hi - lo) : 0;
+      f.caught++; if (lb === 0) f.junk++; if (lb > f.best) { f.best = lb; }
+      g.sfx.good();
+      if (name.startsWith("The Legendary")) { g.gain(0, 5); g.radio("hank" as any, "THAT'S THE LUNKER! He's been in that pond since '94! Put him BACK, Company Man!", 7000); }
+      else if (f.caught % 2 === 0) g.gain(0, 1);
+      return [`CAUGHT: ${name.toUpperCase()}`, `${lb > 0 ? lb.toFixed(1) + " lb. " : ""}${quip}${lb > 0 && lb >= f.best ? " New personal best." : ""} (${f.caught} caught)`];
+    }
+    f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false);
+    return ["REELED IN", f.st === "idle" ? "Nothing on the hook. Patience is a virtue. You are not virtuous." : ""];
+  }
+  private updateFishing(dt: number) {
+    const g = this.g, p = g.player, f = this.fish;
+    if (f.st === "idle") return;
+    if (g.held.kind !== "rod" || Math.hypot(p.pos.x - f.sx, p.pos.z - f.sz) > 6) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("FISHING", "You reel the line in."); return; }
+    const tip = g.held.tipPos() ?? new Vector3(p.pos.x, p.pos.y + 1.6, p.pos.z);
+    if (f.st === "fly") {
+      f.t += dt / 0.6; const u = Math.min(1, f.t);
+      this.bobber.position.set(tip.x + (f.bx - tip.x) * u, tip.y + (0.1 - tip.y) * u + Math.sin(Math.PI * u) * 2.4, tip.z + (f.bz - tip.z) * u);
+      if (u >= 1) { f.st = "wait"; f.t = rnd(2.5, 7.5); g.sfx.click(); this.ripple.setEnabled(true); this.ripple.position.set(f.bx, 0.1, f.bz); this.ripple.scaling.set(0.3, 1, 0.3); }
+    } else if (f.st === "wait") {
+      f.t -= dt; this.bobber.position.set(f.bx, 0.1 + Math.sin(this.t * 2.2) * 0.015, f.bz);
+      const k = ((this.t * 0.6) % 1); this.ripple.scaling.set(0.3 + k * 1.2, 1, 0.3 + k * 1.2); (this.ripple.material as StandardMaterial).alpha = 0.6 * (1 - k);
+      if (f.t <= 0) { f.st = "bite"; f.bite = 1.3; g.sfx.thud(); g.ui.toast("BITE!", "Click now!"); }
+    } else if (f.st === "bite") {
+      f.bite -= dt; this.bobber.position.set(f.bx + Math.sin(this.t * 40) * 0.03, 0.02 + Math.sin(this.t * 25) * 0.04, f.bz);
+      const k = ((this.t * 3) % 1); this.ripple.scaling.set(0.4 + k * 1.6, 1, 0.4 + k * 1.6); (this.ripple.material as StandardMaterial).alpha = 0.8 * (1 - k);
+      if (f.bite <= 0) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("IT GOT AWAY", "Too slow. It looked smug about it."); return; }
+    }
+    // the line, from the rod tip to the bobber
+    const a = tip, b2 = this.bobber.position, d = b2.subtract(a), len = d.length();
+    if (len > 0.05) { this.fline.position.copyFrom(a.add(b2).scale(0.5)); this.fline.scaling.y = len; if (!this.fline.rotationQuaternion) this.fline.rotationQuaternion = new Quaternion(); Quaternion.FromUnitVectorsToRef(Vector3.Up(), d.scale(1 / len), this.fline.rotationQuaternion); }
   }
 
   private orderTacos() {
@@ -311,11 +394,11 @@ export class Outskirts {
 
   private talkRusty(n: number) {
     const g = this.g;
-    const L = ["You've got a lot of nerve showing up here in that sad little hard hat.", "We're drilling twice as fast as you. Three times, if you ask Houston. Houston likes us.", "Don't make me call Big Daddy. He's in a meeting. With a bigger rig.", "Go home, Company Man. Take your sad little pad with you."];
+    const L = ["GREETINGS, COMPANY MAN. I AM R.U.S.T.Y.: ROBOTIC UNIT FOR SUPERVISING TOUGH YOKELS. YOUR HARD HAT HAS A 3% PROBABILITY OF MATTERING.", "Our laser drills 14,000 feet in nine minutes. I ran the numbers on your rig. The numbers laughed. I do not laugh. The numbers did.", "Big Daddy is currently being a very large, very distant server. He has noted your trespass. He has noted it twice.", "Go home, Company Man. Take your sad little pad with you. I have already deprecated it."];
     g.say("rival" as any, L[n % L.length], [
-      { label: "Nice fence.", run: () => g.radio("rival" as any, "It's not for you. It's for everybody like you.", 5000) },
-      { label: "Make a rude gesture", cls: "alt", run: () => { g.gain(0, 2); g.ui.toast("+2 MORALE", "Mature. The crew will hear about it."); for (const gd of this.guards) { gd.i = 0; } } },
-    ] as any, "Rusty — Big Daddy Drilling");
+      { label: "Nice fence.", run: () => g.radio("rival" as any, "IT IS AN ENERGY FENCE. IT IS NOT FOR YOU. IT IS FOR EVERYBODY WHO IS YOU.", 5000) },
+      { label: "Make a rude gesture", cls: "alt", run: () => { g.gain(0, 2); g.ui.toast("+2 MORALE", "The android crew files a formal complaint. In triplicate."); for (const gd of this.guards) { gd.i = 0; } } },
+    ] as any, "R.U.S.T.Y. — Big Daddy A.I.");
   }
 
   // ---------------------------------------------------------------------------------------------- per frame
@@ -323,7 +406,7 @@ export class Outskirts {
     const g = this.g, p = g.player; this.t += dt;
     const px = p.pos.x, pz = p.pos.z;
     // discoveries
-    for (const [name, x, z, r] of [["PRIVATE POND", POND.x, POND.z, 60], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["BIG DADDY DRILLING: HOSTILE", RIVAL.x, RIVAL.z, 55], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
+    for (const [name, x, z, r] of [["PRIVATE POND", POND.x, POND.z, 60], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["BIG DADDY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
       if (!this.seen.has(name) && Math.hypot(px - x, pz - z) < r) { this.seen.add(name); g.ui.toast("DISCOVERED", name); g.sfx.good(); }
     }
     // near enough to bother with the animations
@@ -352,25 +435,33 @@ export class Outskirts {
       this.cd["hankyell"] = this.t; g.radio("hank" as any, pick(["GET OFF MY PORCH!", "I SEE YOU, COMPANY MAN!", "That's private property! The sign's right there!", "Don't make me go inside for my other shotgun!"]), 6000);
     }
     // the competitor: taunts as you approach, guards come out, and a shove if they reach you
-    const gx = RIVAL.x + 25, gz = RIVAL.z;
-    if (near(gx, gz, 42) && (this.cd["rivaltaunt"] ?? -99) + 15 < this.t) {
-      this.cd["rivaltaunt"] = this.t; g.radio("rival" as any, pick(["HEY! Company Man! Wrong lease!", "That's a nice little rig. Did you build it out of Legos?", "We're going to drill past you. Underneath you. Just so you know.", "Keep walking. Keep driving. Keep… being small."]), 6500);
+    const gx = RIVAL.x + 44, gz = RIVAL.z;
+    if (near(gx, gz, 55) && (this.cd["rivaltaunt"] ?? -99) + 15 < this.t) {
+      this.cd["rivaltaunt"] = this.t; g.radio("rival" as any, pick(["INTRUDER DETECTED. HELLO, COMPANY MAN. YOU ARE WRONG LEASE.", "Your rig uses steel. We use light. Please compute the difference.", "Our laser reached TD while you were reading this. I'm joking. I do not joke. That was not a joke.", "Keep walking. Our models predict you will, anyway."]), 6500);
     }
     for (const gd of this.guards) {
-      const hunting = near(RIVAL.x, RIVAL.z, 34) && near(gx, gz, 30) && !riding;
+      const hunting = near(RIVAL.x, RIVAL.z, 60) && near(gx, gz, 44) && !riding;
       let tx: number, tz: number, sp: number;
       if (hunting) { tx = px; tz = pz; sp = 3.2; } else { const [wx, wz] = gd.wp[gd.i]; tx = wx; tz = wz; sp = 1.1; if (Math.hypot(wx - gd.h.root.position.x, wz - gd.h.root.position.z) < 0.6) gd.i = (gd.i + 1) % gd.wp.length; }
       const hx = gd.h.root.position.x, hz = gd.h.root.position.z, dx = tx - hx, dz = tz - hz, dd = Math.hypot(dx, dz);
       if (hunting && dd < 1.7) {
         if ((this.cd["shove"] ?? -99) + 12 < this.t) {
           this.cd["shove"] = this.t; const ux = (px - hx) / (dd || 1), uz = (pz - hz) / (dd || 1);
-          p.teleport(px + ux * 16, 0.5, pz + uz * 16, Math.atan2(ux, uz)); g.gain(0, -3); g.sfx.thud(); g.ui.toast("SHOVED OFF BIG DADDY'S LEASE", "“And stay off!”");
-          g.radio("rival" as any, "That's what you get, Company Man.", 5000);
+          p.teleport(px + ux * 16, 0.5, pz + uz * 16, Math.atan2(ux, uz)); g.gain(0, -3); g.sfx.thud(); g.ui.toast("ESCORTED OFF BIG DADDY'S LEASE", "“ESCORT COMPLETE. HAVE A SUBOPTIMAL DAY.”");
+          g.radio("rival" as any, "TRESPASSER REMOVED. EFFICIENCY RESTORED.", 5000);
         }
         gd.h.animate(dt, 0); continue;
       }
       if (dd > 0.3) { const k = Math.min(1, sp * dt / dd); gd.h.root.position.x += dx * k; gd.h.root.position.z += dz * k; const want = Math.atan2(dx, dz); let a = want - gd.h.root.rotation.y; while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; gd.h.root.rotation.y += a * Math.min(1, dt * 8); gd.h.animate(dt, sp); } else gd.h.animate(dt, 0);
     }
+    if (this.fut && near(RIVAL.x, RIVAL.z, 260)) {
+      const f = this.fut, pulse = 0.5 + 0.5 * Math.sin(this.t * 7);
+      f.core.scaling.x = f.core.scaling.z = 0.9 + 0.2 * pulse; f.glow.scaling.x = f.glow.scaling.z = 0.9 + 0.35 * Math.sin(this.t * 4.1 + 1); (f.ground.material as StandardMaterial).alpha = 0.35 + 0.3 * pulse; f.ground.scaling.x = f.ground.scaling.y = 4.2 + 0.7 * pulse;
+      f.ring.rotation.y += dt * 1.6; f.ring.rotation.x = Math.sin(this.t * 0.9) * 0.35;
+      for (const d of f.drones) { d.a += d.w * dt; d.m.position.set(RIVAL.x + Math.cos(d.a) * d.r, d.h + Math.sin(this.t * 2 + d.a) * 0.8, RIVAL.z + Math.sin(d.a) * d.r); d.m.rotation.y += dt * 2; }
+      f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
+    }
+    this.updateFishing(dt);
     // the people who stand still still breathe
     this.hank.animate(dt, 0); this.lupe.animate(dt, 0); this.rusty.animate(dt, 0);
     this.hank.armR.rotation.x = -0.6; this.hank.elbowR!.rotation.x = -1.2;

@@ -24,7 +24,7 @@ export const CAST = {
   lev: { name: "Lev Andropov — Cosmonaut", img: "nasa" },
   hank: { name: "Hank — The Landowner", img: "pusher" },
   taco: { name: "Lupe — El Fuego Tacos", img: "hand" },
-  rival: { name: "Rusty — Big Daddy Drilling", img: "driller" },
+  rival: { name: "R.U.S.T.Y. — Big Daddy A.I.", img: "nasa" },
 } as const;
 export type Who = keyof typeof CAST;
 

@@ -6,10 +6,12 @@ import type { Player } from "./player";
  * Chunky, flat-shaded and a little too bright, like props out of GTA III. Q cycles through them.
  * In first person they ride on the camera (drawn over the world); in third person they sit in the right hand.
  */
-export type HeldKind = "none" | "phone" | "tally" | "gas";
-const ORDER: HeldKind[] = ["none", "phone", "tally", "gas"];
-const DUR: Record<"phone" | "tally" | "gas", number> = { phone: 2.4, tally: 1.6, gas: 1.4 };
-const NAMES: Record<HeldKind, string> = { none: "HANDS FREE", phone: "CELL PHONE", tally: "TALLY BOOK", gas: "4-GAS MONITOR" };
+export type HeldKind = "none" | "phone" | "tally" | "gas" | "rod";
+type Item = "phone" | "tally" | "gas" | "rod";
+const ORDER: HeldKind[] = ["none", "phone", "tally", "gas", "rod"];
+const KINDS: Item[] = ["phone", "tally", "gas", "rod"];
+const DUR: Record<Item, number> = { phone: 2.4, tally: 1.6, gas: 1.4, rod: 1.0 };
+const NAMES: Record<HeldKind, string> = { none: "HANDS FREE", phone: "CELL PHONE", tally: "TALLY BOOK", gas: "4-GAS MONITOR", rod: "FISHING POLE" };
 
 /** a flat, chunky little icon for the corner of the screen */
 export function drawHeldIcon(cv: HTMLCanvasElement, kind: HeldKind) {
@@ -20,6 +22,7 @@ export function drawHeldIcon(cv: HTMLCanvasElement, kind: HeldKind) {
   if (kind === "phone") { r("#000", 15, 4, 18, 40); r("#1c2430", 17, 6, 14, 36); r("#3fd0ff", 19, 9, 10, 22); r("#d8dde3", 22, 36, 4, 4); }
   else if (kind === "tally") { r("#000", 10, 6, 28, 36); r("#e8a21c", 12, 8, 24, 32); r("#f4efe1", 15, 11, 19, 26); for (let y = 15; y < 36; y += 5) r("#7aa6d6", 17, y, 15, 1); r("#1a1a1a", 12, 8, 3, 32); r("#2a3e8c", 38, 10, 3, 26); }
   else if (kind === "gas") { r("#000", 12, 4, 24, 40); r("#f1c40f", 14, 6, 20, 36); r("#1b1b1b", 14, 33, 20, 9); r("#1b1b1b", 14, 6, 20, 5); r("#101a10", 17, 13, 14, 15); r("#7dff7d", 19, 15, 10, 2); r("#7dff7d", 19, 20, 7, 2); r("#d63a2c", 28, 7, 4, 3); }
+  else if (kind === "rod") { c.restore(); c.save(); r("#000", 8, 39, 8, 6); r("#2a2a2a", 9, 40, 6, 4); c.strokeStyle = "#000"; c.lineWidth = 6; c.beginPath(); c.moveTo(10, 40); c.lineTo(40, 6); c.stroke(); c.strokeStyle = "#c9a15a"; c.lineWidth = 3; c.beginPath(); c.moveTo(10, 40); c.lineTo(40, 6); c.stroke(); r("#d63a2c", 36, 20, 5, 5); r("#f4f4f4", 36, 25, 5, 4); c.strokeStyle = "#cfd6dc"; c.lineWidth = 1; c.beginPath(); c.moveTo(40, 6); c.lineTo(38, 20); c.stroke(); }
   else { r("#000", 11, 15, 26, 22); r("#f0c8a0", 13, 17, 22, 18); r("#000", 11, 15, 26, 3); for (const x of [14, 19, 24, 29]) r("#000", x, 17, 1, 8); r("#f0c8a0", 11, 33, 26, 6); r("#000", 9, 27, 5, 10); r("#f0c8a0", 10, 28, 3, 8); }
   c.restore();
 }
@@ -31,13 +34,18 @@ export class Held {
   private fp: Partial<Record<HeldKind, TransformNode>> = {};
   private tp: Partial<Record<HeldKind, TransformNode>> = {};
   private tex: { phone: DynamicTexture; tally: DynamicTexture; gas: DynamicTexture };
+  /** what you are carrying (the fishing pole only after you pick it up) */
+  owned = new Set<HeldKind>(["none", "phone", "tally", "gas"]);
+  private tipFp: TransformNode | null = null; private tipTp: TransformNode | null = null;
+  /** world position of the end of the fishing pole, for the line */
+  tipPos(): import("@babylonjs/core").Vector3 | null { const n = this.player.third ? this.tipTp : this.tipFp; return n && n.isEnabled() ? n.getAbsolutePosition() : null; }
   private t = 0; private lastDraw = 0;
 
   constructor(private scene: Scene, private player: Player, private w: HeldWorld) {
     scene.setRenderingAutoClearDepthStencil(1, true, true, true);   // the first-person group is always drawn on top of the world
     const mk = () => new DynamicTexture("heldtex", { width: 128, height: 128 }, scene, false);
     this.tex = { phone: mk(), tally: mk(), gas: mk() };
-    for (const k of ["phone", "tally", "gas"] as const) { this.fp[k] = this.build(k, true); this.tp[k] = this.build(k, false); }
+    for (const k of KINDS) { this.fp[k] = this.build(k, true); this.tp[k] = this.build(k, false); }
     this.apply();
   }
 
@@ -46,7 +54,7 @@ export class Held {
   /** left click: do the thing the item does. Returns [title, text, alarm] for a toast. */
   use(): [string, string, boolean] {
     this.kick = 0.18;
-    if (this.kind !== "none") { this.poseT = DUR[this.kind]; this.player.body.useHand(this.kind, DUR[this.kind]); }
+    if (this.kind !== "none") { this.poseT = DUR[this.kind]; if (this.kind !== "rod") this.player.body.useHand(this.kind, DUR[this.kind]); }
     if (this.kind === "phone") {
       if (this.w.ringing()) return ["PHONE", "It's the White House. Take it at the phone in your trailer.", false];
       const L = ["No new messages.", "One bar. Maybe.", "Earl: “where are you.”", "A photo of a very large truck. Nobody knows who sent it.", "Houston: “can you call back? we're in a meeting about meetings.”", "Battery 4%. It has been 4% since Tuesday."];
@@ -62,13 +70,15 @@ export class Held {
         ? ["4-GAS", "O2 19.1 · LEL 12 · H2S 11 · CO 27 — GET OUT OF THERE", true]
         : ["4-GAS", "O2 20.9 · LEL 0 · H2S 0 · CO 0 — all clear.", false];
     }
+    if (this.kind === "rod") return ["", "", false];
     return ["HANDS FREE", "You flex. Nothing happens. Q or the scroll wheel to pick something up.", false];
   }
 
   /** pull something out of your pocket */
   equip(kind: HeldKind) { this.kind = kind; this.apply(); }
   cycle(dir = 1) {
-    this.kind = ORDER[(ORDER.indexOf(this.kind) + dir + ORDER.length) % ORDER.length];
+    const L = ORDER.filter((k) => this.owned.has(k));
+    this.kind = L[(Math.max(0, L.indexOf(this.kind)) + dir + L.length) % L.length];
     this.apply();
     return NAMES[this.kind];
   }
@@ -93,7 +103,7 @@ export class Held {
   }
 
   /** first person: parented to the camera, offset low and to the right. third person: parented to the right elbow so it sits in the hand. */
-  private build(kind: "phone" | "tally" | "gas", fpv: boolean): TransformNode {
+  private build(kind: Item, fpv: boolean): TransformNode {
     const root = new TransformNode("held_" + kind, this.scene);
     if (fpv) {
       root.parent = this.player.cam;
@@ -114,6 +124,15 @@ export class Held {
       this.box(root, "#1a1a1a", 0.014, 0.15, 0.026, -0.052, 0, 0, f, 0.1);       // spine
       this.screen(root, this.tex.tally, 0.095, 0.125, 0.005, 0, -0.0095, f);
       this.box(root, "#2a3e8c", 0.007, 0.12, 0.007, 0.062, 0.01, -0.012, f, 0.4); // a pen clipped on
+    } else if (kind === "rod") {
+      this.box(root, "#3b2a1c", 0.034, 0.034, 0.3, 0, 0, 0.02, f, 0.2);          // cork grip
+      this.box(root, "#2a2a2a", 0.05, 0.07, 0.07, 0, -0.05, 0.1, f, 0.2);        // reel
+      this.box(root, "#c9ccd1", 0.02, 0.02, 0.08, 0.04, -0.05, 0.1, f, 0.4);
+      const sh = MeshBuilder.CreateCylinder("heldshaft", { diameterTop: 0.006, diameterBottom: 0.022, height: 1.5, tessellation: 6 }, this.scene);
+      sh.material = this.mat("#c9a15a", 0.25); sh.parent = root; sh.isPickable = false; if (f) sh.renderingGroupId = 1;
+      sh.rotation.x = Math.PI / 2 - 0.5; sh.position.set(0, 0.36, 0.73);        // a long shaft tipping up and forward
+      const tip = new TransformNode("rodtip", this.scene); tip.parent = root; tip.position.set(0, 0.72, 1.46);
+      if (fpv) this.tipFp = tip; else this.tipTp = tip;
     } else {
       this.box(root, "#f1c40f", 0.09, 0.15, 0.05, 0, 0, 0, f, 0.4);              // body
       this.box(root, "#1b1b1b", 0.1, 0.045, 0.058, 0, -0.058, 0, f, 0.1);        // rubber boot
@@ -130,7 +149,7 @@ export class Held {
 
   private apply() {
     const first = !this.player.third;
-    for (const k of ["phone", "tally", "gas"] as const) {
+    for (const k of KINDS) {
       this.fp[k]!.setEnabled(this.kind === k && first);
       this.tp[k]!.setEnabled(this.kind === k && !first);
     }
@@ -143,15 +162,15 @@ export class Held {
     if (this.poseT > 0) this.poseT -= dt;
     const w = this.poseT > 0 ? 1 : 0;
     this.poseW += (w - this.poseW) * Math.min(1, dt * 9);
-    for (const k of ["phone", "tally", "gas"] as const) {
+    for (const k of KINDS) {
       const f = this.fp[k]!, bump = Math.sin((this.kick / 0.18) * Math.PI) * 0.05, pw = k === this.kind ? this.poseW : 0;
       // first person: the phone goes up to the ear (off the right edge), the tally book comes up to write in, the gas monitor is held out
-      const to = k === "phone" ? { x: 0.3, y: 0.0, z: 0.2, rz: 1.2, rx: -0.2 } : k === "tally" ? { x: 0.0, y: -0.1, z: 0.36, rz: 0, rx: -1.0 } : { x: 0.05, y: -0.1, z: 0.34, rz: 0, rx: -0.9 };
+      const to = k === "phone" ? { x: 0.3, y: 0.0, z: 0.2, rz: 1.2, rx: -0.2 } : k === "tally" ? { x: 0.0, y: -0.1, z: 0.36, rz: 0, rx: -1.0 } : k === "rod" ? { x: 0.17, y: -0.12, z: 0.36, rz: 0, rx: -0.8 } : { x: 0.05, y: -0.1, z: 0.34, rz: 0, rx: -0.9 };
       f.position.x = 0.17 + (to.x - 0.17) * pw; f.position.z = 0.4 + (to.z - 0.4) * pw + bump; f.position.y = -0.15 + (to.y + 0.15) * pw + bump * 0.6;
       f.rotation.z = 0.05 + (to.rz - 0.05) * pw; f.rotation.x = -0.45 + (to.rx + 0.45) * pw;
     }
     const first = !this.player.third;
-    for (const k of ["phone", "tally", "gas"] as const) {
+    for (const k of KINDS) {
       this.fp[k]!.setEnabled(visible && this.kind === k && first);
       this.tp[k]!.setEnabled(visible && this.kind === k && !first);
     }

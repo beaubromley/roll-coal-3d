@@ -642,7 +642,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       catwalk.push += dt * 2.6; const zc = catwalk.jz - catwalk.push;
       let y = 0.67, pitch = 0;
       if (zc < 18) { const u = Math.min(1, (18 - zc) / 12); y = 0.67 + (F - 0.4) * u; pitch = RAMP_ANG * Math.min(1, (18 - zc) / 4); }
-      jt.position.set(0, y + 0.12 * pitch, zc); jt.rotation.set(Math.PI / 2 - pitch, 0, 0);
+      jt.position.set(0, y + 0.12 * pitch, zc); jt.rotation.set(Math.PI / 2 + pitch, 0, 0);
       const pz = zc + 5.0; pusher.position.z = Math.max(pz, 18.5); pusher.setEnabled(pz >= 18.5);
       if (zc <= 6.4) { jt.setEnabled(false); catwalk.phase = "idle"; catwalk.delivered++; catwalk.event = "delivered"; catwalk.push = 0; pusher.setEnabled(true); }
     } else { pusher.setEnabled(true); pusher.position.z += (33.5 - pusher.position.z) * Math.min(1, dt * 3); }

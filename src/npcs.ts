@@ -557,13 +557,13 @@ export class Human {
   }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
   /** raise the right hand to use what it holds: the phone to the ear, the tally book up to write in, the gas monitor out in front */
-  handPose: "phone" | "tally" | "gas" | null = null; private handLeft = 0; private handW = 0;
-  useHand(kind: "phone" | "tally" | "gas", secs: number) { this.handPose = kind; this.handLeft = secs; }
+  handPose: "phone" | "tally" | "gas" | "rod" | null = null; private handLeft = 0; private handW = 0;
+  useHand(kind: "phone" | "tally" | "gas" | "rod", secs: number) { this.handPose = kind; this.handLeft = secs; }
   private applyHand(dt: number) {
     if (this.handLeft > 0) this.handLeft -= dt;
     this.handW += ((this.handLeft > 0 ? 1 : 0) - this.handW) * Math.min(1, dt * 9);
     if (this.handW < 0.01 || !this.handPose || !this.armR || !this.elbowR || this.ch) return;
-    const T = { phone: { s: -0.35, z: 0.45, e: -2.45 }, tally: { s: -0.95, z: 0.1, e: -1.5 }, gas: { s: -1.25, z: 0.05, e: -0.35 } }[this.handPose];
+    const T = { phone: { s: -0.35, z: 0.45, e: -2.45 }, tally: { s: -0.95, z: 0.1, e: -1.5 }, gas: { s: -1.25, z: 0.05, e: -0.35 }, rod: { s: -1.0, z: 0.08, e: -0.6 } }[this.handPose];
     const w = this.handW;
     this.armR.rotation.x += (T.s - this.armR.rotation.x) * w; this.armR.rotation.z = T.z * w; this.elbowR.rotation.x += (T.e - this.elbowR.rotation.x) * w;
   }

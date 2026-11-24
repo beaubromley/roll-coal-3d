@@ -829,6 +829,8 @@ export class Vehicles {
       }
       const sp = this.k("Space"); if (sp && !this.spaceWas) this.grab(v); this.spaceWas = sp;
     }
+    // and nobody drives out through the cliffs
+    { const B = this.player.bound; if (B && v.kind !== "lift") { const r = Math.hypot(v.x, v.z); if (r > B) { v.x *= B / r; v.z *= B / r; v.speed *= -0.2; } } }
     // trucks don't drive into the pond
     if (this.terrain && v.px !== undefined && this.terrain(v.x, v.z) < -0.4) { v.x = v.px; v.z = v.pz!; v.speed *= -0.25; }
     // drive-over ramps: ride up whatever drivable surface is underfoot

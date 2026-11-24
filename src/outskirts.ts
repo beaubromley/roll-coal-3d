@@ -159,11 +159,10 @@ export class Outskirts {
     const mat = new StandardMaterial("cliffm", sc); mat.specularColor = Color3.Black(); mat.backFaceCulling = false;
     const bands = ["#b0805c", "#9a6c4a", "#c4966c", "#8a5e42", "#d2a97c", "#7a5238", "#c0875f"].map((h) => Color3.FromHexString(h));
     const smooth = (a: number, b: number, x: number) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
-    const N = 72, count = 16;
+    const N = 72, count = 20;   // a full ring, overlapping, so there is no gap anywhere
     for (let i = 0; i < count; i++) {
-      const ang = (i / count) * Math.PI * 2 + 0.17, R = 560 + (i % 3) * 50, cx = Math.cos(ang) * R, cz = Math.sin(ang) * R;
-      if (Math.hypot(cx - RIVAL.x, cz - RIVAL.z) < 300) continue;
-      const W = 380 + ((i * 53) % 220), D = 190 + ((i * 37) % 90), H = 42 + ((i * 29) % 52), seed = i * 1.7;
+      const ang = (i / count) * Math.PI * 2 + 0.17, R = 740 + (i % 3) * 25, cx = Math.cos(ang) * R, cz = Math.sin(ang) * R;
+      const W = 420 + ((i * 53) % 220), D = 150 + ((i * 37) % 50), H = 80 + ((i * 29) % 70), seed = i * 1.7;   // their inner faces start about 640 m out; the invisible wall is at 585
       const m = MeshBuilder.CreateGround("cliff" + i, { width: W, height: D, subdivisions: N, updatable: true }, sc);
       const pos = m.getVerticesData(VertexBuffer.PositionKind)!, col = new Float32Array((pos.length / 3) * 4);
       for (let k = 0; k < pos.length / 3; k++) {

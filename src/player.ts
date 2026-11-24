@@ -16,6 +16,8 @@ export class Player {
   keys = new Set<string>();
   /** ground height over the hills (flat everywhere else) */
   terrain: ((x: number, z: number) => number) | null = null;
+  /** the edge of the world: you can't walk past this distance from the rig (null = no limit, e.g. on the asteroid) */
+  bound: number | null = null;
   locked = false;
   touch = false;                       // touch device: no pointer lock, on-screen controls
   touchMove = { x: 0, y: 0 };          // analog joystick, x = strafe right, y = forward
@@ -191,7 +193,8 @@ export class Player {
       const ox = this.pos.x, oz = this.pos.z;
       this.pos.x += (vx * dt) / nSub; this.pos.z += (vz * dt) / nSub;
       this.resolveXZ(this.pos.y);
-      if (this.terrain && this.terrain(this.pos.x, this.pos.z) > this.pos.y + STEP + 0.05) { this.pos.x = ox; this.pos.z = oz; }   // a cliff face: you can't walk into it
+      if (this.terrain && this.terrain(this.pos.x, this.pos.z) > this.pos.y + STEP + 0.05) { this.pos.x = ox; this.pos.z = oz; }
+      if (this.bound) { const r = Math.hypot(this.pos.x, this.pos.z); if (r > this.bound) { this.pos.x *= this.bound / r; this.pos.z *= this.bound / r; } }   // the foot of the cliffs: that's as far as the world goes   // a cliff face: you can't walk into it
       if (this.grounded && this.vel.y <= 0) { const up = this.support(this.pos.x, this.pos.z, this.pos.y); if (up > this.pos.y + 0.001 && up - this.pos.y <= STEP) this.pos.y = up; }
     }
     const feet = feet0; void feet;

@@ -1393,6 +1393,7 @@ export class Game {
     }
     if (this.started && !this.paused && !this.astMode) this.outskirts.update(Math.min(dt, 0.1));
     { const ev = this.rig.catwalk.takeEvent(); if (ev === "loaded") this.ui.toast("CATWALK", "Joint on the trough."); else if (ev === "delivered") { this.sfx.good(); this.ui.toast("JOINT ON THE FLOOR", "Right at the V-door. The floor hands thank you."); } }
+    this.player.bound = this.astMode || this.finale.mode !== "off" ? null : 585;   // the cliffs ring the world
     this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen && this.finale.mode !== "launch" && this.finale.mode !== "drive");
   }
 

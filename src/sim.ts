@@ -204,7 +204,9 @@ export class Sim {
         if (s.kick.alarm && s.t - s.kick.alarmT > 25) { if (this.shutIn(true)) this.events.push({ type: "autoShutIn" }); }
       }
       const frac = fracAt(s.depth);
-      if (eff > frac) {
+      // once enough LCM is in the system the fractures are sealed: losses stay healed instead of restarting the moment they stop
+      if (eff > frac && !s.loss.active && s.lcm >= 20) { /* sealed */ }
+      else if (eff > frac) {
         const rate = lossRateAt(s.depth) * (1 + (eff - frac) * 3) * Math.max(0.05, 1 - s.lcm / 70);
         if (!s.loss.active) { s.loss.active = true; s.loss.healed = 0; this.events.push({ type: "lossStart" }); }
         s.loss.rate = rate;

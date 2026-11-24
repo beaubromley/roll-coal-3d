@@ -1010,7 +1010,8 @@ export class Game {
     }
     if (!this.active) {
       const head = this.queue.find((m) => !m.priority);
-      if (head && head.trigger()) { this.queue.splice(this.queue.indexOf(head), 1); this.beginMission(head); }
+      const held = this.sim.hold === 8300 && !this.flags.chainDone;     // held off bottom: do not wait on job timers
+      if (head && (head.trigger() || held)) { this.queue.splice(this.queue.indexOf(head), 1); this.beginMission(head); }
       else if (this.stack.length) this.nextFromStack();
     }
     const a = this.active;
@@ -1021,7 +1022,7 @@ export class Game {
     // release the hold chain: once all scripted jobs before the finale are done
     if (this.holdPending && !this.queue.some((m) => !m.priority && m.id !== "armageddon") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
     // hold the bit off bottom while the cast of characters is still queued
-    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.sim.hold) { this.sim.hold = 8300; this.radio("dale", "We're 200 feet off TD. Holding here till you've handled whatever's on your plate, boss.", 9000); }
+    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.sim.hold) { this.sim.hold = 8300; this.holdPending = true; this.radio("dale", "We're 200 feet off TD. Holding here till you've handled whatever's on your plate, boss. Check the arrows: every open job has to be done before we drill the last 200.", 12000); }
     // random scripted hazards
     if (this.sim.s.depth >= 6600 && !this.flags.accumFault) { this.flags.accumFault = true; this.sim.accumDead = true; this.sim.s.accum = 900; }
     if (this.sim.s.depth >= 6900 && !this.flags.accumHint) { this.flags.accumHint = true; this.radio("dale", "Hey boss, somebody ought to walk the accumulator before we get into that gas zone.", 10000); }
@@ -1223,7 +1224,7 @@ export class Game {
     this.ui.drawMap(p.pos.x, p.pos.z, p.yaw, markers.map((m) => ({ x: m.pos.x, z: m.pos.z, color: m.color })));
     const target = markers[0]?.pos ?? null; void target;
 
-    if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(`Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
+    if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(this.sim.hold === 8300 && !this.flags.chainDone ? `Held at 8,300 ft: finish the open jobs (${this.queue.filter((m) => !m.priority && m.id !== "armageddon").length} left)` : `Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
     // district banner
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }

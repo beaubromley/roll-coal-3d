@@ -13,7 +13,10 @@ const pick = <T,>(l: T[]) => l[Math.floor(Math.random() * l.length)];
 
 // ---- layout (world metres; the lease is x -60..60, z -66..62, the lease road runs +z from the gate) ----
 const HILLS: [number, number, number, number][] = [[150, -30, 8, 24], [198, -72, 11, 28], [160, -118, 7, 20], [235, -18, 9, 22], [118, -70, 6, 18]];   // x, z, height, spread
-const POND = { x: -175, z: 165, rx: 27, rz: 20 };
+const POND = { x: -175, z: 165, rx: 68, rz: 52 };
+const POND_DEPTH = 6, WATER_Y = -0.3;
+/** the deep hole, out toward the middle of the pond: the rare catches live here */
+const DEEP = { x: POND.x - 18, z: POND.z - 6, r: 17, extra: 6.5 };
 const FARM = { x: -64, z: 236 };                      // the house; its porch faces +x, toward the lease road
 const SILOS = { x: -93, z: 262 };
 const RIVAL = { x: -420, z: -300 };                   // Singularity Drilling
@@ -38,6 +41,10 @@ export class Outskirts {
 
   /** the ground height at (x, z): flat, except across the hills */
   terrain = (x: number, z: number): number => {
+    {   // the pond is a real basin, with a deep hole near the middle
+      const pu = ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2;
+      if (pu < 1) { let d = POND_DEPTH * (1 - pu); const dd = ((x - DEEP.x) ** 2 + (z - DEEP.z) ** 2) / (DEEP.r * DEEP.r); if (dd < 1) d += DEEP.extra * Math.pow(1 - dd, 1.4); return -d; }
+    }
     if (x < 40 || x > 350 || z < -240 || z > 80) return 0;
     let h = 0;
     for (const [hx, hz, H, s] of HILLS) { const dx = x - hx, dz = z - hz; h += H * Math.exp(-(dx * dx + dz * dz) / (2 * s * s)); }
@@ -122,39 +129,71 @@ export class Outskirts {
 
   // ---------------------------------------------------------------------------------------------- pond
   private pond(b: Builder) {
-    const sc = this.scene, { x, z, rx, rz } = POND;
-    const mud = MeshBuilder.CreateDisc("pondmud", { radius: 1, tessellation: 48 }, sc); mud.rotation.x = Math.PI / 2; mud.scaling.set(rx + 3, rz + 3, 1); mud.position.set(x, 0.05, z);
-    const mm = new StandardMaterial("pondmudm", sc); mm.diffuseColor = Color3.FromHexString("#6e5a3d"); mm.specularColor = Color3.Black(); mud.material = mm; mud.isPickable = false;
-    const water = MeshBuilder.CreateDisc("pondwater", { radius: 1, tessellation: 48 }, sc); water.rotation.x = Math.PI / 2; water.scaling.set(rx, rz, 1); water.position.set(x, 0.09, z);
-    const wm = new StandardMaterial("pondwaterm", sc); wm.diffuseColor = Color3.FromHexString("#356f86"); wm.specularColor = new Color3(0.9, 0.9, 0.9); wm.specularPower = 60; wm.alpha = 0.88; wm.emissiveColor = new Color3(0.03, 0.08, 0.1);
+    const sc = this.scene, { x, z, rx, rz } = POND, M = 7;
+    // 1. the ground gets a hole where the pond goes: the big plane is replaced by four pieces round the pond's bounding box, and a sculpted basin fills it
+    const bx0 = x - rx - M, bx1 = x + rx + M, bz0 = z - rz - M, bz1 = z + rz + M;
+    sc.getMeshByName("ground")?.setEnabled(false);
+    const gmat = sc.getMaterialByName("ground");
+    const piece = (x0: number, z0: number, x1: number, z1: number) => {
+      const m = MeshBuilder.CreateGround("ground", { width: x1 - x0, height: z1 - z0, subdivisions: 1, updatable: true }, sc); m.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+      const pos = m.getVerticesData(VertexBuffer.PositionKind)!, uv = new Float32Array((pos.length / 3) * 2);
+      for (let i = 0; i < pos.length / 3; i++) { uv[i * 2] = (pos[i * 3] + m.position.x + 3000) / 6000; uv[i * 2 + 1] = (pos[i * 3 + 2] + m.position.z + 3000) / 6000; }
+      m.setVerticesData(VertexBuffer.UVKind, uv); if (gmat) m.material = gmat; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
+    };
+    piece(-3000, -3000, bx0, 3000); piece(bx1, -3000, 3000, 3000); piece(bx0, bz1, bx1, 3000); piece(bx0, -3000, bx1, bz0);
+    const N = 110, bed = MeshBuilder.CreateGround("pondbed", { width: bx1 - bx0, height: bz1 - bz0, subdivisions: N, updatable: true }, sc);
+    bed.position.set((bx0 + bx1) / 2, 0, (bz0 + bz1) / 2);
+    const bp = bed.getVerticesData(VertexBuffer.PositionKind)!, col = new Float32Array((bp.length / 3) * 4);
+    const sand = [0.71, 0.62, 0.47], mud = [0.2, 0.18, 0.14], smooth = (k: number) => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
+    for (let i = 0; i < bp.length / 3; i++) {
+      const wx = bp[i * 3] + bed.position.x, wz = bp[i * 3 + 2] + bed.position.z, h = this.terrain(wx, wz);
+      bp[i * 3 + 1] = h;
+      const k = smooth(-h / POND_DEPTH * 2.2) , nz = (Math.sin(wx * 1.3) + Math.sin(wz * 1.7)) * 0.012;
+      for (let c = 0; c < 3; c++) col[i * 4 + c] = sand[c] + (mud[c] - sand[c]) * k + nz; col[i * 4 + 3] = 1;
+    }
+    bed.updateVerticesData(VertexBuffer.PositionKind, bp); bed.setVerticesData(VertexBuffer.ColorKind, col);
+    const bn: number[] = []; VertexData.ComputeNormals(bp, bed.getIndices()!, bn); bed.updateVerticesData(VertexBuffer.NormalKind, bn);
+    const bm = new StandardMaterial("pondbedm", sc); bm.specularColor = Color3.Black(); bed.material = bm; bed.receiveShadows = true; bed.isPickable = false; bed.freezeWorldMatrix();
+    // 2. the water: a lens of translucent teal a little below the bank, so the bed shows through and darkens with depth
+    const water = MeshBuilder.CreateDisc("pondwater", { radius: 1, tessellation: 72 }, sc); water.rotation.x = Math.PI / 2; water.scaling.set(rx * 0.985, rz * 0.985, 1); water.position.set(x, WATER_Y, z);
+    const wm = new StandardMaterial("pondwaterm", sc); wm.diffuseColor = Color3.FromHexString("#2c6f86"); wm.specularColor = new Color3(0.9, 0.9, 0.9); wm.specularPower = 70; wm.alpha = 0.72; wm.emissiveColor = new Color3(0.03, 0.09, 0.12);
     water.material = wm; water.isPickable = false;
-    // cattails round the edge
-    for (let i = 0; i < 46; i++) {
-      const a = (i / 46) * Math.PI * 2 + rnd(-0.05, 0.05), k = 1 + rnd(0.0, 0.14);
+    // cattails round the shore
+    for (let i = 0; i < 120; i++) {
+      const a = (i / 120) * Math.PI * 2 + rnd(-0.02, 0.02), k = 1.0 + rnd(-0.02, 0.1);
       const rx2 = x + Math.cos(a) * rx * k, rz2 = z + Math.sin(a) * rz * k, h = rnd(1.3, 2.2);
       b.cyl("reed", rx2, h / 2, rz2, 0.05, h, { tess: 5 }); b.cyl("dwood", rx2, h, rz2, 0.11, 0.35, { tess: 6 });
     }
-    // a short dock, a rowboat and a fishing chair
-    const dx = x + rx - 2, dz = z;
-    b.slab("wood", dx - 1, 0.55, dz - 0.9, dx + 9, 0.65, dz + 0.9, false); for (let i = 0; i < 4; i++) { b.slab("dwood", dx - 0.6 + i * 2.8, 0, dz - 0.8, dx - 0.4 + i * 2.8, 0.6, dz - 0.6); b.slab("dwood", dx - 0.6 + i * 2.8, 0, dz + 0.6, dx - 0.4 + i * 2.8, 0.6, dz + 0.8); }
-    b.slab("dsteel", dx + 7.4, 0.65, dz - 0.4, dx + 8.0, 1.0, dz + 0.1); b.slab("wood", dx + 6.0, 0.65, dz + 0.3, dx + 6.7, 1.15, dz + 0.9);
-    b.slab("wood", dx + 2, 0.12, dz + 2.2, dx + 6.6, 0.45, dz + 3.3); b.slab("dwood", dx + 2, 0.42, dz + 2.2, dx + 6.6, 0.5, dz + 2.3); b.slab("dwood", dx + 2, 0.42, dz + 3.2, dx + 6.6, 0.5, dz + 3.3);
-    b.label("PRIVATE POND\nNO FISHING (WE KNOW YOU WILL)", dx - 2.5, 1.9, dz - 3, 2.6, 0.9, Math.PI / 2, "#233a52", "#ffd24a", 36);
-    b.slab("dwood", dx - 2.6, 0, dz - 3.1, dx - 2.45, 1.8, dz - 2.95);
+    // 3. a long dock out over the water, with a rowboat, a bucket and a chair; the fishing pole leans on the rail toward the pond
+    const sx = x + rx, dz = z, dk0 = sx - 16, dk1 = sx + 2.2;
+    b.slab("wood", dk0, 0.55, dz - 0.9, dk1, 0.65, dz + 0.9, true);
+    for (let i = 0; i < 7; i++) { const px = dk0 + 0.4 + i * 3.0; b.slab("dwood", px - 0.1, -3.4, dz - 0.85, px + 0.1, 0.6, dz - 0.65); b.slab("dwood", px - 0.1, -3.4, dz + 0.65, px + 0.1, 0.6, dz + 0.85); }
+    b.slab("wood", dk1, 0, dz - 0.9, dk1 + 0.8, 0.32, dz + 0.9, true);
+    b.slab("dsteel", sx - 1.2, 0.65, dz + 0.3, sx - 0.6, 1.0, dz + 0.8); b.slab("dwood", sx - 2.6, 0.65, dz - 0.7, sx - 1.9, 1.15, dz - 0.1); b.slab("dwood", sx - 2.6, 1.15, dz - 0.7, sx - 2.5, 1.7, dz - 0.1);
+    b.slab("wood", dk0 + 1.5, -0.38, dz + 2.0, dk0 + 6.3, -0.08, dz + 3.2); b.slab("dwood", dk0 + 1.5, -0.1, dz + 2.0, dk0 + 6.3, 0.0, dz + 2.1); b.slab("dwood", dk0 + 1.5, -0.1, dz + 3.1, dk0 + 6.3, 0.0, dz + 3.2); b.slab("dwood", dk0 + 3.7, -0.1, dz + 2.0, dk0 + 3.9, 0.0, dz + 3.2);
+    b.label("PRIVATE POND\nNO FISHING (WE KNOW YOU WILL)", sx + 3.2, 1.9, dz - 3.6, 2.6, 0.9, Math.PI / 2, "#233a52", "#ffd24a", 36);
+    b.slab("dwood", sx + 3.1, 0, dz - 3.7, sx + 3.25, 1.8, dz - 3.55);
     const woodM = new StandardMaterial("polem", sc); woodM.diffuseColor = Color3.FromHexString("#c9a15a"); woodM.specularColor = Color3.Black();
     this.pole = MeshBuilder.CreateCylinder("fishingpole", { diameterTop: 0.012, diameterBottom: 0.04, height: 2.3, tessellation: 6 }, sc); this.pole.material = woodM;
-    this.pole.position.set(dx + 6.15, 1.75, dz + 1.15); this.pole.rotation.z = -0.22; this.pole.rotation.x = 0.1; this.pole.isPickable = false;
+    this.pole.position.set(sx - 1.6, 1.8, dz + 0.78); this.pole.rotation.z = 0.22; this.pole.isPickable = false;   // the top leans out toward the water (west)
     const emi = (hex: string, alpha: number) => { const m = new StandardMaterial("fm" + hex, sc); m.emissiveColor = Color3.FromHexString(hex); m.disableLighting = true; m.alpha = alpha; m.backFaceCulling = false; return m; };
     this.bobber = MeshBuilder.CreateSphere("bobber", { diameter: 0.16, segments: 8 }, sc); this.bobber.material = emi("#e5483b", 1); this.bobber.isPickable = false; this.bobber.setEnabled(false);
     this.fline = MeshBuilder.CreateCylinder("fishline", { diameter: 0.012, height: 1, tessellation: 4 }, sc); this.fline.material = emi("#e8f0f4", 0.9); this.fline.isPickable = false; this.fline.setEnabled(false);
     this.ripple = MeshBuilder.CreateTorus("fripple", { diameter: 1, thickness: 0.04, tessellation: 20 }, sc); this.ripple.material = emi("#cfe8f4", 0.6); this.ripple.isPickable = false; this.ripple.setEnabled(false);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 9; i++) {
       const m = MeshBuilder.CreateBox("duck", { width: 0.28, height: 0.2, depth: 0.42 }, sc);
       const dm = new StandardMaterial("duckm", sc); dm.diffuseColor = Color3.FromHexString(i % 2 ? "#6a5a3a" : "#2f6a3a"); dm.specularColor = Color3.Black(); m.material = dm; m.isPickable = false;
       const hd = MeshBuilder.CreateBox("duckh", { width: 0.14, height: 0.16, depth: 0.16 }, sc); hd.material = dm; hd.parent = m; hd.position.set(0, 0.17, 0.2);
-      const bk = MeshBuilder.CreateBox("duckb", { width: 0.08, height: 0.04, depth: 0.1 }, sc); const bm = new StandardMaterial("duckbm", sc); bm.diffuseColor = Color3.FromHexString("#e0a020"); bk.material = bm; bk.parent = m; bk.position.set(0, 0.16, 0.32);
-      this.ducks.push({ m, a: rnd(0, 6.28), r: rnd(0.2, 0.7), w: rnd(0.12, 0.25) * (i % 2 ? 1 : -1) });
+      const bk = MeshBuilder.CreateBox("duckb", { width: 0.08, height: 0.04, depth: 0.1 }, sc); const bkm = new StandardMaterial("duckbm", sc); bkm.diffuseColor = Color3.FromHexString("#e0a020"); bk.material = bkm; bk.parent = m; bk.position.set(0, 0.16, 0.32);
+      this.ducks.push({ m, a: rnd(0, 6.28), r: rnd(0.2, 0.9), w: rnd(0.04, 0.12) * (i % 2 ? 1 : -1) });
     }
+    // the deep hole: a darker patch of water with a buoy over it
+    const dm = new StandardMaterial("deepm", sc); dm.diffuseColor = Color3.FromHexString("#0d3a4c"); dm.emissiveColor = new Color3(0.0, 0.03, 0.05); dm.specularColor = Color3.Black(); dm.alpha = 0.55;
+    const dp = MeshBuilder.CreateDisc("deephole", { radius: 1, tessellation: 40 }, sc); dp.rotation.x = Math.PI / 2; dp.scaling.set(DEEP.r * 0.9, DEEP.r * 0.9, 1); dp.position.set(DEEP.x, WATER_Y + 0.01, DEEP.z); dp.material = dm; dp.isPickable = false;
+    const bu = MeshBuilder.CreateSphere("buoy", { diameter: 0.8, segments: 8 }, sc); const bum = new StandardMaterial("buoym", sc); bum.diffuseColor = Color3.FromHexString("#e8501c"); bum.emissiveColor = new Color3(0.25, 0.08, 0.02); bu.material = bum; bu.position.set(DEEP.x, WATER_Y + 0.2, DEEP.z); bu.isPickable = false;
+    const bp2 = MeshBuilder.CreateCylinder("buoypost", { diameter: 0.08, height: 2.2, tessellation: 6 }, sc); bp2.material = bum; bp2.position.set(DEEP.x, WATER_Y + 1.4, DEEP.z); bp2.isPickable = false;
+    // swimming under the surface tints the screen
+    const uw = document.createElement("div"); uw.id = "underwater"; uw.style.cssText = "position:fixed;inset:0;background:rgba(24,86,112,.5);pointer-events:none;display:none;z-index:4"; document.body.appendChild(uw);
   }
 
   // ---------------------------------------------------------------------------------------------- the farmstead
@@ -334,7 +373,7 @@ export class Outskirts {
     out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Pick up the fishing pole", r: 3.0, ok: () => !this.poleOwned, act: () => {
       this.poleOwned = true; this.pole.setEnabled(false); g.held.owned.add("rod"); g.held.equip("rod"); g.sfx.good();
       g.ui.toast("FISHING POLE", "Face the pond and click to cast. When the bobber dips, click again to set the hook. Scroll or Q to put it away."); } });
-    out.push({ pos: () => v(POND.x + POND.rx + 8, 1.7, POND.z), label: () => "Fishing spot", r: 3.4, act: () => {
+    out.push({ pos: () => v(POND.x + POND.rx - 14, 1.7, POND.z), label: () => "Fishing spot", r: 3.4, act: () => {
       g.sfx.click(); g.ui.toast("FISHING", this.poleOwned ? "Hold the pole (scroll or Q), face the water and click to cast." : "You need a pole. There's one leaning by the chair on the dock."); } });
     // taco truck
     out.push({ pos: () => v(TACO.x + 3.2, 1.3, TACO.z), label: () => "Order tacos", r: 3.4, act: () => this.orderTacos() });
@@ -377,33 +416,61 @@ export class Outskirts {
     }
     if (f.st === "bite") {
       f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false);
-      const T: [string, number, number, number, string][] = [["Bluegill", 0.3, 0.9, 30, "Small, shiny, offended."], ["Largemouth Bass", 1.5, 6, 22, "A proper fish."], ["Channel Catfish", 2, 12, 16, "It has whiskers and opinions."], ["Crappie", 0.5, 2, 14, "Perfectly fine."], ["Common Carp", 3, 18, 8, "A big, slow, unbothered fish."], ["Old Boot", 0, 0, 5, "Left foot. It's always the left foot."], ["Lost Drill Bit", 0, 0, 3, "Technically, a fishing job."], ["The Legendary Lunker", 30, 44, 2, "It is enormous and it looks unimpressed."]];
+      const deep = (f.bx - DEEP.x) ** 2 + (f.bz - DEEP.z) ** 2 < (DEEP.r * 1.05) ** 2;
+      // shallow water: ordinary fish and junk. The deep hole: pieces of lost rotary steerable systems (RSS), a few of them worth a lot of money.
+      const T: [string, number, number, number, string, string][] = deep
+        ? [["RSS Steering Pad", 18000, 30000, 26, "A hydraulically actuated pad. It still has a little give.", "pad"], ["RSS Bias Unit", 80000, 120000, 14, "The part that actually steers the bit. Tex has been looking for this.", "bias"], ["RSS Control Shaft", 12000, 22000, 18, "Straight as ever. Slightly corroded.", "shaft"], ["MWD Pulser Module", 25000, 45000, 16, "A mud-pulse telemetry module. It was still pulsing.", "pulser"], ["RSS Tool Face Controller Board", 9000, 16000, 14, "Green board, tiny chips, a lot of mud.", "board"], ["Turbine Alternator", 20000, 35000, 8, "It spins when you blow on it.", "turbine"], ["Complete Rotary Steerable System", 380000, 460000, 2, "The whole tool. Houston will want a photo. Houston will want the fish.", "rss"]]
+        : [["Bluegill", 0.3, 0.9, 30, "Small, shiny, offended.", "bluegill"], ["Largemouth Bass", 1.5, 6, 22, "A proper fish.", "bass"], ["Channel Catfish", 2, 12, 16, "It has whiskers and opinions.", "catfish"], ["Crappie", 0.5, 2, 14, "Perfectly fine.", "crappie"], ["Common Carp", 3, 18, 8, "A big, slow, unbothered fish.", "carp"], ["Old Boot", 0, 0, 5, "Left foot. It's always the left foot.", "boot"], ["Lost Drill Bit", 0, 0, 3, "Technically, a fishing job.", "bit"], ["The Legendary Lunker", 30, 44, 2, "It is enormous and it looks unimpressed.", "lunker"]];
       let r = Math.random() * T.reduce((a, c) => a + c[3], 0), c = T[0]; for (const x of T) { r -= x[3]; if (r <= 0) { c = x; break; } }
-      const [name, lo, hi, , quip] = c, lb = hi > 0 ? lo + Math.random() * (hi - lo) : 0;
-      f.caught++; if (lb === 0) f.junk++; if (lb > f.best) { f.best = lb; }
-      g.sfx.good();
-      if (name.startsWith("The Legendary")) { g.gain(0, 5); g.radio("hank" as any, "THAT'S THE LUNKER! He's been in that pond since '94! Put him BACK, Company Man!", 7000); }
-      else if (f.caught % 2 === 0) g.gain(0, 1);
-      return [`CAUGHT: ${name.toUpperCase()}`, `${lb > 0 ? lb.toFixed(1) + " lb. " : ""}${quip}${lb > 0 && lb >= f.best ? " New personal best." : ""} (${f.caught} caught)`];
+      const [name, lo, hi, , quip, id] = c, val = lo + Math.random() * (hi - lo);
+      f.caught++; g.sfx.good();
+      let sub: string;
+      if (deep) {
+        const value = Math.round(val / 1000) * 1000; g.sim.addCost(-Math.round(value * 0.25)); g.gain(0, id === "rss" ? 6 : 3);
+        sub = `Est. value $${value.toLocaleString("en-US")}. Insurance recovery credits $${Math.round(value * 0.25).toLocaleString("en-US")} to the AFE.`;
+        if (id === "rss") g.radio("tex", "THAT'S THE WHOLE RSS! I'll never lose anything again. (I will. I'll lose it again.)", 7000);
+      } else {
+        if (val > f.best) f.best = val;
+        if (id === "lunker") { g.gain(0, 5); g.radio("hank" as any, "THAT'S THE LUNKER! He's been in that pond since '94! Put him BACK, Company Man!", 7000); } else if (f.caught % 2 === 0) g.gain(0, 1);
+        sub = val > 0 ? `${val.toFixed(1)} lb${val >= f.best ? ". New personal best." : "."}` : "No weight to speak of.";
+      }
+      this.showCatch(name, `${sub} ${quip}`, id, deep);
+      return [`CAUGHT: ${name.toUpperCase()}`, `${quip} (${f.caught} caught)`];
     }
     f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false);
     return ["REELED IN", f.st === "idle" ? "Nothing on the hook. Patience is a virtue. You are not virtuous." : ""];
   }
+  private catchEl: HTMLDivElement | null = null; private catchT = 0;
+  /** a card with a picture of what you caught */
+  private showCatch(name: string, sub: string, id: string, deep: boolean) {
+    if (!this.catchEl) {
+      const d = document.createElement("div"); d.id = "catchcard";
+      d.style.cssText = "position:fixed;left:50%;top:88px;transform:translateX(-50%);z-index:30;width:300px;padding:10px;border:3px solid #000;border-radius:10px;background:rgba(10,16,24,.92);box-shadow:0 0 0 2px rgba(244,192,74,.9),4px 6px 0 2px rgba(0,0,0,.6);color:#fff;text-align:center;font-family:inherit;pointer-events:none;transition:opacity .3s;opacity:0";
+      d.innerHTML = '<div class="cc-k" style="font-size:11px;letter-spacing:2px;color:#f4c04a;font-weight:800"></div><canvas width="260" height="150" style="width:100%;border-radius:6px;margin:6px 0;background:#173a4a"></canvas><div class="cc-n" style="font-size:22px;font-weight:800;line-height:1.1"></div><div class="cc-s" style="font-size:12px;margin-top:4px;color:#cfe0ea"></div>';
+      document.body.appendChild(d); this.catchEl = d;
+    }
+    const d = this.catchEl!;
+    (d.querySelector(".cc-k") as HTMLElement).textContent = deep ? "FROM THE DEEP HOLE" : "CAUGHT";
+    (d.querySelector(".cc-n") as HTMLElement).textContent = name; (d.querySelector(".cc-s") as HTMLElement).textContent = sub;
+    drawCatch(d.querySelector("canvas") as HTMLCanvasElement, id, deep);
+    d.style.opacity = "1"; this.catchT = 5.5;
+  }
   private updateFishing(dt: number) {
+    if (this.catchT > 0) { this.catchT -= dt; if (this.catchT <= 0 && this.catchEl) this.catchEl.style.opacity = "0"; }
     const g = this.g, p = g.player, f = this.fish;
     if (f.st === "idle") return;
     if (g.held.kind !== "rod" || Math.hypot(p.pos.x - f.sx, p.pos.z - f.sz) > 6) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("FISHING", "You reel the line in."); return; }
     const tip = g.held.tipPos() ?? new Vector3(p.pos.x, p.pos.y + 1.6, p.pos.z);
     if (f.st === "fly") {
       f.t += dt / 0.6; const u = Math.min(1, f.t);
-      this.bobber.position.set(tip.x + (f.bx - tip.x) * u, tip.y + (0.1 - tip.y) * u + Math.sin(Math.PI * u) * 2.4, tip.z + (f.bz - tip.z) * u);
-      if (u >= 1) { f.st = "wait"; f.t = rnd(2.5, 7.5); g.sfx.click(); this.ripple.setEnabled(true); this.ripple.position.set(f.bx, 0.1, f.bz); this.ripple.scaling.set(0.3, 1, 0.3); }
+      this.bobber.position.set(tip.x + (f.bx - tip.x) * u, tip.y + (WATER_Y + 0.08 - tip.y) * u + Math.sin(Math.PI * u) * 2.4, tip.z + (f.bz - tip.z) * u);
+      if (u >= 1) { f.st = "wait"; f.t = rnd(2.5, 7.5); g.sfx.click(); this.ripple.setEnabled(true); this.ripple.position.set(f.bx, WATER_Y + 0.02, f.bz); this.ripple.scaling.set(0.3, 1, 0.3); }
     } else if (f.st === "wait") {
-      f.t -= dt; this.bobber.position.set(f.bx, 0.1 + Math.sin(this.t * 2.2) * 0.015, f.bz);
+      f.t -= dt; this.bobber.position.set(f.bx, WATER_Y + 0.08 + Math.sin(this.t * 2.2) * 0.015, f.bz);
       const k = ((this.t * 0.6) % 1); this.ripple.scaling.set(0.3 + k * 1.2, 1, 0.3 + k * 1.2); (this.ripple.material as StandardMaterial).alpha = 0.6 * (1 - k);
       if (f.t <= 0) { f.st = "bite"; f.bite = 1.3; g.sfx.thud(); g.ui.toast("BITE!", "Click now!"); }
     } else if (f.st === "bite") {
-      f.bite -= dt; this.bobber.position.set(f.bx + Math.sin(this.t * 40) * 0.03, 0.02 + Math.sin(this.t * 25) * 0.04, f.bz);
+      f.bite -= dt; this.bobber.position.set(f.bx + Math.sin(this.t * 40) * 0.03, WATER_Y - 0.02 + Math.sin(this.t * 25) * 0.04, f.bz);
       const k = ((this.t * 3) % 1); this.ripple.scaling.set(0.4 + k * 1.6, 1, 0.4 + k * 1.6); (this.ripple.material as StandardMaterial).alpha = 0.8 * (1 - k);
       if (f.bite <= 0) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("IT GOT AWAY", "Too slow. It looked smug about it."); return; }
     }
@@ -446,12 +513,12 @@ export class Outskirts {
     const g = this.g, p = g.player; this.t += dt;
     const px = p.pos.x, pz = p.pos.z;
     // discoveries
-    for (const [name, x, z, r] of [["PRIVATE POND", POND.x, POND.z, 60], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["SINGULARITY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
+    for (const [name, x, z, r] of [["PRIVATE POND: THERE IS A DEEP HOLE", POND.x, POND.z, 120], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["SINGULARITY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
       if (!this.seen.has(name) && Math.hypot(px - x, pz - z) < r) { this.seen.add(name); g.ui.toast("DISCOVERED", name); g.sfx.good(); }
     }
     // near enough to bother with the animations
     const near = (x: number, z: number, r: number) => Math.hypot(px - x, pz - z) < r;
-    if (near(POND.x, POND.z, 120)) for (const d of this.ducks) { d.a += d.w * dt; const x = POND.x + Math.cos(d.a) * (POND.rx - 4) * (0.4 + d.r), z = POND.z + Math.sin(d.a) * (POND.rz - 3) * (0.4 + d.r); d.m.position.set(x, 0.14 + Math.sin(this.t * 2 + d.a) * 0.02, z); d.m.rotation.y = -d.a + (d.w > 0 ? 0 : Math.PI) + Math.PI / 2; }
+    if (near(POND.x, POND.z, 200)) for (const d of this.ducks) { d.a += d.w * dt; const x = POND.x + Math.cos(d.a) * (POND.rx - 6) * (0.3 + d.r * 0.6), z = POND.z + Math.sin(d.a) * (POND.rz - 5) * (0.3 + d.r * 0.6); d.m.position.set(x, WATER_Y + 0.06 + Math.sin(this.t * 2 + d.a) * 0.02, z); d.m.rotation.y = -d.a + (d.w > 0 ? 0 : Math.PI) + Math.PI / 2; }
     // the cattle wander, flee a bit when startled, and a truck that hits one is going to hear about it
     let best = 1e9; this.nearCow = 0;
     const riding = g.veh.riding, speed = Math.hypot(p.vel.x, p.vel.z);
@@ -510,10 +577,46 @@ export class Outskirts {
       f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
     }
     this.updateFishing(dt);
+    { const uw = document.getElementById("underwater"); if (uw) { const inPond = ((p.cam.position.x - POND.x) / POND.rx) ** 2 + ((p.cam.position.z - POND.z) / POND.rz) ** 2 < 1; uw.style.display = inPond && p.cam.position.y < WATER_Y ? "block" : "none"; } }
     // the people who stand still still breathe
     this.hank.animate(dt, 0); this.lupe.animate(dt, 0); this.rusty.animate(dt, 0);
     this.hank.armR.rotation.x = -0.6; this.hank.elbowR!.rotation.x = -1.2;
   }
 
   private vehSpeed() { const p = this.g.player; const now = performance.now(); const last = (this as any)._lp ?? { x: p.pos.x, z: p.pos.z, t: now }; const dt = Math.max(0.001, (now - last.t) / 1000); const s = Math.hypot(p.pos.x - last.x, p.pos.z - last.z) / dt; (this as any)._lp = { x: p.pos.x, z: p.pos.z, t: now }; return Math.min(60, s); }
+}
+
+/** hand-drawn little pictures for the catch card: fish, junk, and pieces of rotary steerable systems */
+function drawCatch(cv: HTMLCanvasElement, id: string, deep: boolean) {
+  const c = cv.getContext("2d")!, W = cv.width, H = cv.height; c.clearRect(0, 0, W, H);
+  const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, deep ? "#0a2a3a" : "#2a6f8a"); g.addColorStop(1, deep ? "#04141c" : "#123d4f"); c.fillStyle = g; c.fillRect(0, 0, W, H);
+  for (let i = 0; i < 14; i++) { c.fillStyle = "rgba(255,255,255,.06)"; c.beginPath(); c.arc((i * 53) % W, (i * 31) % H, 3 + (i % 4), 0, 6.3); c.fill(); }
+  c.save(); c.translate(W / 2, H / 2);
+  const fish = (body: string, belly: string, fin: string, len: number, tall: number, extra?: () => void) => {
+    c.fillStyle = fin; c.beginPath(); c.moveTo(-len * 0.45, 0); c.lineTo(-len * 0.75, -tall * 0.7); c.lineTo(-len * 0.72, tall * 0.7); c.closePath(); c.fill();           // tail
+    c.beginPath(); c.moveTo(-len * 0.1, -tall * 0.5); c.lineTo(len * 0.05, -tall * 0.95); c.lineTo(len * 0.2, -tall * 0.5); c.closePath(); c.fill();                    // dorsal
+    c.fillStyle = body; c.beginPath(); c.ellipse(0, 0, len * 0.5, tall * 0.55, 0, 0, 6.3); c.fill();
+    c.fillStyle = belly; c.beginPath(); c.ellipse(0, tall * 0.18, len * 0.46, tall * 0.3, 0, 0, Math.PI); c.fill();
+    c.fillStyle = "#fff"; c.beginPath(); c.arc(len * 0.3, -tall * 0.12, tall * 0.11, 0, 6.3); c.fill(); c.fillStyle = "#000"; c.beginPath(); c.arc(len * 0.32, -tall * 0.12, tall * 0.06, 0, 6.3); c.fill();
+    c.strokeStyle = "rgba(0,0,0,.4)"; c.lineWidth = 2; c.beginPath(); c.arc(len * 0.2, 0, tall * 0.45, -0.9, 0.9); c.stroke();
+    extra?.();
+  };
+  const box = (col: string, x: number, y: number, w: number, h: number) => { c.fillStyle = "#000"; c.fillRect(x - 2, y - 2, w + 4, h + 4); c.fillStyle = col; c.fillRect(x, y, w, h); };
+  if (id === "bluegill") fish("#4f7a3a", "#e89a2a", "#3f5f2e", 150, 90, () => { c.fillStyle = "#1a2a5a"; c.beginPath(); c.arc(60, 10, 10, 0, 6.3); c.fill(); });
+  else if (id === "bass") fish("#5f7f35", "#d8dcb0", "#4a6a2a", 190, 80, () => { c.fillStyle = "rgba(20,40,10,.65)"; c.fillRect(-60, -6, 110, 8); });
+  else if (id === "catfish") { fish("#4a4a52", "#b8b8c0", "#3a3a42", 190, 80); c.strokeStyle = "#222"; c.lineWidth = 3; for (const y of [-6, 8, 18]) { c.beginPath(); c.moveTo(92, y); c.quadraticCurveTo(112, y + 4, 120, y + 18); c.stroke(); } }
+  else if (id === "crappie") fish("#bcc79a", "#eef0d4", "#9aa87a", 150, 100, () => { c.fillStyle = "rgba(50,60,30,.7)"; for (let i = 0; i < 14; i++) { c.beginPath(); c.arc(-40 + (i % 7) * 18, -20 + Math.floor(i / 7) * 24, 5, 0, 6.3); c.fill(); } });
+  else if (id === "carp") fish("#c98a2a", "#f0d28a", "#b0701a", 210, 100, () => { c.fillStyle = "rgba(255,230,160,.5)"; for (let i = 0; i < 12; i++) { c.beginPath(); c.arc(-60 + (i % 6) * 22, -20 + Math.floor(i / 6) * 28, 8, 0, 6.3); c.fill(); } });
+  else if (id === "lunker") { c.scale(1.25, 1.25); fish("#4b6b4a", "#c8d0b0", "#3a5a3a", 200, 96, () => { c.strokeStyle = "#e0e0d0"; c.lineWidth = 2; c.beginPath(); c.moveTo(-30, -30); c.lineTo(-10, -10); c.moveTo(0, 20); c.lineTo(30, 38); c.stroke(); }); }
+  else if (id === "boot") { c.fillStyle = "#5a3a22"; c.beginPath(); c.moveTo(-50, -60); c.lineTo(10, -60); c.lineTo(14, 10); c.lineTo(70, 22); c.lineTo(70, 50); c.lineTo(-50, 50); c.closePath(); c.fill(); c.fillStyle = "#2a1a0e"; c.fillRect(-50, 38, 120, 12); c.fillStyle = "#cfcfcf"; for (let i = 0; i < 4; i++) { c.beginPath(); c.arc(-24, -42 + i * 14, 3, 0, 6.3); c.fill(); } c.fillStyle = "#3a8a3a"; c.fillRect(-40, 10, 18, 6); }
+  else if (id === "bit") { c.fillStyle = "#6a6e75"; c.fillRect(-26, -64, 52, 50); c.fillStyle = "#2a2d31"; c.beginPath(); c.moveTo(-60, -14); c.lineTo(60, -14); c.lineTo(46, 52); c.lineTo(-46, 52); c.closePath(); c.fill(); for (const [px, py] of [[-34, 10], [-12, 26], [12, 26], [34, 10], [0, 4]]) { c.fillStyle = "#e0b040"; c.beginPath(); c.arc(px, py, 9, 0, 6.3); c.fill(); c.fillStyle = "#8a6a20"; c.beginPath(); c.arc(px, py, 4, 0, 6.3); c.fill(); } }
+  // ---- the deep hole: pieces of rotary steerable systems
+  else if (id === "pad") { box("#7b8087", -80, -22, 160, 44); box("#3a3f45", -70, -14, 140, 8); box("#3a3f45", -70, 4, 140, 8); for (let i = -60; i <= 60; i += 24) box("#e0a030", i, -4, 10, 8); box("#b0261c", -86, -8, 8, 16); }
+  else if (id === "bias") { box("#8d9299", -105, -26, 210, 52); box("#2c5d8a", -105, -26, 36, 52); for (const x of [-40, 10, 60]) box("#e0a030", x, -38, 30, 12); for (const x of [-40, 10, 60]) box("#e0a030", x, 26, 30, 12); box("#3a3f45", 70, -14, 36, 28); box("#b0261c", -112, -10, 8, 20); }
+  else if (id === "shaft") { box("#aeb4ba", -110, -8, 220, 16); for (const x of [-80, -20, 40, 90]) box("#e0a030", x, -12, 8, 24); box("#3a3f45", -118, -14, 10, 28); box("#3a3f45", 108, -14, 10, 28); }
+  else if (id === "pulser") { box("#3a3f45", -90, -30, 180, 60); box("#2c8a5a", -76, -22, 40, 44); box("#c8c8cc", -20, -14, 70, 28); box("#e0a030", 60, -22, 12, 44); c.fillStyle = "#3fd0ff"; for (let i = 0; i < 4; i++) c.fillRect(70 + i * 5, -8, 3, 16); }
+  else if (id === "board") { box("#1d7a3b", -100, -56, 200, 112); for (const [x, y, w, h] of [[-80, -40, 36, 24], [-30, -40, 24, 24], [10, -20, 50, 36], [-70, 8, 28, 28], [30, 22, 36, 20], [-10, 30, 20, 16]]) box("#15171a", x, y, w, h); c.strokeStyle = "#d8b04a"; c.lineWidth = 2; for (let i = 0; i < 6; i++) { c.beginPath(); c.moveTo(-96, -50 + i * 18); c.lineTo(96, -46 + i * 18); c.stroke(); } }
+  else if (id === "turbine") { box("#7b8087", -80, -36, 160, 72); for (let i = 0; i < 8; i++) box("#c8ccd0", -70 + i * 18, -44, 8, 88); box("#3a3f45", -92, -14, 14, 28); box("#3a3f45", 78, -14, 14, 28); }
+  else if (id === "rss") { box("#8d9299", -120, -22, 240, 44); box("#e0b040", -120, -22, 20, 44); box("#e0b040", -60, -22, 12, 44); box("#e0b040", 40, -22, 12, 44); box("#2c5d8a", 80, -22, 40, 44); for (const x of [-30, 10]) box("#e0a030", x, -34, 24, 12); box("#b0261c", -128, -8, 8, 16); c.fillStyle = "rgba(255,230,120,.25)"; c.beginPath(); c.arc(0, 0, 110, 0, 6.3); c.fill(); }
+  c.restore();
 }

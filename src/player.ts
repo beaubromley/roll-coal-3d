@@ -113,7 +113,7 @@ export class Player {
 
   support(x: number, z: number, feet: number): number {
     let best = 0;
-    if (this.terrain) { const t = this.terrain(x, z); if (t <= feet + STEP + 0.001) best = t; }
+    if (this.terrain) { const t = Math.max(this.terrain(x, z), -1.5); if (t <= feet + STEP + 0.001) best = t; }   // deep water: you tread water, you don't walk the bottom
     for (const c of this.colliders) {
       if (c.y1 > feet + STEP + 0.001 || c.y1 <= best) continue;
       if (x > c.x0 - R * 0.55 && x < c.x1 + R * 0.55 && z > c.z0 - R * 0.55 && z < c.z1 + R * 0.55) best = c.y1;
@@ -157,7 +157,8 @@ export class Player {
     if (joy) { ix += this.touchMove.x; iz += this.touchMove.y; }
     const len = Math.hypot(ix, iz);
     const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.sprintLatch || this.stickSprint;
-    const speed = (sprint ? 9.0 : 3.4) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
+    const wet = this.pos.y < -0.4;   // wading or swimming: slow, no sprint, no jumping
+    const speed = (sprint && !wet ? 9.0 : 3.4) * (wet ? 0.55 : 1) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
     let vx = 0, vz = 0;
     if (len > 0) {
       ix /= len; iz /= len;
@@ -179,7 +180,7 @@ export class Player {
       else if (this.sliding && !this.grounded) { /* airborne off the side: let the fall logic judge it */ this.sliding = false; this.slipTop = 0; }
     }
     // jump
-    if (this.enabled && this.grounded && this.keys.has("Space")) { this.vel.y = 5.0; this.grounded = false; this.fallStart = this.pos.y; this.onJump(); }
+    if (this.enabled && this.grounded && !wet && this.keys.has("Space")) { this.vel.y = 5.0; this.grounded = false; this.fallStart = this.pos.y; this.onJump(); }
     this.vel.y -= G * this.gScale * dt;
 
     const feet0 = this.pos.y;

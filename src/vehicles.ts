@@ -40,7 +40,7 @@ interface Veh {
   wheelbase: number; maxFwd: number; maxRev: number; accel: number; radius: number; pts: number[];
   eye: { x: number; y: number; z: number }; camDist: number; camHeight: number;
   steerNodes: TransformNode[]; steerSign: number[]; spinNodes: TransformNode[]; wheelR: number[];
-  boxes: AABB[]; boxH: number; solid: boolean; gy?: number; slope?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
+  boxes: AABB[]; boxH: number; solid: boolean; gy?: number; slope?: number; base?: { m: Mesh; s: Vector3; r: Vector3 }[]; px?: number; pz?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
   /** backhoe: either driving with the stabilizers up, or dug in with them down (no driving) and the hoe arm working */
   bh?: { swing: TransformNode; boom: TransformNode; stick: TransformNode; bucket: TransformNode; stabs: TransformNode[]; dig: boolean; stab: number; boomA: number; stickA: number; bucketA: number; swingA: number };
   lift: number;                       // 0..1 boom angle / basket height
@@ -464,33 +464,32 @@ export class Vehicles {
     this.game.ui.toast(h.dig ? "DIG MODE" : "DRIVE MODE", h.dig ? "Stabilizers down, no driving. A/D swing · R/F boom · T/G stick · Y/H bucket · X to drive." : "Stabilizers up. X to dig again.");
     this.game.sfx.click();
   }
-  /** a crash leaves a mark where it landed: a scuffed, crumpled patch of body on the side that took the hit */
+  /** a crash crumples the panels it hit: nearby body parts are pushed in, squashed along the impact direction and knocked slightly out of true. Nothing is added to the truck. */
   private dent(v: Veh, px: number, pz: number, o: number, speed: number) {
     if (v.id !== "f250") return;
-    if ((v.dents ?? 0) >= 16) return;
-    v.dents = (v.dents ?? 0) + 1;
-    const len = Math.hypot(px, pz) || 1, dx = -px / len, dz = -pz / len;           // direction from the truck toward what it hit
+    const len = Math.hypot(px, pz) || 1, dx = -px / len, dz = -pz / len;           // direction from the truck toward what it hit (world)
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw), rx = Math.cos(v.yaw), rz = -Math.sin(v.yaw);
     const df = dx * fx + dz * fz, dr = dx * rx + dz * rz;                          // in the truck's own frame: forward, right
     const big = Math.min(1, speed / 14), r = (a: number) => (Math.random() - 0.5) * a;
-    let x: number, y = 1.55 + Math.random() * 0.7, z: number, face: "f" | "b" | "s";
-    if (Math.abs(df) > 0.65) { face = df > 0 ? "f" : "b"; z = df > 0 ? 3.1 : -4.88; x = Math.max(-0.95, Math.min(0.95, dr * 0.9 + r(0.5))); }
-    else { face = "s"; x = dr > 0 ? 1.11 : -1.11; z = Math.max(-4.2, Math.min(2.6, o + r(1.2))); }
-    const sz = 0.35 + big * 0.55 + Math.random() * 0.2;
-    const mat = this.mk.bind(this);
-    void mat;
-    const root = v.root;
-    // scorched scuff, then a crumpled ridge or two standing proud of the panel
-    const scuff = face === "s" ? this.box(v, root, "#241210", 0.03, sz * 0.7, sz * 1.1, x + Math.sign(x) * 0.02, y, z) : this.box(v, root, "#241210", sz * 1.1, sz * 0.7, 0.03, x, y, z + (face === "f" ? 0.02 : -0.02));
-    scuff.rotation.y += r(0.4);
-    for (let i = 0; i < 2; i++) {
-      const rd = face === "s" ? this.box(v, root, "#6e1511", 0.1 + big * 0.08, sz * 0.5, sz * 0.4, x + Math.sign(x) * 0.05, y + r(0.2), z + r(0.3)) : this.box(v, root, "#6e1511", sz * 0.5, sz * 0.4, 0.1 + big * 0.08, x + r(0.3), y + r(0.2), z + (face === "f" ? 0.05 : -0.05));
-      rd.rotation.set(r(0.6), r(0.6), r(0.9));
+    // where it hit, in the truck's frame
+    let hx: number, hy = 1.9, hz: number;
+    if (Math.abs(df) > 0.65) { hz = df > 0 ? 3.1 : -4.88; hx = Math.max(-0.95, Math.min(0.95, dr * 0.9)); }
+    else { hx = dr > 0 ? 1.1 : -1.1; hz = Math.max(-4.2, Math.min(2.6, o)); }
+    const inX = -dr, inZ = -df, il = Math.hypot(inX, inZ) || 1, ix = inX / il, iz = inZ / il;
+    const parts = v.root.getChildren().filter((n) => n instanceof Mesh) as Mesh[];
+    if (!v.base) v.base = parts.map((m) => ({ m, s: m.scaling.clone(), r: m.rotation.clone() }));
+    for (const part of parts) {
+      const p = part.position, dist = Math.hypot(p.x - hx, (p.y - hy) * 0.7, p.z - hz), w = Math.exp(-((dist / 2.3) ** 2));
+      if (w < 0.04) continue;
+      const a = w * (0.1 + 0.2 * big), base = v.base.find((b) => b.m === part);
+      p.x += ix * a * 0.6; p.z += iz * a * 0.6;                                      // pushed in
+      if (Math.abs(ix) > Math.abs(iz)) part.scaling.x = Math.max((base?.s.x ?? 1) * 0.55, part.scaling.x * (1 - a * 0.7)); else part.scaling.z = Math.max((base?.s.z ?? 1) * 0.55, part.scaling.z * (1 - a * 0.7));   // squashed
+      const lim = 0.5, br = base?.r;
+      part.rotation.x = br ? Math.max(br.x - lim, Math.min(br.x + lim, part.rotation.x + r(a * 1.2))) : part.rotation.x;   // buckled
+      part.rotation.z = br ? Math.max(br.z - lim, Math.min(br.z + lim, part.rotation.z + r(a * 1.4))) : part.rotation.z;
+      part.rotation.y = br ? Math.max(br.y - lim, Math.min(br.y + lim, part.rotation.y + r(a * 0.9))) : part.rotation.y;
     }
-    if (face === "f" && big > 0.5) { // a hard head-on shot pushes the bumper crooked
-      const k = root.getChildMeshes().find((m) => Math.abs(m.position.z - 3.05) < 0.01 && Math.abs(m.position.y - 1.2) < 0.01);
-      if (k) { k.rotation.y += r(0.12); k.rotation.z += r(0.1); k.position.z -= 0.04 * Math.random(); }
-    }
+    v.dents = (v.dents ?? 0) + 1;
   }
   private setSolid(v: Veh, on: boolean) { v.solid = on; this.place(v); }
 
@@ -772,6 +771,8 @@ export class Vehicles {
       }
       const sp = this.k("Space"); if (sp && !this.spaceWas) this.grab(v); this.spaceWas = sp;
     }
+    // trucks don't drive into the pond
+    if (this.terrain && v.px !== undefined && this.terrain(v.x, v.z) < -0.4) { v.x = v.px; v.z = v.pz!; v.speed *= -0.25; }
     // drive-over ramps: ride up whatever drivable surface is underfoot
     if (v.kind !== "lift") {
       let top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
@@ -801,7 +802,7 @@ export class Vehicles {
         if (Math.hypot(h.x - (v.x + Math.sin(v.yaw) * o), h.z - (v.z + Math.cos(v.yaw) * o)) < v.radius + 0.35) { this.game.personStruck(h.name); return; }
       }
     }
-    this.place(v);
+    this.place(v); v.px = v.x; v.pz = v.z;
     // wheels
     v.spinNodes.forEach((n, i) => { n.rotation.x += (v.speed / v.wheelR[i]) * dt; });
     v.steerNodes.forEach((n, i) => { n.rotation.y = -v.steer * v.steerSign[i] * 0.8; });

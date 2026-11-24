@@ -1,4 +1,4 @@
-import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture } from "@babylonjs/core";
+import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
 import { Rig, F } from "./rig";
 import { Player } from "./player";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
@@ -841,10 +841,32 @@ export class Game {
     root.position.set(-4.0, F, -3.7); this.snake = root;
   }
   despawnSnake() { this.snake?.dispose(); this.snake = null; }
+  /** the asteroid hangs in the sky: a jagged, faceted rock with glowing cracks, and a long fiery tail streaming away behind it. It does not move. */
+  asteroidTail: { mesh: Mesh; base: Vector3 }[] = [];
   spawnAsteroid() {
-    const a = MeshBuilder.CreateSphere("asteroid", { diameter: 160, segments: 10 }, this.scene);
-    const m = new StandardMaterial("ast", this.scene); m.diffuseColor = Color3.FromHexString("#4a3a32"); m.emissiveColor = Color3.FromHexString("#7a2a10");
-    a.material = m; a.position.set(120, 420, -500); this.asteroid = a; this.asteroidT = 0;
+    const a = MeshBuilder.CreateIcoSphere("asteroid", { radius: 80, subdivisions: 4, flat: true, updatable: true }, this.scene);
+    // lumpy, sharp shape: displace every vertex by a smooth function of its direction (so shared corners move together), then flat-shade it
+    const pos = a.getVerticesData(VertexBuffer.PositionKind)!, idx = a.getIndices()!;
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i], y = pos[i + 1], z = pos[i + 2], l = Math.hypot(x, y, z) || 1, nx = x / l, ny = y / l, nz = z / l;
+      const n = 0.30 * Math.sin(nx * 5.1 + 1.3) * Math.cos(ny * 4.3 + 0.7) + 0.22 * Math.sin(nz * 7.7 + nx * 3.1) + 0.14 * Math.sin(nx * 13 + ny * 11 + nz * 9) + 0.07 * Math.sin(ny * 23 + nz * 19);
+      const k = (1 + n) * (Math.abs(n) > 0.28 ? 1.12 : 1);
+      pos[i] = nx * 80 * k * 1.1; pos[i + 1] = ny * 80 * k * 0.88; pos[i + 2] = nz * 80 * k;
+    }
+    a.updateVerticesData(VertexBuffer.PositionKind, pos);
+    const nrm: number[] = []; VertexData.ComputeNormals(pos, idx, nrm); a.updateVerticesData(VertexBuffer.NormalKind, nrm);
+    const m = new StandardMaterial("ast", this.scene); m.diffuseColor = Color3.FromHexString("#3b3029"); m.emissiveColor = Color3.FromHexString("#5a1e0a"); m.specularColor = new Color3(0.08, 0.06, 0.05);
+    a.material = m; a.position.set(120, 420, -500); a.rotation.set(0.4, 0.8, 0.2); this.asteroid = a; this.asteroidT = 0; a.isPickable = false;
+    // the tail: nested flame cones (wide end at the rock, apex far away), trailing up and back
+    const dir = new Vector3(0.3, 0.52, -0.8).normalize(), q = new Quaternion(); Quaternion.FromUnitVectorsToRef(Vector3.Up(), dir, q);
+    this.asteroidTail = [];
+    for (const [wid, len, col, alpha] of [[190, 1100, "#ff4a10", 0.32], [140, 800, "#ff7a1a", 0.4], [90, 540, "#ffb23a", 0.5], [48, 340, "#fff0b0", 0.65]] as [number, number, string, number][]) {
+      const c = MeshBuilder.CreateCylinder("asttail", { diameterTop: 0, diameterBottom: wid, height: len, tessellation: 14 }, this.scene);
+      const cm = new StandardMaterial("asttailm", this.scene); cm.disableLighting = true; cm.emissiveColor = Color3.FromHexString(col); cm.alpha = alpha; cm.backFaceCulling = false; cm.disableDepthWrite = true; cm.fogEnabled = false;
+      c.material = cm; c.isPickable = false; c.alwaysSelectAsActiveMesh = true;
+      c.rotationQuaternion = q.clone(); c.position.copyFrom(a.position).addInPlace(dir.scale(len / 2 + 30)); c.setParent(null);
+      this.asteroidTail.push({ mesh: c, base: new Vector3(1, 1, 1) });
+    }
   }
   // ---------- ARMAGEDDON (finale, from the original "Roll Coal Make Hole") ----------
   arm = {
@@ -900,7 +922,7 @@ export class Game {
       this.player.teleport(o.x, 0.6, o.z + 8, Math.PI);
       this.player.gScale = 0.35; this.player.third = true;
       this.scene.fogDensity = 0.004;
-      this.asteroidT = -1; if (this.asteroid) { this.asteroid.dispose(); this.asteroid = null; }
+      this.asteroidT = -1; if (this.asteroid) { this.asteroid.dispose(); this.asteroid = null; } this.asteroidTail.forEach((tl) => tl.mesh.dispose()); this.asteroidTail = [];
       this.astMode = true;
       this.sim.s.paused = true;
       $("fade").style.opacity = "0"; this.player.enabled = true; this.player.lock();
@@ -1119,7 +1141,10 @@ export class Game {
       } else dn.rotation.y += Math.sin(this.realT * 0.7) * 0.003;
     }
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0));
-    if (this.asteroid) { this.asteroidT += realDt; this.asteroid.position.y = 420 - this.asteroidT * 30; this.asteroid.position.x = 120 - this.asteroidT * 4; this.asteroid.rotation.y += realDt * 0.05; }
+    if (this.asteroid) {
+      this.asteroidT += realDt;                                            // (the rock itself stays put: only the tail flickers)
+      this.asteroidTail.forEach((tl, i) => { const f = 1 + Math.sin(this.asteroidT * (3.1 + i * 1.7) + i) * 0.045 + (Math.random() - 0.5) * 0.03; tl.mesh.scaling.set(f, 1 + Math.sin(this.asteroidT * 1.9 + i * 2) * 0.03, f); });
+    }
     this.updateEnv();
     this.sampleDepth();
     this.saveT += realDt; if (this.saveT > 12) { this.saveT = 0; this.save(); }

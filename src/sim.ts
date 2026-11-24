@@ -48,7 +48,7 @@ export function ecdAt(flow: number, depth: number): number {
 export const woptFor = (f: Formation) => Math.max(16, Math.min(42, 30 / Math.pow(f.hardness, 0.25)));
 /** Mud-motor differential pressure from WOB and rock hardness (original game formula). */
 export const diffPressure = (wob: number, f: Formation) => (wob > 0 ? (wob * 12) / (f.hardness / 1.5) : 0);
-export const STALL_DP = 1650;
+export const STALL_DP = 2100;   // the original game's motor stall pressure
 /** surface torque (ft-lb): string drag grows with depth, bit torque with WOB and rock hardness */
 export const torqueFor = (wob: number, f: Formation, depth: number) => 600 + depth * 0.35 + (wob > 0 ? wob * (160 + 120 * f.hardness) : 0);
 export const TORQUE_MAX = 16500;
@@ -90,12 +90,14 @@ export type SimEvent =
   | { type: "kickAlarm" } | { type: "autoShutIn" } | { type: "lossStart" } | { type: "lossHealed" }
   | { type: "connection" } | { type: "bitDead" } | { type: "tripDone" } | { type: "formation"; name: string }
   | { type: "td" } | { type: "casingDone" } | { type: "killDone"; good: boolean } | { type: "fractured" }
-  | { type: "blackout" } | { type: "stall" } | { type: "pitLow" };
+  | { type: "blackout" } | { type: "stall" } | { type: "pitLow" } | { type: "dpSpike" };
 
 export class Sim {
   s: SimState;
   events: SimEvent[] = [];
   pitLowFlag = false;
+  /** diff-pressure spike multiplier (the original game's DP spikes near the motor limit); decays back to 1 */
+  spike = 1;
   private dist = 0;
   hold: number | null = null;
   accumDead = false;
@@ -233,7 +235,7 @@ export class Sim {
         const flowF = Math.max(0.5, Math.min(1.6, 1 + ((s.flow - 550) / 550) * 0.6));
         const mudF = 1.1 - s.mw * 0.015;
         const bitF = 0.35 + 0.65 * (s.bit / 100);
-        const wopt = woptFor(f), fac = flowF * mudF * bitF;
+        const fac = flowF * mudF * bitF;
         // pits run dry: the pumps lose suction and you cannot drill. Transfer from the frac tanks.
         if (s.pit < 120 && circulating) {
           if (!this.pitLowFlag) { this.pitLowFlag = true; this.events.push({ type: "pitLow" }); }
@@ -247,7 +249,7 @@ export class Sim {
         // AUTODRILLER: hold the lowest of the WOB set point, the WOB that would exceed the ROP limit, and the WOB that would exceed the diff limit
         if (s.auto.on) {
           const effMax = (s.auto.rop * f.hardness) / (6 * Math.max(0.05, fac));
-          const wRop = effMax <= wopt ? effMax : wopt + (effMax - wopt) / 0.3;
+          const wRop = effMax;
           const wDp = (s.auto.dp * (f.hardness / 1.5)) / 12;
           const tqLim = s.auto.torque ?? 10000;
           const wTq = Math.max(0, (tqLim - 600 - s.depth * 0.35) / (160 + 120 * f.hardness));
@@ -255,15 +257,19 @@ export class Sim {
           s.auto.limit = w === s.auto.wob ? "WOB" : w === wRop ? "ROP" : w === wDp ? "DIFF" : "TORQUE";
           s.wobTarget = Math.max(0, Math.round(w * 10) / 10);
         } else s.auto.limit = "";
-        s.wob += Math.sign(s.wobTarget - s.wob) * Math.min(Math.abs(s.wobTarget - s.wob), 3 * dt);
-        const eff = s.wob <= wopt ? s.wob : wopt + (s.wob - wopt) * 0.3;
-        s.dp = diffPressure(s.wob, f) * (1 + (Math.random() * 0.15 - 0.075));
+        s.wob = s.wobTarget;                                    // like the original: weight is whatever you set, right now
+        const eff = s.wob;                                      // and ROP is simply proportional to it (no founder knee)
+        const baseDp = diffPressure(s.wob, f);
+        // near the motor limit the pressure throws spikes, like the original; each decays back in a second or two
+        if (baseDp >= 1850 && Math.random() < 1 - Math.exp(-(0.15 + (baseDp - 1850) / 220) * dt)) { this.spike = 1.12 + Math.random() * 0.2; this.events.push({ type: "dpSpike" }); }
+        this.spike = 1 + (this.spike - 1) * Math.exp(-1.3 * dt);
+        s.dp = baseDp * (1 + (Math.random() * 0.15 - 0.075)) * this.spike;   // ±7.5 % bounce every frame
         s.torque = torqueFor(s.wob, f, s.depth) * (1 + (Math.random() * 0.1 - 0.05));
-        if ((s.dp > STALL_DP || s.torque > TORQUE_MAX) && Math.random() < 1 - Math.exp(-0.5 * dt)) {
+        if ((s.dp >= STALL_DP && s.wob > 0) || (s.torque > TORQUE_MAX && Math.random() < 1 - Math.exp(-0.5 * dt))) {
           s.stallT = 12; s.stats.stalls++; s.cost += 8000; this.events.push({ type: "stall" });
         }
         let rop = eff > 0 ? (eff * 6) / f.hardness : 0;
-        rop = Math.min(380, rop * fac);
+        rop = Math.min(600, rop * fac);
         if (s.needTrip || s.fuel <= 0) rop = 0;
         s.rop = rop;
         const dd = (rop / 60) * dt;

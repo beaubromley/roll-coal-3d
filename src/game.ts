@@ -353,6 +353,7 @@ export class Game {
             </div>
             <div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
             <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
+            <div class="btns" style="margin:6px 0"><button class="b alt" id="wobDn" ${busy || a.on ? "disabled" : ""}>WOB ↓</button><button class="b" id="wobUp" ${busy || a.on ? "disabled" : ""}>WOB ↑</button></div>
             <div class="hint" style="margin-top:6px">Pump rate: <b id="fv">${s.flowTarget}</b> gpm</div>
             <input type="range" id="flow" min="400" max="1000" step="50" value="${s.flowTarget}"/>
           </div>
@@ -369,12 +370,21 @@ export class Game {
       sl("a_rop", "ar", (v) => { s.auto.rop = v; });
       sl("a_dp", "ad", (v) => { s.auto.dp = v; });
       sl("a_tq", "at", (v) => { s.auto.torque = v; });
+      // WOB arrows, as on the original console: one klb a press, and hold to repeat after 0.3 s at 20 per second
+      const holdBtn = (id: string, dir: number) => {
+        const b = q<HTMLButtonElement>(id); let to = 0, iv = 0;
+        const step = () => { if (s.mode === "tripping" || s.mode === "casing" || s.auto.on) return; s.wobTarget = Math.max(0, Math.min(80, Math.round(s.wobTarget) + dir)); q<HTMLInputElement>("wob").value = String(s.wobTarget); q("wv").textContent = String(s.wobTarget); };
+        const stop = () => { clearTimeout(to); clearInterval(iv); };
+        b.addEventListener("pointerdown", (ev) => { ev.preventDefault(); step(); to = window.setTimeout(() => { iv = window.setInterval(step, 50); }, 300); });
+        for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, stop);
+      };
+      holdBtn("wobUp", 1); holdBtn("wobDn", -1);
       q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
       q("a_toggle").onclick = () => {
         const a = s.auto;
         if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
         const notes: string[] = [];
-        if (a.dp > 1650) notes.push("A diff limit over 1,650 won't stop a motor stall. That's not a limit, that's a suggestion.");
+        if (a.dp > STALL_DP - 150) notes.push("A diff limit that close to the motor's stall pressure (" + fmt(STALL_DP) + " psi) won't save the motor. That's not a limit, that's a suggestion.");
         if (a.rop < 100) notes.push("That ROP limit is going to strangle us. We'll crawl.");
         if ((a.torque ?? 10000) > TORQUE_MAX) notes.push("A torque limit over 16,500 won't save the string. It'll twist off first.");
         if (a.wob > 45) notes.push("Forty-five klbs on a bit that size is a lot of weight for not much hole.");
@@ -1056,6 +1066,7 @@ export class Game {
     for (const e of this.sim.drain()) {
       switch (e.type) {
         case "kickAlarm": this.wake("PIT GAIN!"); break;
+        case "dpSpike": if (this.realT - ((this.flags.lastSpikeT as number) || -99) > 5) { this.flags.lastSpikeT = this.realT; this.ui.toast("DIFF PRESSURE SPIKE!", "Reduce WOB"); this.sfx.bad(); } break;
         case "pitLow": this.radio("dale", "Pits are nearly dry, boss. Pumps are sucking air. I can't drill like this. Somebody run a transfer from the frac tanks behind the pits.", 12000); this.wake("PITS LOW"); break;
         case "autoShutIn": this.radio("dale", "I shut it in myself. Late. Got a bigger gain than I'd like.", 9000); this.inc(1); break;
         case "lossStart": this.radio("marcus", "We're losing returns! Pits are dropping — you're over frac. Back off the mud weight or pump LCM.", 10000); this.wake("LOSSES"); break;

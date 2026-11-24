@@ -827,6 +827,7 @@ export class Vehicles {
   }
   private dronePrompt = "";
 
+  private wobHold = { dir: 0, t: 0 };
   private updateChair(dt: number) {
     const s = this.game.sim.s, p = this.player, st = this.seats[this.chair.idx];
     p.pos.set(st.pos.x, st.pos.y, st.pos.z); p.vel.setAll(0); p.grounded = true;
@@ -838,7 +839,12 @@ export class Vehicles {
     if (this.chair.idx === 0) {
       const busy = s.mode === "tripping" || s.mode === "casing";
       if (this.k("Space")) { s.wobTarget = Math.max(0, s.wobTarget - 30 * dt); if (s.auto.on) s.auto.on = false; }   // set the brake: weight comes right off
-      else if (up && !s.auto.on && !busy) s.wobTarget = Math.max(0, Math.min(60, s.wobTarget + up * 8 * dt));
+      else if (up && !s.auto.on && !busy) {
+        // like the original console: one klb per press, then hold-to-repeat after 0.3 s at 20 per second
+        const dir = Math.sign(up);
+        if (dir !== this.wobHold.dir) { this.wobHold.dir = dir; this.wobHold.t = 0.3; s.wobTarget = Math.max(0, Math.min(80, Math.round(s.wobTarget) + dir)); }
+        else { this.wobHold.t -= dt; while (this.wobHold.t <= 0) { this.wobHold.t += 0.05; s.wobTarget = Math.max(0, Math.min(80, Math.round(s.wobTarget) + dir)); } }
+      } else this.wobHold.dir = 0;
       if (side) s.flowTarget = Math.max(400, Math.min(1000, s.flowTarget + side * 150 * dt));
       this.hud.textContent = `DRILLER'S CHAIR — ${s.mode.toUpperCase()}   DEPTH ${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr\n`
         + `WOB ${s.wob.toFixed(1)} → ${s.wobTarget.toFixed(0)} klbs   PUMP ${Math.round(s.flowTarget)} gpm   SPP ${Math.round(s.spp)} psi   AUTO ${s.auto.on ? "ON" : "OFF"}\n`

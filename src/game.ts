@@ -497,7 +497,7 @@ export class Game {
   /** feed barite: a hold-to-fill minigame; the "wing it" guess is off by a hidden amount that only shows up as the mud circulates */
   dose(d: number) {
     const s = this.sim.s;
-    this.mini.holdFill({ eyebrow: "Mud Hopper", title: "Barite Feed", intro: `Raise the system by +${d.toFixed(2)} ppg. Hold the feed, release on the mark.`, unit: "ppg", max: d * 2.2, target: d, band: Math.max(0.05, d * 0.12), rate: 0.26, hold: "HOLD TO FEED" }, (r) => {
+    this.mini.holdFill({ eyebrow: "Mud Hopper", title: "Barite Feed", intro: `Raise the system by +${d.toFixed(2)} ppg. Hold the feed, release on the mark.`, unit: "ppg", max: d * 2.2, target: d, band: Math.max(0.05, d * 0.12), rate: 0.35, hold: "HOLD TO FEED" }, (r) => {
       let actual: number;
       if (r.skipped) {
         actual = d * (0.62 + Math.random() * 0.85);

@@ -181,7 +181,7 @@ export class Sim {
     if (!this.accumDead && s.accum < 3000) s.accum = Math.min(3000, s.accum + 15 * dt);
 
     // mud property lags
-    const dmw = s.mwTarget - s.mw; s.mw += Math.sign(dmw) * Math.min(Math.abs(dmw), 0.04 * dt);
+    const dmw = s.mwTarget - s.mw; s.mw += Math.sign(dmw) * Math.min(Math.abs(dmw), 0.6 * dt);   // weighting up takes a couple of seconds
     const dl = s.lcmTarget - s.lcm; s.lcm += Math.sign(dl) * Math.min(Math.abs(dl), 0.6 * dt);
     const df = s.flowTarget - s.flow; s.flow += Math.sign(df) * Math.min(Math.abs(df), 25 * dt);
     if (s.lcm > 0 && s.loss.active === false) s.lcm = Math.max(s.lcmTarget, s.lcm - 0.01 * dt); // slow decay

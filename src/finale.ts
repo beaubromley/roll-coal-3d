@@ -35,6 +35,7 @@ export class Finale {
   private dust: { mesh: Mesh; mat: StandardMaterial; age: number }[] = [];
   private dustI = 0; private dustT = 0;
   earth: Mesh | null = null;
+  private derrick: Mesh[] = [];
   private bear: Human | null = null; private lev: Human | null = null;
 
   constructor(g: any) {
@@ -165,7 +166,7 @@ export class Finale {
   /** the Armadillo: a six-wheeled armoured drill truck with a derrick on the back and thruster rockets under the tail (forward is +z) */
   private buildArmadillo(mat: (hex: string, em?: string) => StandardMaterial) {
     const g = this.g, sc = g.scene, { x: ox, z: oz } = this.O;
-    const root = new TransformNode("armadillo", sc); this.arm = root;
+    const root = new TransformNode("armadillo", sc); this.arm = root; this.derrick = [];
     const W = mat("#e9edf1"), O = mat("#e07010"), K = mat("#202428"), S = mat("#8a9099");
     const gl = new StandardMaterial("armglass", sc); gl.diffuseColor = new Color3(0.55, 0.75, 0.9); gl.alpha = 0.45; gl.specularColor = new Color3(1, 1, 1);
     const hl = mat("#000000", "#fff3c0"); hl.disableLighting = true;
@@ -178,8 +179,9 @@ export class Finale {
     for (const s of [-1, 1]) { const l = MeshBuilder.CreateBox("armhl", { width: 0.5, height: 0.25, depth: 0.1 }, sc); l.material = hl; l.parent = root; l.position.set(s * 1.0, 1.7, 4.75); }
     for (const s of [-1, 1]) for (const z of [-0.05, 0]) void z;
     // derrick on the back: four legs, a crown, and a drill pipe down the middle
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const b = MeshBuilder.CreateCylinder("armleg", { diameter: 0.18, height: 8.4, tessellation: 6 }, sc); b.material = O; b.parent = root; b.position.set(sx * 0.7, 6.2, -2.4 + sz * 0.7); b.isPickable = false; }
-    box(O, 1.9, 0.5, 1.9, 0, 10.4, -2.4); cyl(S, 0.28, 8.5, 0, 6.3, -2.4);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const b = MeshBuilder.CreateCylinder("armleg", { diameter: 0.18, height: 8.4, tessellation: 6 }, sc); b.material = O; b.parent = root; b.position.set(sx * 0.7, 6.2, -2.4 + sz * 0.7); b.isPickable = false; this.derrick.push(b); }
+    this.derrick.push(box(O, 1.9, 0.5, 1.9, 0, 10.4, -2.4), cyl(S, 0.28, 8.5, 0, 6.3, -2.4));
+    for (const m of this.derrick) m.setEnabled(false);   // stowed: it only goes up at the drill site
     // six wheels
     this.wheels = [];
     for (const sx of [-1, 1]) for (const z of [3.1, 0.2, -2.9]) {
@@ -294,6 +296,7 @@ export class Finale {
   private flags_cleared = false;
 
   private stopDrive() {
+    for (const m of this.derrick) m.setEnabled(true);   // raise the derrick at the site
     const g = this.g;
     this.mode = "site"; this.arrived = true; this.hud.style.display = "none";
     this.arm.position.set(this.O.x + 8, 0, this.O.z + this.SITE_Z - 16); this.arm.rotation.set(0, Math.PI * 0.2, 0);

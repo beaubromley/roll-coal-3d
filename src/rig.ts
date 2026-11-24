@@ -1051,15 +1051,37 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // helicopter (for the VP of Operations)
   const heli = node("heli", scene, 70, 80, 60);
+  // a light turbine helicopter (Bell 407 style, forward is +z): rounded white cabin with a blue stripe and a wide glass bubble, engine cowl, a tapering
+  // tail boom with fin, stabiliser and tail rotor, a mast and a two-blade main rotor, and skids on cross tubes. Skid bottoms sit 1.1 m below the origin.
+  let heliRotor: TransformNode, heliTail: TransformNode, heliDisc: Mesh;
   {
-    const body = MeshBuilder.CreateSphere("hb", { diameter: 2.4, segments: 8 }, scene);
-    body.scaling.set(1, 0.9, 1.8); body.material = b.getMat("white"); body.parent = heli;
-    const tail = MeshBuilder.CreateBox("ht", { width: 0.2, height: 0.3, depth: 3.6 }, scene);
-    tail.material = b.getMat("white"); tail.parent = heli; tail.position.z = -3.2;
-    const rotor = MeshBuilder.CreateBox("hr", { width: 9, height: 0.05, depth: 0.25 }, scene);
-    rotor.material = b.getMat("black"); rotor.parent = heli; rotor.position.y = 1.2; rotor.name = "rotor";
-    const sk = MeshBuilder.CreateBox("sk", { width: 1.8, height: 0.08, depth: 3 }, scene);
-    sk.material = b.getMat("dsteel"); sk.parent = heli; sk.position.y = -1.2;
+    const put = (m: Mesh, mat: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { m.material = b.getMat(mat); m.parent = heli; m.position.set(x, y, z); m.scaling.set(sx, sy, sz); m.isPickable = false; return m; };
+    const ell = (mat: string, x: number, y: number, z: number, sx: number, sy: number, sz: number) => put(MeshBuilder.CreateSphere("hell", { diameter: 1, segments: 18 }, scene), mat, x, y, z, sx, sy, sz);
+    const box = (mat: string, x: number, y: number, z: number, w: number, h: number, d: number) => put(MeshBuilder.CreateBox("hbox", { width: w, height: h, depth: d }, scene), mat, x, y, z);
+    const tube = (mat: string, ax: "x" | "y" | "z", x: number, y: number, z: number, dia: number, len: number) => { const c = MeshBuilder.CreateCylinder("htube", { diameter: dia, height: len, tessellation: 10 }, scene); if (ax === "z") c.rotation.x = Math.PI / 2; if (ax === "x") c.rotation.z = Math.PI / 2; return put(c, mat, x, y, z); };
+    ell("white", 0, 0.05, 0.1, 1.55, 1.45, 3.1);                                   // main cabin
+    ell("white", 0, 0.78, -0.55, 1.05, 0.75, 1.9);                                  // engine cowl on top, behind the mast
+    ell("glass", 0, 0.28, 1.0, 1.42, 1.0, 1.5);                                     // wide front windscreen bubble
+    ell("bopblue", 0, -0.42, 0.1, 1.58, 0.28, 3.12);                                // blue belly stripe
+    for (const s of [-1, 1]) { box("dsteel", s * 0.775, 0.1, -0.15, 0.03, 0.78, 0.04); box("dsteel", s * 0.775, 0.1, 0.55, 0.03, 0.78, 0.04); box("dsteel", s * 0.775, 0.46, 0.2, 0.03, 0.04, 0.72); box("dsteel", s * 0.775, -0.28, 0.2, 0.03, 0.04, 0.72); }   // door outlines
+    const boom = MeshBuilder.CreateCylinder("hboom", { diameterTop: 0.34, diameterBottom: 0.14, height: 3.7, tessellation: 14 }, scene); boom.rotation.x = -Math.PI / 2;
+    put(boom, "white", 0, 0.5, -3.3);                                                // tapering tail boom (wide end at the cabin)
+    box("white", 0, 0.78, -5.0, 0.07, 0.95, 0.75);                                  // vertical fin
+    box("white", 0, 0.38, -4.75, 1.3, 0.05, 0.4);                                   // horizontal stabiliser
+    box("bopblue", 0, 1.1, -5.05, 0.075, 0.2, 0.45);                                // blue tip on the fin
+    heliTail = new TransformNode("htail", scene); heliTail.parent = heli; heliTail.position.set(0.12, 0.85, -5.05);
+    { const bl = MeshBuilder.CreateBox("htb", { width: 0.03, height: 1.1, depth: 0.08 }, scene); bl.material = b.getMat("black"); bl.parent = heliTail; const bl2 = bl.clone("htb2"); bl2.rotation.x = Math.PI / 2; bl2.parent = heliTail; }
+    tube("steel", "y", 0, 1.35, -0.45, 0.2, 0.6);                                   // main-rotor mast
+    heliRotor = new TransformNode("hrotor", scene); heliRotor.parent = heli; heliRotor.position.y = 1.68;
+    { const hub = MeshBuilder.CreateCylinder("hhub", { diameter: 0.4, height: 0.16, tessellation: 12 }, scene); hub.material = b.getMat("black"); hub.parent = heliRotor;
+      for (const r of [0, Math.PI / 2]) { const bl = MeshBuilder.CreateBox("hblade", { width: 10.4, height: 0.035, depth: 0.32 }, scene); bl.material = b.getMat("black"); bl.parent = heliRotor; bl.rotation.y = r; } }
+    heliRotor.position.z = -0.45;
+    heliDisc = MeshBuilder.CreateCylinder("hdisc", { diameter: 10.4, height: 0.01, tessellation: 40 }, scene);
+    { const dm = new StandardMaterial("hdiscm", scene); dm.diffuseColor = new Color3(0.1, 0.1, 0.1); dm.alpha = 0.16; dm.backFaceCulling = false; heliDisc.material = dm; heliDisc.parent = heli; heliDisc.position.set(0, 1.68, -0.45); heliDisc.isPickable = false; }
+    for (const s of [-1, 1]) tube("dsteel", "z", s * 0.82, -1.05, 0.1, 0.09, 3.4);   // skids
+    tube("dsteel", "x", 0, -0.92, -0.55, 0.07, 1.74); tube("dsteel", "x", 0, -0.92, 0.85, 0.07, 1.74);   // cross tubes
+    for (const s of [-1, 1]) for (const zz of [-0.55, 0.85]) { const st = MeshBuilder.CreateCylinder("hstrut", { diameter: 0.06, height: 0.5, tessellation: 8 }, scene); st.material = b.getMat("dsteel"); st.parent = heli; st.position.set(s * 0.74, -0.7, zz); st.rotation.z = s * 0.28; }
+    ell("yellow", 0, 0.62, 1.85, 0.5, 0.05, 0.12);                                  // a landing-light strip in the nose
   }
   heli.setEnabled(false);
   // a proper raised concrete pad (well clear of the ground surface so nothing flickers), with a painted ring and an H
@@ -1241,16 +1263,18 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     }
     // helicopter
     if (heliState.phase === "landing") {
-      heli.position.y = Math.max(0.82, heli.position.y - dt * 12);
+      heli.position.y = Math.max(1.28, heli.position.y - dt * 12);
       heli.position.x += (63 - heli.position.x) * Math.min(1, dt * 0.8); heli.position.z += (61 - heli.position.z) * Math.min(1, dt * 0.8);
-      if (heli.position.y <= 0.87) heliState.phase = "landed";
+      if (heli.position.y <= 1.33) heliState.phase = "landed";
     } else if (heliState.phase === "leaving") {
       heli.position.y += dt * 14; heli.position.x += dt * 18;
       if (heli.position.y > 90) { heliState.phase = "hidden"; heli.setEnabled(false); }
     }
     if (heliState.phase !== "hidden") {
-      const rotor = heli.getChildMeshes().find((m) => m.name === "rotor");
-      if (rotor) rotor.rotation.y += dt * (heliState.phase === "landed" ? 6 : 30);
+      const spin = heliState.phase === "landed" ? 9 : 34;
+      heliRotor.rotation.y += dt * spin; heliTail.rotation.x += dt * spin * 1.6;
+      (heliDisc.material as StandardMaterial).alpha = heliState.phase === "landed" ? 0.1 : 0.2;
+      heli.rotation.z = heliState.phase === "landed" ? 0 : Math.sin(f.t * 1.3) * 0.04;
     }
     void f.pumpsOn;
   };

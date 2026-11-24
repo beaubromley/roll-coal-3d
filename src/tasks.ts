@@ -252,10 +252,10 @@ export function defineMissions(g: Game) {
     ] });
 
   // ================================================================ 16. ARMAGEDDON (finale)
-  M({ id: "armageddon", title: "Armageddon", sub: "Drill to TD, set casing, and then — apparently — save the planet.", trigger: () => g.flags.chainDone === true, a: 1.0, m: 20,
+  M({ id: "armageddon", title: "Finish the Well", sub: "Drill to TD, then run casing and cement.", trigger: () => g.flags.chainDone === true, a: 1.0, m: 20,
     start: () => { g.hold = null; sim.hold = null; g.radio("dale", "Released the hold. We're drilling to TD, boss.", 8000); },
     steps: [
-      { text: "Drill to TD (8,500 ft): set weight at the driller's console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.depth >= WELL.td - 0.5 && s.mode === "idle" },
+      { text: "Drill to TD (8,500 ft): set weight at the driller's console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.depth >= WELL.td - 0.5 && (s.mode === "idle" || s.mode === "casing" || s.mode === "done") },   // (casing may already be running or finished by the time the finale begins)
       { text: "Run the casing & cement at the console", at: sy(S.cabin), label: "Driller's console — run casing", r: 3.5, act: () => g.openCabin(), watch: () => s.mode === "casing" || s.mode === "done" },
       { text: "Casing & cement in the hole…", watch: () => s.casing.phase === "done" || s.mode === "done" },
       { text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, enter: () => { g.sfx.horn(); g.spawnAsteroid(); g.sim.s.paused = true; g.flags.ringing = true; g.flags.ringT = 0; g.flags.ringLast = 0; g.flags.ringNag = false; g.radio("earl", "Phone's ringing in your trailer. Caller ID says… the White House? Head to the company man trailer, boss.", 11000); }, act: (done0) => {
@@ -266,7 +266,7 @@ export function defineMissions(g: Game) {
         ], "Incoming call — Priority One");
       } },
       { text: "Board the helicopter at the helipad", at: sy(S.helipad), label: "Board the helicopter", r: 7, enter: () => { g.rig.heliState.node.setEnabled(true); g.rig.heliState.node.position.set(70, 80, 60); g.rig.heliState.phase = "landing"; g.radio("president", "A chopper is en route. Godspeed, Company Man.", 8000); },
-        act: (done) => { if (g.rig.heliState.phase !== "landed") { g.ui.toast("HOLD ON", "The helicopter is still landing"); return; } g.callUp(done); } },
+        act: (done) => { if (g.rig.heliState.phase !== "landed") { g.ui.toast("HOLD ON", "The helicopter is still landing"); return; } if (g.active) g.active.m.title = "Armageddon"; g.callUp(done); } },
       { text: "Walk to the drill console on the asteroid", at: () => g.arm.console, label: "Take the driller's seat", r: 4, act: () => g.openArm(), watch: () => g.arm.depth > 0 },
       { text: "Drill 800 feet through the asteroid", watch: () => g.arm.depth >= 800 },
       { text: "Plant the bomb and detonate", at: () => g.arm.console, label: "Detonate", r: 4, act: () => g.openArm() },

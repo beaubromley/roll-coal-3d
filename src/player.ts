@@ -188,8 +188,10 @@ export class Player {
     // tread two or three steps up as a wall. Each substep resolves collisions and steps up onto the tread under it.
     const nSub = Math.max(1, Math.ceil(Math.hypot(vx, vz) * dt / 0.1));
     for (let i = 0; i < nSub; i++) {
+      const ox = this.pos.x, oz = this.pos.z;
       this.pos.x += (vx * dt) / nSub; this.pos.z += (vz * dt) / nSub;
       this.resolveXZ(this.pos.y);
+      if (this.terrain && this.terrain(this.pos.x, this.pos.z) > this.pos.y + STEP + 0.05) { this.pos.x = ox; this.pos.z = oz; }   // a cliff face: you can't walk into it
       if (this.grounded && this.vel.y <= 0) { const up = this.support(this.pos.x, this.pos.z, this.pos.y); if (up > this.pos.y + 0.001 && up - this.pos.y <= STEP) this.pos.y = up; }
     }
     const feet = feet0; void feet;

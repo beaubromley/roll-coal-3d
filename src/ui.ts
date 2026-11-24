@@ -59,7 +59,7 @@ export class UI {
     t.innerHTML = `${title}${sub ? `<small>${sub}</small>` : ""}`;
     t.classList.add("show");
     clearTimeout(this.toastT);
-    this.toastT = window.setTimeout(() => t.classList.remove("show"), 3200);
+    this.toastT = window.setTimeout(() => t.classList.remove("show"), Math.max(6500, 4500 + sub.length * 60));
   }
 
   /** everything anyone has said, oldest first, for the LOG panel */
@@ -75,7 +75,7 @@ export class UI {
     $("radio").appendChild(el);
     this.radioQ.push(el);
     while (this.radioQ.length > 4) this.radioQ.shift()!.remove();
-    window.setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .5s"; window.setTimeout(() => el.remove(), 520); }, ms);
+    window.setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .5s"; window.setTimeout(() => el.remove(), 520); }, Math.max(11000, ms * 1.9) + text.length * 45);
   }
 
   /** Open a modal panel. `tick` runs every frame while open (for live gauges). */

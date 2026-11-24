@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, TransformNode, Mesh, Vector3, ShadowGenerator } from "@babylonjs/core";
+import { ParticleSystem, Color4, DynamicTexture, Scene, MeshBuilder, StandardMaterial, Color3, TransformNode, Mesh, Vector3, ShadowGenerator } from "@babylonjs/core";
 import type { AABB } from "./builder";
 import { pushOutXZ } from "./builder";
 import type { Player } from "./player";
@@ -40,9 +40,9 @@ interface Veh {
   wheelbase: number; maxFwd: number; maxRev: number; accel: number; radius: number; pts: number[];
   eye: { x: number; y: number; z: number }; camDist: number; camHeight: number;
   steerNodes: TransformNode[]; steerSign: number[]; spinNodes: TransformNode[]; wheelR: number[];
-  boxes: AABB[]; boxH: number; solid: boolean; gy?: number; slope?: number; base?: { m: Mesh; s: Vector3; r: Vector3 }[]; px?: number; pz?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
+  boxes: AABB[]; boxH: number; solid: boolean; prevTop?: number; vyG?: number; gate?: TransformNode; gateA?: number; gateOpen?: boolean; gy?: number; air?: boolean; airT?: number; vyEst?: number; slope?: number; base?: { m: Mesh; s: Vector3; r: Vector3 }[]; px?: number; pz?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
   /** backhoe: either driving with the stabilizers up, or dug in with them down (no driving) and the hoe arm working */
-  bh?: { swing: TransformNode; boom: TransformNode; stick: TransformNode; bucket: TransformNode; stabs: TransformNode[]; dig: boolean; stab: number; boomA: number; stickA: number; bucketA: number; swingA: number };
+  bh?: { tip: TransformNode; dirt: Mesh; load: number; swing: TransformNode; boom: TransformNode; stick: TransformNode; bucket: TransformNode; stabs: TransformNode[]; dig: boolean; stab: number; boomA: number; stickA: number; bucketA: number; swingA: number };
   lift: number;                       // 0..1 boom angle / basket height
   ext: number; tilt: number;                   // telehandler: boom extension 0..1, fork tilt -1..1
   boomPivot?: TransformNode; boomIn?: TransformNode; tiltNode?: TransformNode; forkMark?: TransformNode;
@@ -55,7 +55,7 @@ interface Veh {
 export class Vehicles {
   list: Veh[] = [];
   active: Veh | null = null;
-  private world: AABB[]; private ramps: AABB[] = [];
+  private world: AABB[]; private ramps: AABB[] = []; private coalPS: ParticleSystem[] = []; private pendingJump: { v: Veh; t: number } | null = null; private digCd = 0; private coalT = 0; private lastSp = 0;
   /** ground height over the hills; vehicles ride up and down them and pitch with the slope */
   terrain: ((x: number, z: number) => number) | null = null;
   private hud: HTMLElement;
@@ -185,6 +185,19 @@ export class Vehicles {
     this.box(v, r, "#ffe9a8", 1.5, 0.12, 0.22, 0, 3.12, 0.4, { emissive: 0.9 });  // roof light bar
     for (let i = 0; i < 4; i++) this.cyl(v, r, "#ffe9a8", 0.2, 0.06, -0.55 + i * 0.37, 2.4, 3.0, "z", 10, { emissive: 0.9 }); // bumper pods
     this.box(v, r, "#14171c", 0.5, 0.25, 0.04, 0, 1.65, -3.4 - EXT);
+    // the dual stacks can roll coal: two black plumes from the stack tops when you floor it
+    { const tex = new DynamicTexture("coalT", { width: 64, height: 64 }, this.scene, false); const c = tex.getContext() as CanvasRenderingContext2D, gr = c.createRadialGradient(32, 32, 2, 32, 32, 31);
+      gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.5, "rgba(255,255,255,0.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = gr; c.fillRect(0, 0, 64, 64); tex.hasAlpha = true; tex.update();
+      for (const s of [-1, 1]) {
+        const em = MeshBuilder.CreateBox("stackem", { size: 0.05 }, this.scene); em.parent = r; em.position.set(s * 1.0, 4.25, -1.05); em.isVisible = false; em.isPickable = false;
+        const ps = new ParticleSystem("truckcoal", 160, this.scene); ps.particleTexture = tex; ps.emitter = em;
+        ps.minEmitBox = new Vector3(-0.05, 0, -0.05); ps.maxEmitBox = new Vector3(0.05, 0, 0.05);
+        ps.direction1 = new Vector3(-0.15, 1, -0.5); ps.direction2 = new Vector3(0.15, 1.3, -0.1);
+        ps.minEmitPower = 3; ps.maxEmitPower = 6; ps.minLifeTime = 1.2; ps.maxLifeTime = 2.6; ps.minSize = 0.5; ps.maxSize = 1.1; ps.addSizeGradient(0, 0.5); ps.addSizeGradient(1, 3.0);
+        ps.color1 = new Color4(0.03, 0.03, 0.03, 0.85); ps.color2 = new Color4(0.1, 0.1, 0.09, 0.7); ps.colorDead = new Color4(0.2, 0.2, 0.2, 0);
+        ps.gravity = new Vector3(0, 0.6, 0); ps.minAngularSpeed = -0.8; ps.maxAngularSpeed = 0.8; ps.blendMode = ParticleSystem.BLENDMODE_STANDARD; ps.emitRate = 0; ps.updateSpeed = 0.02;
+        ps.start(); this.coalPS.push(ps);
+      } }
     const W = 1.35;
     for (const s of [-1, 1]) { this.wheel(v, r, s * 1.12, W / 2, 2.0, W, 0.55, 1); this.wheel(v, r, s * 1.12, W / 2, -3.0, W, 0.55, null); }
     return v;
@@ -228,13 +241,15 @@ export class Vehicles {
     this.box(v, stick, Y, 0.24, 0.24, 2.0, 0, 0, -1.0);
     const bucket = new TransformNode("hoeBucket", this.scene); bucket.parent = stick; bucket.position.set(0, 0, -2.0);
     this.box(v, bucket, D, 0.7, 0.5, 0.55, 0, -0.18, -0.12); this.box(v, bucket, H, 0.7, 0.06, 0.1, 0, -0.45, -0.3, { spec: 0.6 });
+    const tip = new TransformNode("hoeTip", this.scene); tip.parent = bucket; tip.position.set(0, -0.45, -0.42);   // the cutting edge
+    const dirt = this.box(v, bucket, "#6e5238", 0.58, 0.3, 0.4, 0, -0.28, -0.2); dirt.isVisible = false;   // dirt in the bucket
     const stabs: TransformNode[] = [];
     for (const sx of [-1, 1]) {   // stabilizers: a leg and pad on a hinge at the frame, folded up for driving and swung down to dig in
       const st = new TransformNode("stab", this.scene); st.parent = r; st.position.set(sx * 1.2, 0.95, -2.1); stabs.push(st);
       this.box(v, st, Y, 0.2, 0.2, 0.9, sx * 0.1, 0, 0);
       this.box(v, st, D, 0.18, 0.9, 0.18, sx * 0.5, -0.45, 0); this.box(v, st, D, 0.7, 0.08, 0.7, sx * 0.5, -0.9, 0);
     }
-    v.bh = { swing, boom, stick, bucket, stabs, dig: false, stab: 0, boomA: 0.55, stickA: 1.9, bucketA: 0.9, swingA: 0 };
+    v.bh = { tip, dirt, load: 0, swing, boom, stick, bucket, stabs, dig: false, stab: 0, boomA: 0.55, stickA: 1.9, bucketA: 0.9, swingA: 0 };
     this.poseHoe(v);
     // wheels: small steered fronts, big rears
     for (const s of [-1, 1]) { this.wheel(v, r, s * 0.98, 0.5, 1.4, 1.0, 0.42, 1); this.wheel(v, r, s * 1.05, 0.8, -1.0, 1.6, 0.6, null); }
@@ -379,7 +394,7 @@ export class Vehicles {
   private buildManlift(x: number, z: number, yaw: number): Veh {
     const v = this.blank("manlift", "Scissor Manlift", "lift", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 2.4, maxFwd: 3.2, maxRev: 2.4, accel: 2.5, radius: 0.95, pts: [0.9, -0.9], camDist: 14, camHeight: 4.8, eye: { x: 0, y: 1.6, z: 0.1 }, boxH: 1.3,
-      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  SPACE jump out  ·  E get out (basket down)" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  E get out (at height the gate opens and you jump)  ·  SPACE jump out" });
     const O = "#e07a10", D = "#3d434b";
     this.box(v, r, O, 1.7, 0.55, 3.0, 0, 0.62, 0);
     this.box(v, r, D, 1.5, 0.1, 2.8, 0, 0.92, 0);
@@ -394,8 +409,13 @@ export class Vehicles {
     const plat = new TransformNode("platform", this.scene); plat.parent = r;
     this.box(v, plat, "#5a6068", 1.8, 0.12, 2.7, 0, 0, 0, { spec: 0.3 });
     const rail = "#e8b923";
-    for (const sx of [-0.88, 0.88]) for (const sz of [-1.3, 0, 1.3]) this.box(v, plat, rail, 0.06, 1.1, 0.06, sx, 0.58, sz);
-    for (const sx of [-0.88, 0.88]) for (const y of [0.55, 1.12]) this.box(v, plat, rail, 0.05, 0.05, 2.62, sx, y, 0);
+    for (const sx of [-0.88, 0.88]) for (const sz of [-1.3, 0, 1.3]) { if (sx > 0 && sz === 0) continue; this.box(v, plat, rail, 0.06, 1.1, 0.06, sx, 0.58, sz); }
+    for (const y of [0.55, 1.12]) this.box(v, plat, rail, 0.05, 0.05, 2.62, -0.88, y, 0);
+    // the right-hand side is a gate on a hinge at the back corner post: it swings open when you get out
+    const gate = new TransformNode("basketGate", this.scene); gate.parent = plat; gate.position.set(0.88, 0, -1.3);
+    for (const y of [0.55, 1.12]) this.box(v, gate, rail, 0.05, 0.05, 2.6, 0, y, 1.3);
+    this.box(v, gate, rail, 0.06, 1.1, 0.06, 0, 0.58, 1.3);
+    v.gate = gate; v.gateA = 0; v.gateOpen = false;
     for (const y of [0.55, 1.12]) { this.box(v, plat, rail, 1.76, 0.05, 0.05, 0, y, -1.3); this.box(v, plat, rail, 1.76, 0.05, 0.05, 0, y, 1.3); }
     this.box(v, plat, "#f2f2f2", 1.76, 0.18, 0.04, 0, 0.22, 1.3);                  // toe board
     this.box(v, plat, "#15171a", 0.5, 0.45, 0.3, 0.55, 0.38, 1.05); this.box(v, plat, "#c4231c", 0.12, 0.05, 0.12, 0.55, 0.64, 1.05);   // control box + e-stop
@@ -438,6 +458,9 @@ export class Vehicles {
     });
   }
   /** apply the backhoe's arm angles and stabilizer position to its pivots */
+  /** the circles that make up the active vehicle's body (for things it can run over), and how fast it is going */
+  footprint(): { x: number; z: number; r: number; y: number; speed: number } | null { const v = this.active; if (!v || v.kind === "drone") return null; return { x: v.x, z: v.z, r: v.radius, y: v.gy ?? 0, speed: Math.abs(v.speed) }; }
+  bodyCircles(): { x: number; z: number; r: number }[] { const v = this.active; if (!v) return []; return v.pts.map((o) => ({ x: v.x + Math.sin(v.yaw) * o, z: v.z + Math.cos(v.yaw) * o, r: v.radius })); }
   /** knock the speed off whatever you're driving (a cow, a fence, a bad decision) */
   slow(f: number) { if (this.active) this.active.speed *= f; }
   private poseHoe(v: Veh) {
@@ -457,13 +480,28 @@ export class Vehicles {
       h.swingA = cl(h.swingA + d("KeyA", "KeyD") * dt * 0.8, -1.3, 1.3);
     }
     this.poseHoe(v);
+    // digging: when the cutting edge goes below the ground inside the dig site it scrapes dirt into the bucket; open the bucket over the ground to dump a mound
+    if (h.dig && h.stab > 0.9) {
+      for (const n of [v.root, h.swing, h.boom, h.stick, h.bucket, h.tip]) n.computeWorldMatrix(true);
+      const o = this.game.outskirts, tp = h.tip.getAbsolutePosition(), inSite = o.inDig(tp.x, tp.z), ground = inSite ? o.digHeight(tp.x, tp.z) : 0, CAP = 3;
+      this.digCd -= dt;
+      if (tp.y < ground - 0.03 && inSite) {
+        const got = o.digAt(tp.x, tp.y, tp.z, dt);
+        if (got > 0.002) { h.load = Math.min(CAP, h.load + got); if (this.digCd <= 0) { this.digCd = 0.45; this.game.sfx.thud(); } }
+        if (h.load >= CAP - 0.01 && this.digCd <= 0) { this.digCd = 2.5; this.game.ui.toast("BUCKET FULL", "Swing over and open the bucket (Y/H) to dump a mound."); }
+      } else if (tp.y < 0 && !inSite && this.digCd <= 0) { this.digCd = 4; this.game.ui.toast("DIG SITE ONLY", "The landowner would like his lease back in one piece. Dig inside the marked dig site by the gate road."); }
+      else if (h.load > 0.01 && h.bucketA < 0.25 && tp.y > ground - 0.2) {
+        if (inSite) { const amt = Math.min(h.load, 1.6 * dt); o.pileAt(tp.x, tp.z, amt); h.load -= amt; } else if (this.digCd <= 0) { this.digCd = 4; this.game.ui.toast("DUMP IT IN THE DIG SITE", "Open the bucket over the marked ground, not the lease."); }
+      }
+      h.dirt.isVisible = h.load > 0.02; h.dirt.scaling.y = 0.2 + (h.load / CAP) * 1.1;
+    }
   }
   /** X swaps the backhoe between driving (legs up) and digging (legs down, parked) */
   private swapHoe(v: Veh) {
     const h = v.bh; if (!h) return;
     if (!h.dig && Math.abs(v.speed) > 1.5) { this.game.ui.toast("TOO FAST", "Slow to a stop before setting the stabilizers."); return; }
     h.dig = !h.dig;
-    this.game.ui.toast(h.dig ? "DIG MODE" : "DRIVE MODE", h.dig ? "Stabilizers down, no driving. A/D swing · R/F boom · T/G stick · Y/H bucket · X to drive." : "Stabilizers up. X to dig again.");
+    this.game.ui.toast(h.dig ? "DIG MODE" : "DRIVE MODE", h.dig ? "Stabilizers down, no driving. A/D swing · R/F boom · T/G stick · Y/H curl the bucket. Put the edge into the dig site by the gate road to scoop; open the bucket to dump a mound · X to drive." : "Stabilizers up. X to dig again.");
     this.game.sfx.click();
   }
   /** a crash crumples the panels it hit: nearby body parts are pushed in, squashed along the impact direction and knocked slightly out of true. Nothing is added to the truck. */
@@ -528,7 +566,7 @@ export class Vehicles {
     if (this.riding) return;
     const here = this.player.pos.clone();
     this.startBlend(0.6, { from: here, to: new Vector3(v.x, v.kind === "drone" ? 0 : here.y, v.z), mode: "in" }); this.player.bodyHold = true;
-    this.active = v; v.speed = 0; this.setSolid(v, false);
+    this.active = v; v.speed = 0; this.setSolid(v, false); if (v.gate) v.gateOpen = false;
     this.wasThird = this.player.third; this.player.ride = true; this.player.third = true;
     this.player.yaw = v.yaw; this.player.pitch = 0.22;
     if (!this.blend && !this.showsDriver(v)) this.player.body.root.setEnabled(false);
@@ -539,7 +577,8 @@ export class Vehicles {
 
   /** manlift: leap out of the basket in the direction you are looking. Only a jump gets you out up high, and a long fall is on you. */
   private jumpOut(v: Veh) {
-    const p = this.player, dir = new Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
+    const p = this.player, dir = new Vector3(Math.cos(v.yaw), 0, -Math.sin(v.yaw));   // out through the gate: the basket's right-hand side
+    v.gateOpen = true;
     const from = new Vector3(v.x, v.platformY + 0.05, v.z).add(dir.scale(1.0));
     this.active = null; this.setSolid(v, true); v.speed = 0;
     p.ride = false; p.third = this.wasThird; this.hud.style.display = "none"; this.dash.style.display = "none";
@@ -705,12 +744,21 @@ export class Vehicles {
       else this.game.ui.toast("KEEP YOUR HANDS ON THE LADDER", "Climb to the top or back down. W / S.");
       return;
     }
+    const lv = this.active;
+    if (lv && lv.kind === "lift" && lv.platformY > 1.2) {
+      if (!this.pendingJump) { lv.gateOpen = true; this.pendingJump = { v: lv, t: 0.55 }; this.game.ui.toast("GATE OPEN", "No steps up here. You have to jump."); }
+      return;
+    }
+    if (lv && lv.kind === "lift" && lv.gate) lv.gateOpen = true;
     if (this.chair.on) this.stand(); else this.exit();
   }
 
   // ---------------------------------------------------------------------------------------------- simulation
   update(dt: number) {
     dt = Math.min(dt, 0.05);
+    // the basket gate swings open and shut, and a pending jump goes once the gate is open
+    for (const gv of this.list) if (gv.gate) { gv.gateA = (gv.gateA ?? 0) + ((gv.gateOpen ? 1 : 0) - (gv.gateA ?? 0)) * Math.min(1, dt * 7); gv.gate.rotation.y = (gv.gateA ?? 0) * 1.25; }
+    if (this.pendingJump) { this.pendingJump.t -= dt; if (this.pendingJump.t <= 0) { const pj = this.pendingJump; this.pendingJump = null; if (this.active === pj.v) this.jumpOut(pj.v); } }
     if (this.exitPop > 0) { this.exitPop -= dt; const k = 1 - Math.max(0, this.exitPop) / 0.35; this.player.body.root.scaling.setAll(0.2 + 0.8 * k * k * (3 - 2 * k)); if (this.exitPop <= 0) this.player.body.root.scaling.setAll(1); }
     this.updatePallet(dt);
     for (const d of this.list) if (d.kind === "drone" && d.returning) this.flyHome(d, dt);
@@ -746,6 +794,12 @@ export class Vehicles {
     } else if (v.speed < 0.4) this.revArm = true;
     if (gasIn === 0 && brkIn === 0) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), (1.6 + Math.abs(v.speed) * 0.12) * dt);
     if (v.bh) { const x = this.k("KeyX"); if (x && !this.xWas) this.swapHoe(v); this.xWas = x; }
+    if (v.id === "f250") {   // roll coal: floor it while somewhere between about 15 and 48 mph and the stacks belch black smoke
+      const acc = (v.speed - this.lastSp) / Math.max(dt, 1e-3); this.lastSp = v.speed;
+      const mph = v.speed * 2.237;
+      if (gasIn > 0.6 && mph > 15 && mph < 48 && acc > 2.6) this.coalT = 0.9; else this.coalT = Math.max(0, this.coalT - dt);
+      for (const ps of this.coalPS) ps.emitRate = this.coalT > 0 ? 230 : 0;
+    }
     const hand = v.kind === "car" && this.k("Space");
     if (hand) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 12 * dt);
     v.speed = Math.max(-maxR, Math.min(maxF, v.speed));
@@ -780,7 +834,34 @@ export class Vehicles {
     // drive-over ramps: ride up whatever drivable surface is underfoot
     if (v.kind !== "lift") {
       let top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
-      v.gy = (v.gy ?? 0) + (top - (v.gy ?? 0)) * Math.min(1, dt * 14);
+      let gy0 = v.gy ?? 0;
+      const stepDist = v.px === undefined ? 0 : Math.hypot(v.x - v.px, v.z - (v.pz ?? v.z));
+      if (v.px !== undefined && top - gy0 > 0.35 + stepDist * 1.0) {
+        // the ground ahead is a wall (a cliff, a mesa side): the truck stops against it instead of driving up it
+        v.x = v.px; v.z = v.pz!; if (Math.abs(v.speed) > 6) this.game.propertyDamage(Math.abs(v.speed) * 0.4); v.speed *= -0.25; v.vyG = 0;
+        top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
+        gy0 = v.gy ?? 0;
+      }
+      if (v.air) {
+        // airborne: gravity, until the ground comes back up to meet you
+        v.vy -= 18 * dt; v.gy = gy0 + v.vy * dt; v.airT = (v.airT ?? 0) + dt;
+        if (v.gy <= top) {
+          const imp = -v.vy, air = v.airT ?? 0;
+          v.gy = top; v.air = false; v.vy = 0; v.airT = 0; v.vyEst = 0;
+          if (imp > 6) this.game.sfx.thud();
+          if (air > 0.6) this.game.ui.toast("AIR TIME " + air.toFixed(1) + " s", imp > 15 ? "…and a very hard landing." : air > 1.4 ? "That's a lot of air. The truck is proud of you." : "Nice jump.");
+          if (imp > 17) { v.speed *= 0.8; this.game.propertyDamage(imp * 0.5); }
+        }
+      } else {
+        // the ground dropped away faster than the truck can follow while it was going up: that's a launch
+        const rate = v.prevTop === undefined ? 0 : (top - v.prevTop) / Math.max(dt, 1e-3);   // how fast the ground under us is rising
+        const vyg = v.vyG ?? 0, pred = gy0 + vyg * dt - 9 * dt * dt;                  // where a free-flying truck with that vertical speed would be next frame
+        let topR = 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > topR) topR = c.y1;
+        const onRamp = topR > 0.01 && topR >= top - 0.01;
+        if (Math.abs(v.speed) > 8 && ((!onRamp && vyg > 1.2 && pred > top + 0.003) || (gy0 - top > 0.3 && vyg > -2))) { v.air = true; v.vy = Math.max(0, vyg); v.airT = 0; }
+        else { v.gy = Math.abs(top - gy0) < 0.3 ? top : gy0 + (top - gy0) * Math.min(1, dt * 30); v.vyG = onRamp ? (v.gy - gy0) / Math.max(dt, 1e-3) : rate; }
+        v.prevTop = top;
+      }
     }
     // collisions
     let hit = false, pushX = 0, pushZ = 0, hitO = 0;
@@ -814,7 +895,8 @@ export class Vehicles {
     if (v.kind === "car") {
       let slope = 0;
       if (this.terrain) { const L = v.wheelbase * 0.5, fx = Math.sin(v.yaw), fz = Math.cos(v.yaw); slope = Math.atan2(this.terrain(v.x + fx * L, v.z + fz * L) - this.terrain(v.x - fx * L, v.z - fz * L), 2 * L); }
-      v.slope = (v.slope ?? 0) + (slope - (v.slope ?? 0)) * Math.min(1, dt * 8);
+      if (v.air) slope = Math.atan2(v.vy, Math.max(5, Math.abs(v.speed)));   // nose follows the flight path
+      v.slope = (v.slope ?? 0) + (slope - (v.slope ?? 0)) * Math.min(1, dt * (v.air ? 4 : 8));
       v.root.rotation.z = -v.steer * v.speed * 0.006; v.root.rotation.x = -thr * 0.012 * Math.min(1, Math.abs(v.speed) / 8) - v.slope;
     }
 

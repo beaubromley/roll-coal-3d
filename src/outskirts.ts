@@ -1,4 +1,4 @@
-import { Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
+import { ParticleSystem, Color4, DynamicTexture, Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
 import { Builder, type AABB } from "./builder";
 import { Human } from "./npcs";
 import type { Game } from "./game";
@@ -12,9 +12,16 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T,>(l: T[]) => l[Math.floor(Math.random() * l.length)];
 
 // ---- layout (world metres; the lease is x -60..60, z -66..62, the lease road runs +z from the gate) ----
-const HILLS: [number, number, number, number][] = [[150, -30, 8, 24], [198, -72, 11, 28], [160, -118, 7, 20], [235, -18, 9, 22], [118, -70, 6, 18]];   // x, z, height, spread
+const HILLS: [number, number, number, number][] = [
+  [150, -30, 10, 20], [198, -72, 14, 22], [160, -118, 9, 17], [235, -18, 11, 18], [118, -70, 8, 15],                                                   // the Breaks, steeper than before
+  [150, 45, 11, 19], [215, 70, 15, 21], [120, 108, 10, 17], [182, 142, 13, 19], [236, 172, 12, 18], [135, 205, 14, 20], [206, 238, 16, 21], [150, 278, 12, 18], [232, 292, 13, 19], [112, 322, 10, 17],   // and on north through the pasture
+];
+/** flat-topped mesas with sheer sides: x, z, half-width x, half-width z, height, edge softness (smaller = steeper) */
+const MESAS: [number, number, number, number, number, number][] = [[305, 12, 26, 34, 12, 0.07], [296, 155, 30, 24, 15, 0.07], [292, 280, 26, 28, 13, 0.07], [95, -165, 24, 20, 11, 0.07]];
 const POND = { x: -175, z: 165, rx: 68, rz: 52 };
 const POND_DEPTH = 6, WATER_Y = -0.3;
+/** the dig site: a 20 m square of real, diggable ground by the gate road (the backhoe works here) */
+const DIG = { x0: -45, z0: 76, n: 20 };
 /** the BOP cellar at the wellhead: 10 ft across, 6 ft deep */
 const CELL_R = 1.525, CELL_D = 1.83, CELL_H = 6;
 /** the deep hole, out toward the middle of the pond: the rare catches live here */
@@ -36,6 +43,8 @@ export class Outskirts {
   private fish = { st: "idle" as "idle" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0 };
   private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh; private poleOwned = false;
   private floorBots: { h: Human; x: number; z: number; ph: number; ang: number }[] = [];
+  private smoke: { ps: ParticleSystem; t: number; burst: number }[] = [];
+  private digH = new Float32Array((DIG.n + 1) * (DIG.n + 1)); private digMesh!: Mesh; private digDirty = false;
   private hank!: Human; private lupe!: Human; private rusty!: Human;
   private nearCow = 0; private t = 0;
   private seen = new Set<string>();
@@ -44,13 +53,15 @@ export class Outskirts {
   /** the ground height at (x, z): flat, except across the hills */
   terrain = (x: number, z: number): number => {
     if (x * x + z * z < CELL_R * CELL_R) return -CELL_D;   // the cellar
+    if (x >= DIG.x0 && x <= DIG.x0 + DIG.n && z >= DIG.z0 && z <= DIG.z0 + DIG.n) return this.digHeight(x, z);   // the dig site
     {   // the pond is a real basin, with a deep hole near the middle
       const pu = ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2;
       if (pu < 1) { let d = POND_DEPTH * (1 - pu); const dd = ((x - DEEP.x) ** 2 + (z - DEEP.z) ** 2) / (DEEP.r * DEEP.r); if (dd < 1) d += DEEP.extra * Math.pow(1 - dd, 1.4); return -d; }
     }
-    if (x < 40 || x > 350 || z < -240 || z > 80) return 0;
+    if (x < 40 || x > 365 || z < -245 || z > 350) return 0;
     let h = 0;
     for (const [hx, hz, H, s] of HILLS) { const dx = x - hx, dz = z - hz; h += H * Math.exp(-(dx * dx + dz * dz) / (2 * s * s)); }
+    for (const [mx, mz, rx, rz, H, ed] of MESAS) { const u = Math.pow(Math.pow(Math.abs(x - mx) / rx, 3) + Math.pow(Math.abs(z - mz) / rz, 3), 1 / 3); if (u < 1 + ed) { const k = Math.max(0, Math.min(1, (1 + ed - u) / (2 * ed))); h += H * k * k * (3 - 2 * k) * (0.96 + 0.04 * Math.sin(x * 0.4) * Math.cos(z * 0.35)); } }
     return h < 0.04 ? 0 : h;
   };
 
@@ -64,6 +75,8 @@ export class Outskirts {
     ];
     for (const [k, c, o] of mats) b.defMat(k, c, o ?? {});
     this.hills(b);
+    this.kickers(b);
+    this.digSite(b);
     this.pond(b);
     this.farm(b);
     this.silos(b);
@@ -74,6 +87,28 @@ export class Outskirts {
     this.cattle();
     this.skyline();
     this.cellar();
+    this.digZone();
+    this.generatorSmoke();
+  }
+
+  // ---------------------------------------------------------------------------------------------- roll coal
+  /** the four generators' exhaust stacks idle with a thin grey wisp, and every so often one of them rolls coal: a thick black plume rolls out and drifts off downwind */
+  private generatorSmoke() {
+    const sc = this.scene;
+    const tex = new DynamicTexture("smokeT", { width: 64, height: 64 }, sc, false);
+    { const c = tex.getContext() as CanvasRenderingContext2D, gr = c.createRadialGradient(32, 32, 2, 32, 32, 31); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.5, "rgba(255,255,255,0.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = gr; c.fillRect(0, 0, 64, 64); tex.hasAlpha = true; tex.update(); }
+    for (let i = 0; i < 4; i++) {
+      const tx = 15 + i * 7, ps = new ParticleSystem("coal" + i, 260, sc);
+      ps.particleTexture = tex; ps.emitter = new Vector3(tx - 1.85, 7.0, -2.5);
+      ps.minEmitBox = new Vector3(-0.1, 0, -0.1); ps.maxEmitBox = new Vector3(0.1, 0, 0.1);
+      ps.direction1 = new Vector3(0.1, 1, -0.1); ps.direction2 = new Vector3(0.45, 1, 0.1);   // up, with the wind carrying it toward +x
+      ps.minEmitPower = 2.2; ps.maxEmitPower = 4.5; ps.minLifeTime = 2.6; ps.maxLifeTime = 4.8; ps.minSize = 0.7; ps.maxSize = 1.6;
+      ps.addSizeGradient(0, 0.6); ps.addSizeGradient(1, 3.6);
+      ps.color1 = new Color4(0.04, 0.04, 0.04, 0.8); ps.color2 = new Color4(0.1, 0.1, 0.09, 0.7); ps.colorDead = new Color4(0.2, 0.2, 0.2, 0);
+      ps.gravity = new Vector3(0.7, 0.5, 0.1); ps.minAngularSpeed = -0.6; ps.maxAngularSpeed = 0.6;
+      ps.blendMode = ParticleSystem.BLENDMODE_STANDARD; ps.emitRate = 0; ps.updateSpeed = 0.02;
+      ps.start(); this.smoke.push({ ps, t: rnd(8, 40) + i * 11, burst: 0 });
+    }
   }
 
   /** a flat ring of ground between a circular hole (CELL_R) and a square outline (CELL_H), so a round hole can be cut in a flat plane */
@@ -151,8 +186,8 @@ export class Outskirts {
 
   // ---------------------------------------------------------------------------------------------- hills
   private hills(b: Builder) {
-    const sc = this.scene, W = 300, D = 300, N = 110, cx = 195, cz = -80;
-    const m = MeshBuilder.CreateGround("hills", { width: W, height: D, subdivisions: N, updatable: true }, sc);
+    const sc = this.scene, W = 340, D = 600, cx = 205, cz = 52;
+    const m = MeshBuilder.CreateGround("hills", { width: W, height: D, subdivisionsX: 124, subdivisionsY: 218, updatable: true }, sc);
     m.position.set(cx, 0.03, cz);
     const pos = m.getVerticesData(VertexBuffer.PositionKind)!, uv = new Float32Array((pos.length / 3) * 2);
     for (let i = 0; i < pos.length / 3; i++) {
@@ -166,9 +201,84 @@ export class Outskirts {
     m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
     // sagebrush on the slopes
     const sage = MeshBuilder.CreateSphere("sage", { diameter: 1, segments: 5 }, sc); sage.material = b.getMat("sage"); sage.setEnabled(false);
-    for (let i = 0; i < 160; i++) {
-      const x = rnd(55, 340), z = rnd(-225, 65), y = this.terrain(x, z);
+    for (let i = 0; i < 260; i++) {
+      const x = rnd(55, 350), z = rnd(-225, 340), y = this.terrain(x, z);
       const s = sage.createInstance("sg" + i); s.position.set(x, y + 0.2, z); s.scaling.set(rnd(0.7, 1.6), rnd(0.4, 0.8), rnd(0.7, 1.6)); s.isPickable = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------- the dig site
+  /** signs and posts round the dig site */
+  private digSite(b: Builder) {
+    const x1 = DIG.x0 + DIG.n, z1 = DIG.z0 + DIG.n, cx = DIG.x0 + DIG.n / 2;
+    for (const [px, pz] of [[DIG.x0, DIG.z0], [x1, DIG.z0], [DIG.x0, z1], [x1, z1]]) { b.slab("dwood", px - 0.08, 0, pz - 0.08, px + 0.08, 1.4, pz + 0.08); b.cyl("kickyellow", px, 1.5, pz, 0.28, 0.2, { tess: 8 }); }
+    b.label("DIG SITE\nBACKHOE ONLY · BE NICE TO THE GROUND", cx, 2.2, DIG.z0 - 0.4, 4.4, 1.2, Math.PI, "#7a4a1a", "#ffe9a8", 30);
+    b.slab("dwood", cx - 2.3, 0, DIG.z0 - 0.5, cx - 2.2, 2.2, DIG.z0 - 0.4); b.slab("dwood", cx + 2.2, 0, DIG.z0 - 0.5, cx + 2.3, 2.2, DIG.z0 - 0.4);
+  }
+  /** bilinear height of the diggable ground */
+  digHeight(x: number, z: number): number {
+    const n = DIG.n, u = Math.max(0, Math.min(n - 0.001, x - DIG.x0)), v = Math.max(0, Math.min(n - 0.001, z - DIG.z0)), i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j, W = n + 1;
+    const h = this.digH, a = h[j * W + i], b = h[j * W + i + 1], c = h[(j + 1) * W + i], d = h[(j + 1) * W + i + 1];
+    return (a * (1 - fu) + b * fu) * (1 - fv) + (c * (1 - fu) + d * fu) * fv;
+  }
+  inDig(x: number, z: number) { return x >= DIG.x0 + 0.8 && x <= DIG.x0 + DIG.n - 0.8 && z >= DIG.z0 + 0.8 && z <= DIG.z0 + DIG.n - 0.8; }
+  /** the bucket edge is at (tx, ty, tz): scrape the ground down to that level round it, and return how much dirt came out (cubic metres, roughly) */
+  digAt(tx: number, ty: number, tz: number, dt: number): number {
+    const W = DIG.n + 1, R = 1.5; let removed = 0;
+    for (let j = Math.max(1, Math.floor(tz - DIG.z0 - R)); j <= Math.min(DIG.n - 1, Math.ceil(tz - DIG.z0 + R)); j++) for (let i = Math.max(1, Math.floor(tx - DIG.x0 - R)); i <= Math.min(DIG.n - 1, Math.ceil(tx - DIG.x0 + R)); i++) {
+      const d = Math.hypot(i + DIG.x0 - tx, j + DIG.z0 - tz); if (d > R) continue;
+      const k = j * W + i, h = this.digH[k], target = Math.max(-4.2, ty - 0.1);
+      if (h > target) { const dl = Math.min(h - target, 5 * dt * (1 - d / R)); this.digH[k] = h - dl; removed += dl; }
+    }
+    if (removed > 0) this.digDirty = true;
+    return removed;
+  }
+  /** dump a bucketful: raise a mound round (tx, tz) */
+  pileAt(tx: number, tz: number, amt: number) {
+    const W = DIG.n + 1, R = 1.9; const cells: [number, number][] = []; let sum = 0;
+    for (let j = Math.max(1, Math.floor(tz - DIG.z0 - R)); j <= Math.min(DIG.n - 1, Math.ceil(tz - DIG.z0 + R)); j++) for (let i = Math.max(1, Math.floor(tx - DIG.x0 - R)); i <= Math.min(DIG.n - 1, Math.ceil(tx - DIG.x0 + R)); i++) {
+      const d = Math.hypot(i + DIG.x0 - tx, j + DIG.z0 - tz); if (d > R) continue; const w = 1 - d / R; cells.push([j * W + i, w]); sum += w;
+    }
+    if (!sum) return;
+    for (const [k, w] of cells) this.digH[k] = Math.min(4.2, this.digH[k] + (amt * w) / sum);
+    this.digDirty = true;
+  }
+  /** the diggable patch: a 1 m grid mesh that is redrawn as the ground is dug away and piled up (darker soil where it is deep) */
+  private digZone() {
+    const sc = this.scene, n = DIG.n;
+    const m = MeshBuilder.CreateGround("digzone", { width: n, height: n, subdivisions: n, updatable: true }, sc);
+    m.position.set(DIG.x0 + n / 2, 0.005, DIG.z0 + n / 2);
+    const gm = sc.getMaterialByName("ground"); if (gm) m.material = gm; m.receiveShadows = true; m.isPickable = false;
+    const pos = m.getVerticesData(VertexBuffer.PositionKind)!, uv = new Float32Array((pos.length / 3) * 2);
+    for (let i = 0; i < pos.length / 3; i++) { uv[i * 2] = (pos[i * 3] + m.position.x + 3000) / 6000; uv[i * 2 + 1] = (pos[i * 3 + 2] + m.position.z + 3000) / 6000; }
+    m.setVerticesData(VertexBuffer.UVKind, uv); m.setVerticesData(VertexBuffer.ColorKind, new Float32Array((pos.length / 3) * 4).fill(1));
+    this.digMesh = m; this.refreshDig();
+  }
+  private refreshDig() {
+    const m = this.digMesh, n = DIG.n, W = n + 1, pos = m.getVerticesData(VertexBuffer.PositionKind)!, col = m.getVerticesData(VertexBuffer.ColorKind)!;
+    for (let k = 0; k < pos.length / 3; k++) {
+      const i = Math.round(pos[k * 3] + n / 2), j = Math.round(pos[k * 3 + 2] + n / 2), h = this.digH[j * W + i];
+      pos[k * 3 + 1] = h;
+      const dark = h < 0 ? Math.min(1, -h / 2.2) : 0, light = h > 0 ? Math.min(1, h / 3) : 0;
+      col[k * 4] = 1 - dark * 0.5 + light * 0.05; col[k * 4 + 1] = 1 - dark * 0.58 + light * 0.02; col[k * 4 + 2] = 1 - dark * 0.62 - light * 0.05; col[k * 4 + 3] = 1;
+    }
+    m.updateVerticesData(VertexBuffer.PositionKind, pos); m.updateVerticesData(VertexBuffer.ColorKind, col);
+    const nrm: number[] = []; VertexData.ComputeNormals(pos, m.getIndices()!, nrm); m.updateVerticesData(VertexBuffer.NormalKind, nrm);
+    m.refreshBoundingInfo(); this.digDirty = false;
+  }
+
+  // ---------------------------------------------------------------------------------------------- kickers
+  /** big steel-and-dirt launch ramps in the pasture, built to be hit at speed heading north: you get air, and the cattle are right where you land */
+  private kickers(b: Builder) {
+    b.defMat("kickdirt", "#8a7050"); b.defMat("kickyellow", "#e8b923");
+    for (const [kx, z0, z1, H] of [[78, 132, 158, 6.5], [58, 212, 240, 7.5], [98, 288, 316, 7]] as [number, number, number, number][]) {
+      b.rampSolid(kx, 10, z0, 0, z1, H, 30);
+      b.ramp("kickdirt", kx, 10, z0, 0, z1, H, 0.3);
+      for (const sx of [-4.7, 4.7]) b.ramp("kickyellow", kx + sx, 0.6, z0, 0.02, z1, H + 0.02, 0.12);
+      for (let i = 0; i < 5; i++) { const u = (i + 0.5) / 5; b.ramp("kickyellow", kx, 3.2, z0 + (z1 - z0) * (u - 0.04), H * (u - 0.04) + 0.03, z0 + (z1 - z0) * (u + 0.04), H * (u + 0.04) + 0.03, 0.06); }   // chevrons
+      b.slab("kickdirt", kx - 5.2, 0, z1, kx + 5.2, H - 0.1, z1 + 0.6);                     // the lip drops straight off
+      b.label("SEND IT", kx, H + 1.6, z1 + 0.7, 3.2, 1.0, 0, "#7a1a14", "#ffe24a", 56);
+      b.slab("dsteel", kx - 4.4, H - 0.1, z1 + 0.3, kx - 4.2, H + 1.7, z1 + 0.5); b.slab("dsteel", kx + 4.2, H - 0.1, z1 + 0.3, kx + 4.4, H + 1.7, z1 + 0.5);
     }
   }
 
@@ -187,7 +297,7 @@ export class Outskirts {
     };
     piece(-3000, -3000, bx0, 3000); piece(bx0, bz1, bx1, 3000); piece(bx0, -3000, bx1, bz0);
     // the strip that holds the rig has a round hole cut in it for the cellar: four pieces round a square, and a ring that squares up the circle
-    piece(bx1, -3000, -CELL_H, 3000); piece(CELL_H, -3000, 3000, 3000); piece(-CELL_H, CELL_H, CELL_H, 3000); piece(-CELL_H, -3000, CELL_H, -CELL_H);
+    piece(bx1, -3000, DIG.x0, 3000); piece(DIG.x0 + DIG.n, -3000, -CELL_H, 3000); piece(DIG.x0, -3000, DIG.x0 + DIG.n, DIG.z0); piece(DIG.x0, DIG.z0 + DIG.n, DIG.x0 + DIG.n, 3000); piece(CELL_H, -3000, 3000, 3000); piece(-CELL_H, CELL_H, CELL_H, 3000); piece(-CELL_H, -3000, CELL_H, -CELL_H);
     if (gmat) { const rm = gmat.clone("groundring")!; rm.backFaceCulling = false; this.holeRing(0, rm, (px, pz) => [(px + 3000) / 6000, (pz + 3000) / 6000]); }
     const N = 110, bed = MeshBuilder.CreateGround("pondbed", { width: bx1 - bx0, height: bz1 - bz0, subdivisions: N, updatable: true }, sc);
     bed.position.set((bx0 + bx1) / 2, 0, (bz0 + bz1) / 2);
@@ -573,21 +683,24 @@ export class Outskirts {
     if (near(POND.x, POND.z, 200)) for (const d of this.ducks) { d.a += d.w * dt; const x = POND.x + Math.cos(d.a) * (POND.rx - 6) * (0.3 + d.r * 0.6), z = POND.z + Math.sin(d.a) * (POND.rz - 5) * (0.3 + d.r * 0.6); d.m.position.set(x, WATER_Y + 0.06 + Math.sin(this.t * 2 + d.a) * 0.02, z); d.m.rotation.y = -d.a + (d.w > 0 ? 0 : Math.PI) + Math.PI / 2; }
     // the cattle wander, flee a bit when startled, and a truck that hits one is going to hear about it
     let best = 1e9; this.nearCow = 0;
-    const riding = g.veh.riding, speed = Math.hypot(p.vel.x, p.vel.z);
+    const riding = g.veh.riding, speed = Math.hypot(p.vel.x, p.vel.z), fp = riding ? g.veh.footprint() : null, bodies = riding ? g.veh.bodyCircles() : [];
     this.cows.forEach((c, i) => {
       const d = Math.hypot(c.x - px, c.z - pz); if (d < best) { best = d; this.nearCow = i; }
       if (d > 150) return;
-      if (c.down > 0) { c.down -= dt; c.sp = 0; c.n.rotation.z = 1.5; c.n.position.set(c.x, 0.42, c.z); if (c.down <= 0) { c.n.rotation.z = 0; c.n.position.y = 0; c.flee = 0; } return; }
+      if (c.down > 0) { c.down -= dt; c.sp = 0; c.n.rotation.z = 1.5; c.n.position.set(c.x, this.terrain(c.x, c.z) + 0.42, c.z); if (c.down <= 0) { c.n.rotation.z = 0; c.n.position.y = this.terrain(c.x, c.z); c.flee = 0; } return; }
       c.t -= dt;
       if (c.flee > 0) { c.flee -= dt; c.sp = 3.2; }
       else if (c.t <= 0) { c.t = rnd(2, 7); if (Math.random() < 0.55) { c.sp = 0; } else { c.sp = rnd(0.5, 0.9); c.h += rnd(-1.3, 1.3); } }
       const nx = c.x + Math.sin(c.h) * c.sp * dt, nz = c.z + Math.cos(c.h) * c.sp * dt;
       if (nx < PASTURE.x0 || nx > PASTURE.x1 || nz < PASTURE.z0 || nz > PASTURE.z1) c.h += Math.PI * 0.6; else { c.x = nx; c.z = nz; }
-      c.n.position.set(c.x, 0, c.z); c.n.rotation.y = c.h;
-      if (riding && d < 3.0 && this.vehSpeed() > 4 && ((this.cd["cow"] ?? -99) + 6 < this.t)) {
-        // you hit one: it goes down on its side, you lose a lot of speed, and Hank is going to hear about it
-        this.cd["cow"] = this.t; c.down = 75; c.h = Math.atan2(c.x - px, c.z - pz); g.veh.slow(0.4); g.sfx.thud(); g.sim.addCost(1800); g.inc(1, "CATTLE COLLISION");
-        g.radio("hank" as any, "THAT WAS MY BEST ONE!", 6500); g.ui.toast("CATTLE COLLISION", "$1,800. The cow is down. The cow is… also furious.");
+      c.n.position.set(c.x, this.terrain(c.x, c.z), c.z); c.n.rotation.y = c.h;
+      // run over by the truck: any part of its body, at any real speed, and not while it is in the air
+      if (riding && c.down <= 0 && fp && fp.speed > 2 && p.pos.y < this.terrain(c.x, c.z) + 1.4) {
+        const hit = bodies.some((bc) => Math.hypot(bc.x - c.x, bc.z - c.z) < bc.r + 0.9);
+        if (hit) {
+          c.down = 75; c.h = Math.atan2(c.x - px, c.z - pz); g.veh.slow(0.55); g.sfx.thud(); g.sim.addCost(5000); g.inc(1, "CATTLE COLLISION");
+          g.radio("hank" as any, "THAT WAS MY BEST ONE!", 6500); g.ui.toast("CATTLE COLLISION", "You're down $5,000. The cow is also down.");
+        }
       }
     });
     void speed;
@@ -631,6 +744,19 @@ export class Outskirts {
       f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
     }
     this.updateFishing(dt);
+    if (this.digDirty) this.refreshDig();
+    { // roll coal
+      const near = Math.hypot(px - 25, pz) < 260;
+      for (const s of this.smoke) {
+        if (!near) { s.ps.emitRate = 0; continue; }
+        s.t -= dt;
+        if (s.burst > 0) { s.burst -= dt; s.ps.emitRate = 150; }
+        else {
+          s.ps.emitRate = 0;
+          if (s.t <= 0) { s.burst = rnd(1.1, 2.4); s.t = rnd(28, 80); if ((this.cd["coal"] ?? -999) + 150 < this.t) { this.cd["coal"] = this.t; g.radio("earl", pick(["That generator's rolling coal again. Nobody tell the EPA.", "Gen's burping black smoke, boss. It does that. It means it's working.", "That's just the generator clearing its throat. Black smoke is a sign of effort."]), 6500); } }
+        }
+      }
+    }
     { const uw = document.getElementById("underwater"); if (uw) { const inPond = ((p.cam.position.x - POND.x) / POND.rx) ** 2 + ((p.cam.position.z - POND.z) / POND.rz) ** 2 < 1; uw.style.display = inPond && p.cam.position.y < WATER_Y ? "block" : "none"; } }
     // the people who stand still still breathe
     this.hank.animate(dt, 0); this.lupe.animate(dt, 0); this.rusty.animate(dt, 0);

@@ -252,7 +252,7 @@ export function defineMissions(g: Game) {
     ] });
 
   // ================================================================ 16. ARMAGEDDON (finale)
-  M({ id: "armageddon", title: "Finish the Well", sub: "Drill to TD, then run casing and cement.", trigger: () => g.flags.chainDone === true, a: 1.0, m: 20,
+  M({ id: "armageddon", title: "Save the World", sub: "Drill to TD, then run casing and cement.", trigger: () => g.flags.chainDone === true, a: 1.0, m: 20,
     start: () => { g.hold = null; sim.hold = null; g.radio("dale", "Released the hold. We're drilling to TD, boss.", 8000); },
     steps: [
       { text: "Drill to TD (8,500 ft): set weight at the driller's console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.depth >= WELL.td - 0.5 && (s.mode === "idle" || s.mode === "casing" || s.mode === "done") },   // (casing may already be running or finished by the time the finale begins)

@@ -1,4 +1,4 @@
-import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
+import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture, VertexBuffer, VertexData, Quaternion, ParticleSystem, Color4 } from "@babylonjs/core";
 import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
@@ -845,6 +845,9 @@ export class Game {
   despawnSnake() { this.snake?.dispose(); this.snake = null; }
   /** the asteroid hangs in the sky: a jagged, faceted rock with glowing cracks, and a long fiery tail streaming away behind it. It does not move. */
   asteroidTail: { mesh: Mesh; base: Vector3 }[] = [];
+  asteroidPS: ParticleSystem | null = null;
+  /** remove the sky asteroid and its tail */
+  clearAsteroid() { this.asteroidT = -1; if (this.asteroid) { this.asteroid.dispose(); this.asteroid = null; } this.asteroidTail.forEach((tl) => tl.mesh.dispose()); this.asteroidTail = []; if (this.asteroidPS) { this.asteroidPS.dispose(); this.asteroidPS = null; } }
   spawnAsteroid() {
     const a = MeshBuilder.CreateIcoSphere("asteroid", { radius: 80, subdivisions: 4, flat: true, updatable: true }, this.scene);
     // lumpy, sharp shape: displace every vertex by a smooth function of its direction (so shared corners move together), then flat-shade it
@@ -859,16 +862,25 @@ export class Game {
     const nrm: number[] = []; VertexData.ComputeNormals(pos, idx, nrm); a.updateVerticesData(VertexBuffer.NormalKind, nrm);
     const m = new StandardMaterial("ast", this.scene); m.diffuseColor = Color3.FromHexString("#3b3029"); m.emissiveColor = Color3.FromHexString("#5a1e0a"); m.specularColor = new Color3(0.08, 0.06, 0.05);
     a.material = m; a.position.set(120, 420, -500); a.rotation.set(0.4, 0.8, 0.2); this.asteroid = a; this.asteroidT = 0; a.isPickable = false;
-    // the tail: nested flame cones (wide end at the rock, apex far away), trailing up and back
-    const dir = new Vector3(0.3, 0.52, -0.8).normalize(), q = new Quaternion(); Quaternion.FromUnitVectorsToRef(Vector3.Up(), dir, q);
+    // the tail: a long streak across the sky, built from tapered segments that fade out (additive, so it glows), plus a stream of embers
+    const dir = new Vector3(0.85, 0.42, -0.3).normalize(), q = new Quaternion(); Quaternion.FromUnitVectorsToRef(Vector3.Up(), dir, q);
     this.asteroidTail = [];
-    for (const [wid, len, col, alpha] of [[190, 1100, "#ff4a10", 0.32], [140, 800, "#ff7a1a", 0.4], [90, 540, "#ffb23a", 0.5], [48, 340, "#fff0b0", 0.65]] as [number, number, string, number][]) {
-      const c = MeshBuilder.CreateCylinder("asttail", { diameterTop: 0, diameterBottom: wid, height: len, tessellation: 14 }, this.scene);
-      const cm = new StandardMaterial("asttailm", this.scene); cm.disableLighting = true; cm.emissiveColor = Color3.FromHexString(col); cm.alpha = alpha; cm.backFaceCulling = false; cm.disableDepthWrite = true; cm.fogEnabled = false;
+    const N = 16, SEG = 120, lerpC = (u: number) => u < 0.35 ? Color3.Lerp(Color3.FromHexString("#fff0c0"), Color3.FromHexString("#ff8a2a"), u / 0.35) : Color3.Lerp(Color3.FromHexString("#ff8a2a"), Color3.FromHexString("#7a1a08"), (u - 0.35) / 0.65);
+    for (let i = 0; i < N; i++) {
+      const u0 = i / N, u1 = (i + 1) / N, w0 = 130 * Math.pow(1 - u0, 1.15) + 4, w1 = 130 * Math.pow(1 - u1, 1.15) + 4;
+      const c = MeshBuilder.CreateCylinder("asttail", { diameterTop: w1, diameterBottom: w0, height: SEG * 1.05, tessellation: 12 }, this.scene);
+      const cm = new StandardMaterial("asttailm", this.scene); cm.disableLighting = true; cm.emissiveColor = lerpC(u0).scale(0.9); cm.alpha = 0.24 * Math.pow(1 - u0, 1.6) + 0.015; cm.alphaMode = 1; cm.backFaceCulling = false; cm.disableDepthWrite = true; cm.fogEnabled = false;
       c.material = cm; c.isPickable = false; c.alwaysSelectAsActiveMesh = true;
-      c.rotationQuaternion = q.clone(); c.position.copyFrom(a.position).addInPlace(dir.scale(len / 2 + 30)); c.setParent(null);
+      c.rotationQuaternion = q.clone(); c.position.copyFrom(a.position).addInPlace(dir.scale(60 + i * SEG + SEG / 2)); c.setParent(null);
       this.asteroidTail.push({ mesh: c, base: new Vector3(1, 1, 1) });
     }
+    const pt = new DynamicTexture("emberT", { width: 64, height: 64 }, this.scene, false); { const c = pt.getContext() as CanvasRenderingContext2D; const g = c.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, "rgba(255,240,200,1)"); g.addColorStop(0.35, "rgba(255,140,40,0.6)"); g.addColorStop(1, "rgba(255,60,10,0)"); c.fillStyle = g; c.fillRect(0, 0, 64, 64); pt.update(); pt.hasAlpha = true; }
+    const ps = new ParticleSystem("comet", 900, this.scene); ps.particleTexture = pt; ps.emitter = a.position.clone();
+    ps.minEmitBox = new Vector3(-50, -30, -50); ps.maxEmitBox = new Vector3(50, 30, 50);
+    ps.direction1 = dir.add(new Vector3(-0.1, -0.1, -0.1)); ps.direction2 = dir.add(new Vector3(0.1, 0.1, 0.1));
+    ps.minEmitPower = 260; ps.maxEmitPower = 460; ps.minLifeTime = 1.4; ps.maxLifeTime = 3.6; ps.emitRate = 220; ps.minSize = 26; ps.maxSize = 90;
+    ps.color1 = new Color4(1, 0.8, 0.4, 0.85); ps.color2 = new Color4(1, 0.4, 0.1, 0.6); ps.colorDead = new Color4(0.25, 0.04, 0, 0);
+    ps.blendMode = ParticleSystem.BLENDMODE_ONEONE; ps.gravity = Vector3.Zero(); ps.start(); this.asteroidPS = ps;
   }
   // ---------- ARMAGEDDON (finale, from the original "Roll Coal Make Hole") ----------
   arm = {
@@ -1145,7 +1157,7 @@ export class Game {
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0)); this.finale.update(realDt);
     if (this.asteroid) {
       this.asteroidT += realDt;                                            // (the rock itself stays put: only the tail flickers)
-      this.asteroidTail.forEach((tl, i) => { const f = 1 + Math.sin(this.asteroidT * (3.1 + i * 1.7) + i) * 0.045 + (Math.random() - 0.5) * 0.03; tl.mesh.scaling.set(f, 1 + Math.sin(this.asteroidT * 1.9 + i * 2) * 0.03, f); });
+      this.asteroidTail.forEach((tl, i) => { const f = 1 + Math.sin(this.asteroidT * (3.1 + i * 0.9) + i) * 0.08 + (Math.random() - 0.5) * 0.05; tl.mesh.scaling.set(f, 1, f); });
     }
     this.updateEnv();
     this.sampleDepth();
@@ -1164,7 +1176,7 @@ export class Game {
     };
     const dawn = clamp(1 - Math.abs(elev) * 4, 0, 1) * (elev > -0.2 ? 1 : 0);
     let col = sky(day, dawn);
-    if (this.asteroidT >= 0) col = Color3.Lerp(col, new Color3(0.5, 0.15, 0.08), Math.min(0.7, this.asteroidT / 12));
+    if (this.asteroidT >= 0) col = Color3.Lerp(col, new Color3(0.35, 0.12, 0.08), Math.min(0.3, this.asteroidT / 25));
     if (this.astMode) { col = new Color3(0.008, 0.007, 0.018); }
     this.scene.clearColor.set(col.r, col.g, col.b, 1);
     this.scene.fogColor = col.clone();

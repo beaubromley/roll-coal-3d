@@ -367,7 +367,7 @@ export class Vehicles {
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning });
     out.push({ pos: () => rv(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : "Sit in the directional driller's seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
-    out.push({ pos: () => rv(-3.9, F + 1.2, 2.4), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
+    out.push({ pos: () => rv(-3.62, F + 1.2, 2.4), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
     out.push({ pos: () => rv(-3.0, FB + 1.2, 2.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
   }
@@ -554,7 +554,7 @@ export class Vehicles {
   private finishClimb(top: boolean) {
     this.climb.on = false; this.hud.style.display = "none"; this.dash.style.display = "none";
     this.player.ride = false; this.player.third = this.wasThird;
-    if (top) { const q = rv(-2.6, FB + 0.12, 2.2); this.player.teleport(q.x, q.y, q.z, Math.PI / 2 + RYAW); } else { const q = rv(-4.1, F, 2.4); this.player.teleport(q.x, q.y, q.z, Math.PI / 2 + RYAW); }
+    if (top) { const q = rv(-2.6, FB + 0.12, 2.2); this.player.teleport(q.x, q.y, q.z, Math.PI / 2 + RYAW); } else { const q = rv(-3.9, F, 2.4); this.player.teleport(q.x, q.y, q.z, Math.PI / 2 + RYAW); }
   }
   private updateClimb(dt: number) {
     const p = this.player, c = this.climb, joy = p.touchMove;
@@ -563,7 +563,7 @@ export class Vehicles {
     if (c.y >= FB - 0.01 && dir > 0.2) { this.finishClimb(true); return; }
     if (c.y <= F + 0.01 && dir < -0.2) { this.finishClimb(false); return; }
     c.y = Math.max(F, Math.min(FB, c.y));
-    const cp = rv(-3.95, c.y, 2.4); p.pos.set(cp.x, cp.y, cp.z); p.vel.setAll(0); p.grounded = true;
+    const cp = rv(-3.62, c.y, 2.4); p.pos.set(cp.x, cp.y, cp.z); p.vel.setAll(0); p.grounded = true;
     const eye = new Vector3(cp.x, c.y + 1.5, cp.z);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     this.hud.textContent = `CLIMBING   ${Math.round(c.y * 3.281)} FT\nW/S climb  ·  SHIFT climb faster  ·  keep going to the top or bottom`;

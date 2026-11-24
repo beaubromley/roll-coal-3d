@@ -211,7 +211,22 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   R(-FX, -FZ, -FX, -1.6); R(-FX, -0.2, -FX, FZ);
   // stairs: east (to ground) and west
   b.stairs("dsteel", "yellow", FX, 3.8, "+x", F, 1.5);
-  b.stairs("dsteel", "yellow", -FX, -0.9, "-x", F, 1.5);
+  // the stairs off the pit side: one flight down to a landing level with the pit roofs, then a bridge straight over to the pits and a second flight down to the ground
+  b.stairs("dsteel", "yellow", -FX, -0.9, "-x", F, 1.5, 0.26, 0.3, 2.78);
+  {
+    const LX0 = -15.4, LX1 = -12.2, LZ0 = -2.4, LZ1 = 0.6;
+    b.slab("deck", LX0, 2.58, LZ0, LX1, 2.78, LZ1, true);                                              // landing
+    for (const [px, pz] of [[LX0 + 0.12, LZ0 + 0.12], [LX1 - 0.12, LZ0 + 0.12], [LX0 + 0.12, LZ1 - 0.12], [LX1 - 0.12, LZ1 - 0.12]]) b.slab("dsteel", px - 0.1, 0, pz - 0.1, px + 0.1, 2.58, pz + 0.1);
+    b.rail("yellow", LX1, LZ1, LX0 + 0.0, LZ1, 2.78, 1.1);                                              // south side, solid
+    b.rail("yellow", LX1, LZ0, -13.05, LZ0, 2.78, 1.1); b.rail("yellow", -14.55, LZ0, LX0, LZ0, 2.78, 1.1);   // north side, open where flight B starts
+    b.rail("yellow", LX0, LZ0, LX0, -1.65, 2.78, 1.1); b.rail("yellow", LX0, -0.15, LX0, LZ1, 2.78, 1.1);   // far end, open where the bridge starts
+    b.stairs("dsteel", "yellow", -13.8, LZ0, "-z", 2.78, 1.5);                                          // flight B: landing to the ground
+    // bridge straight to the pit roofs
+    b.slab("deck", -19.7, 2.63, -1.65, LX0, 2.78, -0.15, true);
+    b.rail("yellow", LX0, -1.65, -19.6, -1.65, 2.78, 1.1); b.rail("yellow", LX0, -0.15, -19.6, -0.15, 2.78, 1.1);
+    for (const px of [-16.9, -18.4]) for (const pz of [-1.55, -0.25]) b.slab("dsteel", px - 0.05, 0, pz - 0.05, px + 0.05, 2.63, pz + 0.05);
+    b.label("TO PITS", -17.5, 3.9, -0.9, 1.4, 0.35, Math.PI / 2, "#233a52", "#ffd24a", 46);
+  }
   // V-door pipe ramp (z=6 -> 18)
   {
     const n = 60, run = 0.2; // fine collision steps approximate a smooth slope
@@ -345,13 +360,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.rail("yellow", -0.5, 6.0, 0.5, 6.0, FB, 1.1);                                                               // chain across the walkway end (the Geronimo post is right beside it)
   // (the little platform at the top drive end of the board is gone: the board starts at the walkway)
   // ladder through the stabbing board hatch: floor -> board at (0, 1.45), struts back to the mast
-  b.beam("steel", v(-3.45, F, 2.12), v(-3.45, FB + 1.2, 2.12), 0.07); b.beam("steel", v(-3.45, F, 2.68), v(-3.45, FB + 1.2, 2.68), 0.07);
-  for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", -3.45, y, 2.4, 0.035, 0.035, 0.56);
+  b.beam("steel", v(-3.07, F, 2.12), v(-3.07, FB + 1.2, 2.12), 0.07); b.beam("steel", v(-3.07, F, 2.68), v(-3.07, FB + 1.2, 2.68), 0.07);
+  for (let y = F + 0.3; y < FB + 0.95; y += 0.33) b.box("steel", -3.07, y, 2.4, 0.035, 0.035, 0.56);
   for (let y = F + 4; y < FB; y += 4.2) {
     const u = (y - F) / (46 - F);
-    b.beam("steel", v(-3.45, y, 2.4), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), u), 0.06);
+    b.beam("steel", v(-3.07, y, 2.4), Vector3.Lerp(v(-2.0, F, 1.2), v(-1.2, 46, 0.4), u), 0.06);
   }
-  b.label("LADDER TO BOARD", -3.9, F + 1.7, 2.4, 1.4, 0.3, -Math.PI / 2, "#233a52", "#ffd24a", 34);
+  b.label("LADDER TO BOARD", -3.55, F + 1.7, 2.4, 1.4, 0.3, -Math.PI / 2, "#233a52", "#ffd24a", 34);
   // Geronimo line: the derrickman's escape cable from the end of the walkway straight out to a ground anchor with a landing pad
   const GA = v(0, FB + 2.6, 5.7), GB = v(0, 0.55, 38.6);
   b.beam("steel", v(0.5, FB, 5.9), v(0.5, FB + 2.6, 5.9), 0.1); b.beam("steel", v(-0.5, FB, 5.9), v(-0.5, FB + 2.6, 5.9), 0.1); b.slab("steel", -0.6, FB + 2.5, 5.8, 0.6, FB + 2.6, 6.0);
@@ -552,7 +567,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.slab("tank", x0 + 0.05, 0.4, -26, x1 - 0.05, 2.7, -19.6, true);          // solid tank body (walkable roof is the deck below)
     b.slab("dsteel", x0 + 0.05, 2.7, -26, x1 - 0.05, 2.78, -19.6, true);
     b.slab("steel", x0 + 0.05, 0, -26, x1 - 0.05, 0.4, -19.6);
-    b.rail("yellow", x0 + 0.05, -19.7, x1 - 0.05, -19.7, 2.78, 1.1);
+    if (x0 === 0) b.rail("yellow", x0 + 1.8, -19.7, x1 - 0.05, -19.7, 2.78, 1.1);                  // open where the rig bridge lands
+    else b.rail("yellow", x0 + 0.05, -19.7, x1 - 0.05, -19.7, 2.78, 1.1);
     b.rail("yellow", x0 + 0.05, -25.9, x1 - 0.05, -25.9, 2.78, 1.1);
     b.cyl("steel", (x0 + x1) / 2, 3.5, -22.8, 0.2, 1.4, { tess: 6 });          // agitator shaft
     b.box("bopblue", (x0 + x1) / 2, 4.3, -22.8, 0.7, 0.5, 0.5);

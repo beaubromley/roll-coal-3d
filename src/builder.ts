@@ -155,8 +155,8 @@ export class Builder {
    * Grated staircase descending from (x,z) at topY to ground. dir = unit axis direction of descent.
    */
   stairs(m: string, matSide: string, x: number, z: number, dir: "+x" | "-x" | "+z" | "-z",
-         topY: number, width = 1.2, rise = 0.26, run = 0.3) {
-    const n = Math.round(topY / rise);
+         topY: number, width = 1.2, rise = 0.26, run = 0.3, botY = 0) {
+    const n = Math.round((topY - botY) / rise);
     const dx = dir === "+x" ? 1 : dir === "-x" ? -1 : 0;
     const dz = dir === "+z" ? 1 : dir === "-z" ? -1 : 0;
     const alongX = dx !== 0;
@@ -176,8 +176,8 @@ export class Builder {
     const off = width / 2;
     const ox = alongX ? 0 : off, oz = alongX ? off : 0;
     for (const s of [-1, 1]) {
-      this.beam(matSide, new Vector3(x + s * ox, topY - 0.1, z + s * oz), new Vector3(ex + s * ox, 0.1, ez + s * oz), 0.1);
-      this.beam(matSide, new Vector3(x + s * ox, topY + 1.0, z + s * oz), new Vector3(ex + s * ox, 1.0 + 0.0, ez + s * oz), 0.05);
+      this.beam(matSide, new Vector3(x + s * ox, topY - 0.1, z + s * oz), new Vector3(ex + s * ox, botY + 0.1, ez + s * oz), 0.1);
+      this.beam(matSide, new Vector3(x + s * ox, topY + 1.0, z + s * oz), new Vector3(ex + s * ox, botY + 1.0, ez + s * oz), 0.05);
     }
   }
 

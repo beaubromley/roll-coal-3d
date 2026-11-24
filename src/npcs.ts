@@ -186,13 +186,12 @@ export class Human {
     this.chBuild = new Vector3(sy, sy, sy);   // uniform only: non-uniform scale on the root shears every rotating limb and foot (looks like smeared boots while running)
     for (const mesh of c.meshes) if (/head/i.test(mesh.name) && /^Beige/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
     this.hairMeshes = c.meshes.filter((x) => /^Eyebrows/.test(String((x.material as any)?.name ?? "").replace(/_cd+$/, ""))) as Mesh[];
-    if (o.hat && !o.ppeOff) this.hairMeshes.forEach((x) => x.setEnabled(false));   // the hat is on from the start: no hair poking through the dome
     const mk = (mesh: Mesh, hex: string) => { mesh.material = m(sc, hex); mesh.parent = this.root; this.meshes.push(mesh); this.ppe.push(mesh); return mesh; };
     const parts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
     const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
     const hatCol = o.hat ?? "#f4f4f4";
     if (o.hat) {
-      add(MeshBuilder.CreateSphere("hat", { diameter: 0.33, segments: 14, slice: 0.56 }, sc), hatCol, "Head", 0, -0.118, -0.005);
+      add(MeshBuilder.CreateSphere("hat", { diameter: 0.315, segments: 16, slice: 0.56 }, sc), hatCol, "Head", 0, -0.113, -0.008);
       add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, -0.105, 0.01);
       add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, -0.11, 0.17);
       add(MeshBuilder.CreateBox("rdg", { width: 0.04, height: 0.02, depth: 0.24 }, sc), hatCol, "Head", 0, 0.032, 0.0);
@@ -321,7 +320,7 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
-  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); this.hairMeshes.forEach((x) => x.setEnabled(!on)); }
+  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {

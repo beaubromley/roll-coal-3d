@@ -128,37 +128,40 @@
   #endgrade { font-family: var(--display); font-size: 120px; color: var(--gold); line-height: 1; }
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .5s; z-index: 15; }
 
-  /* ---- Title screen: a nod to the original 8-bit menu ---- */
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-  #intro { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 0; background: #07040b; }
-  #stage { position: relative; container-type: inline-size; width: min(100vw, calc(100vh * 1408 / 768)); aspect-ratio: 1408 / 768; font-family: 'Press Start 2P', ui-monospace, Consolas, monospace; }
-  #titleArt { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; user-select: none; }
-  @keyframes flick { 0%, 100% { filter: brightness(1); } 7% { filter: brightness(1.28) saturate(1.2); } 9% { filter: brightness(1); } 52% { filter: brightness(1.18); } 54% { filter: brightness(1); } 81% { filter: brightness(1.32) saturate(1.25); } 83% { filter: brightness(1); } }
-  #ver { position: absolute; top: 2.2%; left: 50%; transform: translateX(-50%); font-size: max(7px, 1.05cqw); color: #76ff03; text-shadow: 2px 2px #000, 0 0 10px #76ff03; white-space: nowrap; }
-  #sub2 { position: absolute; top: 33%; left: 50%; transform: translateX(-50%); font-size: max(7px, .95cqw); color: #ffd24a; text-shadow: 2px 2px #000, 0 0 8px rgba(255,160,40,.8); white-space: nowrap; letter-spacing: .06cqw; }
-  #btnrow { position: absolute; left: 17%; width: 66%; top: 80.5%; height: 12.5%; display: flex; gap: 2.2%; }
-  .tbtn { flex: 1; font-family: inherit; font-size: max(11px, 1.15cqw); white-space: nowrap; background: transparent; color: #0b1a05; border: 0; cursor: pointer; text-shadow: 1px 1px rgba(255,255,255,.25); transition: transform .15s, color .15s; letter-spacing: .04cqw; padding: 0; }
-  #btnrow .tbtn { background: linear-gradient(#a9dc6a, #6fae3a); border: 3px solid #0b1a05; border-radius: 6px; box-shadow: 0 4px 0 #2f5a14, 0 0 0 2px rgba(255,255,255,.25); font-weight: 700; letter-spacing: .12cqw; }
-  .tbtn:hover, .tbtn:focus-visible { transform: scale(1.06); color: #fff; text-shadow: 0 0 10px #fff, 2px 2px #000; outline: none; }
-  #startBtn { animation: pulse 2s infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .78; } }
-  #pressstart { position: absolute; left: 50%; bottom: 1.2%; transform: translateX(-50%); font-size: max(7px, .8cqw); color: #cfe8ff; text-shadow: 2px 2px #000; animation: blinkps 1.1s infinite steps(1); }
+  /* ---- Title screen: the real rig in a lightning storm, neon logo on top ---- */
+  #view.pix { image-rendering: pixelated; image-rendering: crisp-edges; }
+  #intro { position: fixed; inset: 0; z-index: 20; display: grid; background: transparent; overflow: hidden; text-align: center; font-family: 'Press Start 2P', ui-monospace, Consolas, monospace; }
+  #shade { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 46%, rgba(2,4,12,0) 28%, rgba(2,4,12,.6) 100%), linear-gradient(rgba(2,4,12,.5), rgba(2,4,12,0) 30%, rgba(2,4,12,0) 62%, rgba(2,4,12,.65)); }
+  #ver { position: absolute; z-index: 2; top: 14px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #76ff03; text-shadow: 2px 2px #000, 0 0 10px #76ff03; white-space: nowrap; }
+  #tui { position: relative; z-index: 2; align-self: center; justify-self: center; display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2vh, 20px); padding: 0 14px; margin-top: -4vh; }
+  #logo { position: relative; margin: 0; font-family: 'Orbitron', 'Eurostile', 'Arial Black', Impact, sans-serif; font-weight: 900; line-height: 1; font-size: clamp(30px, 7.6vw, 96px); letter-spacing: .02em; }
+  #logo .ll { display: block; white-space: nowrap; }
+  #logo .lt { display: inline-block; color: #0b1a34; -webkit-text-stroke: .045em #c9ebff; paint-order: stroke fill;
+    text-shadow: 0 0 .1em #5db7ff, 0 0 .3em #3a8dff, 0 0 .7em #1f5fe0; animation: neon 5s linear infinite; }
+  #logo .lt:nth-child(3n) { animation-delay: -1.3s; } #logo .lt:nth-child(5n) { animation-delay: -3.1s; }
+  @keyframes neon { 0%, 18%, 22%, 62%, 100% { opacity: 1; } 20% { opacity: .5; } 63% { opacity: .75; } 64% { opacity: 1; } 86% { opacity: .6; } 87% { opacity: 1; } }
+  #two { position: absolute; left: 100%; bottom: -.12em; margin-left: .12em; font-size: 1.55em; line-height: 1; cursor: pointer; user-select: none; color: #2a1c00; -webkit-text-stroke: .05em #fff3a0; paint-order: stroke fill;
+    text-shadow: 0 0 .1em #ffd23f, 0 0 .3em #ff9a1f, 0 0 .7em #ff5a1f; animation: twopulse 1.6s ease-in-out infinite; }
+  @keyframes twopulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.45); } }
+  #sub { font-family: 'Orbitron', 'Arial Black', Impact, sans-serif; font-weight: 900; font-size: clamp(14px, 2.7vw, 34px); letter-spacing: .12em; color: #05060a; -webkit-text-stroke: .06em #fff; paint-order: stroke fill; text-shadow: 0 0 .5em rgba(255,255,255,.55); }
+  #btnrow { display: flex; flex-direction: row; gap: 14px; margin-top: clamp(6px, 2.4vh, 26px); }
+  .tbtn { font-family: inherit; font-size: clamp(10px, 1.45vw, 16px); color: #0b1a05; letter-spacing: .04em; cursor: pointer; white-space: nowrap; min-width: clamp(130px, 17vw, 220px); padding: 1.15em 1.2em;
+    background: linear-gradient(#a9dc6a, #6fae3a); border: 4px solid #0b1a05; border-radius: 6px; box-shadow: 0 5px 0 #2f5a14, 0 10px 18px rgba(0,0,0,.55); transition: transform .12s, filter .12s; }
+  .tbtn:hover, .tbtn:focus-visible { outline: none; filter: brightness(1.18); transform: translateY(-3px) scale(1.05); color: #000; }
+  .tbtn:active { transform: translateY(3px); box-shadow: 0 2px 0 #2f5a14; }
+  #startBtn { animation: pulse 2s ease-in-out infinite; } @keyframes pulse { 50% { filter: brightness(1.14); } }
+  .tbtn:disabled { filter: grayscale(.9) brightness(.62); cursor: not-allowed; animation: none; transform: none; }
+  #pressstart { font-size: clamp(7px, .9vw, 10px); color: #cfe8ff; text-shadow: 2px 2px #000; animation: blinkps 1.1s steps(1) infinite; }
   @keyframes blinkps { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0; } }
-  #controls { position: absolute; inset: 11% 22% 20%; background: rgba(8,6,16,.94); border: .35cqw solid #76ff03; box-shadow: 0 0 2cqw rgba(118,255,3,.35), inset 0 0 1cqw rgba(0,0,0,.8); padding: 2cqw 2.4cqw; display: flex; flex-direction: column; align-items: center; gap: 1.4cqw; text-align: center; }
-  #controls .ctitle { font-size: max(12px, 1.7cqw); color: #76ff03; text-shadow: 2px 2px #000, 0 0 10px #76ff03; }
-  #controls .clist { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 1cqw 1.4cqw; align-items: center; font-size: max(8px, .85cqw); text-align: left; }
-  #controls .clist span { color: #0b1a05; background: #9be34a; padding: .45cqw .7cqw; border: .15cqw solid #0b1a05; box-shadow: 0 .25cqw 0 #3f7a10; text-align: center; white-space: nowrap; }
-  #controls .clist em { font-style: normal; color: #e9eef3; }
-  #controls p { font-size: max(8px, .8cqw); line-height: 1.8; color: #cfd8e3; margin: 0; }
-  #controls .solo { flex: none; width: 14cqw; height: 4cqw; background: #7bc02c; border: .25cqw solid #0b1a05; box-shadow: 0 .3cqw 0 #3f7a10; font-size: max(10px, 1.1cqw); }
-  @media (max-width: 760px) { #sub2 { display: none; } #controls { inset: 4% 3%; padding: 3cqw; } #controls .clist { grid-template-columns: auto 1fr; } #controls .solo { width: 28cqw; height: 8cqw; } }
-
-  #titleFx { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; mix-blend-mode: screen; }
-  #two { position: absolute; left: 87.8%; top: 0.2%; font-size: 12.5cqw; line-height: 1; color: #0b1c3d; -webkit-text-stroke: .34cqw #c4ebff; text-shadow: 0 0 1.6cqw #4aa3e8, 0 0 .5cqw #ffffff, .35cqw .35cqw 0 #061024; transform-origin: 50% 60%; animation: slam 1.1s cubic-bezier(.2,.9,.3,1.2) .35s both, neon 2.6s 1.5s infinite steps(1); pointer-events: none; }
-  @keyframes slam { 0% { transform: scale(5) rotate(-12deg); opacity: 0; filter: blur(6px); } 55% { transform: scale(.88) rotate(2deg); opacity: 1; filter: blur(0); } 72% { transform: scale(1.1) rotate(-1deg); } 100% { transform: scale(1) rotate(0); opacity: 1; } }
-  @keyframes neon { 0%, 100% { opacity: 1; } 12% { opacity: .55; } 14% { opacity: 1; } 61% { opacity: .75; } 63% { opacity: 1; } 87% { opacity: .5; } 89% { opacity: 1; } }
-  #stage.shake { animation: shake .35s steps(2); }
-  @keyframes shake { 0% { transform: translate(0, 0); } 25% { transform: translate(-.35%, .25%); } 50% { transform: translate(.3%, -.2%); } 75% { transform: translate(-.2%, .15%); } 100% { transform: translate(0, 0); } }
+  #controls { position: absolute; z-index: 6; inset: 0; margin: auto; width: min(94vw, 640px); height: fit-content; max-height: 92vh; overflow: auto; flex-direction: column; gap: 16px; padding: 22px 26px; text-align: left;
+    background: rgba(8,6,16,.95); border: 4px solid #76ff03; box-shadow: 0 0 28px rgba(118,255,3,.35), inset 0 0 14px rgba(0,0,0,.8); color: #e9eef3; }
+  #controls .ctitle { font-size: clamp(16px, 2.4vw, 24px); color: #76ff03; text-shadow: 2px 2px #000, 0 0 10px #76ff03; text-align: center; }
+  #controls .clist { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 12px 14px; align-items: center; font-size: 10px; }
+  #controls .clist span { background: #9be34a; color: #0b1a05; padding: .5em .7em; text-align: center; white-space: nowrap; border: 2px solid #0b1a05; box-shadow: 0 3px 0 #3f7a10; }
+  #controls p { margin: 0; font-family: system-ui, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; color: #cfd8e3; }
+  #controls .solo { align-self: center; min-width: 40%; }
+  @media (max-width: 760px) { #controls .clist { grid-template-columns: auto 1fr; } #btnrow { flex-direction: column; } .tbtn { min-width: min(80vw, 280px); } }
+  @media (max-height: 520px) { #tui { margin-top: 0; gap: 6px; } #logo { font-size: clamp(22px, 9vh, 60px); } #pressstart { display: none; } #btnrow { flex-direction: row; } #ver { top: 6px; } }
 
   /* ---- Pause screen (matches the retro title) ---- */
   #curvewrap { margin: 10px 0 4px; } #curve { width: 100%; max-width: 560px; aspect-ratio: 560 / 250; display: block; margin: 0 auto; background: rgba(0,0,0,.35); border: 2px solid #2a3550; border-radius: 6px; }
@@ -202,7 +205,6 @@
   .td { position: absolute; pointer-events: auto; touch-action: none; border: 3px solid rgba(255,255,255,.8); background: rgba(10,16,24,.6); color: #fff; font-family: var(--display); letter-spacing: 1px; font-size: 18px; display: grid; place-content: center; text-align: center; -webkit-tap-highlight-color: transparent; padding: 0; border-radius: 16px; }
   .td small { font-size: 9px; opacity: .8; }
   .td.on { background: rgba(244,192,74,.9); color: #111; }
-  #btnrow .tbtn:disabled { opacity: 1; background: linear-gradient(#8d9a86, #67725f); color: #2e3629; cursor: not-allowed; box-shadow: 0 4px 0 #3a4235; } .tbtn:disabled { cursor: not-allowed; } .tbtn:disabled:hover { transform: none; color: #0b1a05; text-shadow: 1px 1px rgba(255,255,255,.25); }
   #story { position: fixed; inset: 0; z-index: 22; display: none; place-items: center; background: #05070c; transition: opacity .45s; }
   #story.out { opacity: 0; }
   #story .frame { width: min(96vw, 148vh, 1100px); }
@@ -264,7 +266,6 @@
   body.touch button.b { min-height: 46px; font-size: 16px; }
   body.touch .row { font-size: 13px; }
   body.touch .gauge .g-v { font-size: 32px; }
-  body.touch #ver, body.touch #pressstart { display: none; }
   body.touch input[type=range] { height: 34px; }
 
   @media (max-height: 480px) {
@@ -314,6 +315,9 @@
   .opt.alt { background: #2b3d50; } .opt { min-width: 46%; text-align: left; font-size: 15px; }
   #panel .btns .b.green { color: #07140b; }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&family=Press+Start+2P&display=swap" />
 </head>
 <body>
 <canvas id="view" tabindex="0"></canvas>
@@ -337,7 +341,7 @@
   <div id="toast" class="shadowtext"></div>
 </div>
 
-<div id="tut" style="display:none"><div class="ts"></div><div class="tt"></div><button id="tutSkip">SKIP</button></div>
+<div id="tut" style="display:none"><div class="ts"></div><div class="tt"></div><button id="tutSkip">SKIP (K)</button></div>
 <div id="touch">
   <div id="lookzone"></div>
   <div id="joyzone"><div id="joybase"><div id="joyknob"></div></div></div>
@@ -384,29 +388,31 @@
 
 <div id="story"><div class="frame"><canvas id="storyCv"></canvas><div id="storyCap"></div><div id="storyBar"><button class="alt" id="storySkip">SKIP</button><div id="storyDots"></div><button id="storyNext">NEXT</button></div></div></div>
 <div id="intro" style="display:none">
-  <div id="stage">
-    <img id="titleArt" src="/title-screen.jpg" alt="Roll Coal, Make Hole 2" draggable="false" />
-    <canvas id="titleFx"></canvas>
-    <div id="two" aria-label="2">2</div>
-    <div id="ver">v2.0.0 &middot; COMPANY MAN &middot; build <span id="buildid"></span></div>
-    <div id="sub2">YOU ARE THE COMPANY MAN. THE WELL IS YOUR PROBLEM.</div>
+  <div id="shade"></div>
+  <div id="ver">v2.0.0 &middot; build <span id="buildid"></span></div>
+  <div id="tui">
+    <h1 id="logo" aria-label="Roll Coal, Make Hole 2">
+      <span class="ll" id="l1"></span><span class="ll" id="l2"></span>
+      <span id="two" role="button" aria-label="Call lightning">2</span>
+    </h1>
+    <div id="sub">DRILL BABY, DRILL</div>
     <div id="btnrow">
       <button class="tbtn" id="startBtn">START NEW</button>
       <button class="tbtn" id="contBtn">CONTINUE</button>
       <button class="tbtn" id="ctrlBtn">CONTROLS</button>
     </div>
     <div id="pressstart">PRESS ENTER</div>
-    <div id="controls" style="display:none">
-      <div class="ctitle">CONTROLS</div>
-      <div class="clist">
-        <span>W A S D</span><em>MOVE</em><span>SHIFT</span><em>SPRINT</em>
-        <span>MOUSE</span><em>LOOK</em><span>SPACE</span><em>JUMP</em>
-        <span>E</span><em>INTERACT</em><span>V</span><em>1ST / 3RD PERSON</em>
-        <span>ESC</span><em>CLOSE PANEL</em><span>M</span><em>MUTE</em>
-      </div>
-      <p>Drill 750 &rarr; 8,500 ft. Keep the well under control. Survive your visitors. Come in under AFE.</p>
-      <button class="tbtn solo" id="ctrlBack">BACK</button>
+  </div>
+  <div id="controls" style="display:none">
+    <div class="ctitle">CONTROLS</div>
+    <div class="clist">
+      <span>W A S D</span><em>MOVE</em><span>SHIFT</span><em>SPRINT</em>
+      <span>MOUSE</span><em>LOOK</em><span>SPACE</span><em>JUMP</em>
+      <span>E</span><em>INTERACT</em><span>V</span><em>1ST / 3RD PERSON</em>
+      <span>ALT</span><em>FREE CURSOR</em><span>ESC</span><em>PAUSE</em>
     </div>
+    <p>Drill 750 &rarr; 8,500 ft. Keep the well under control and bring it in under AFE.</p>
+    <button class="tbtn solo" id="ctrlBack">BACK</button>
   </div>
 </div>
 <div id="end">

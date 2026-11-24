@@ -16,7 +16,8 @@ export class Tutorial {
   constructor(private game: Game, private player: Player, touch: boolean) {
     this.touch = touch;
     this.el = document.getElementById("tut")!;
-    document.getElementById("tutSkip")!.addEventListener("click", () => this.finish(false));
+    document.getElementById("tutSkip")!.addEventListener("click", () => { this.finish(false); this.player.lock(); });
+    window.addEventListener("keydown", (e) => { if (this.i >= 0 && e.code === "KeyK" && !e.repeat && !this.game.ui.panelOpen) { this.finish(false); this.game.sfx.click(); } });
     game.onInteract = () => { this.used = true; };
   }
 
@@ -32,7 +33,7 @@ export class Tutorial {
     const t = this.touch, g = this.game, gate = g.rig.spots.gate as Vector3;
     const dist = () => Math.round(Math.hypot(gate.x - this.player.pos.x, gate.z - this.player.pos.z) * 3.281);
     return [
-      { text: () => t ? "LOOK: drag your finger on the right side of the screen" : "LOOK: move the mouse (click the game first)", done: () => this.lookAcc > 1.0 },
+      { text: () => t ? "LOOK: drag your finger on the right side of the screen" : "LOOK: move the mouse (click the game first). Hold ALT to free the cursor, K skips this guide", done: () => this.lookAcc > 1.0 },
       { text: () => t ? "WALK: hold the left thumb stick" : "WALK: W A S D", done: () => this.walkAcc > 8 },
       { text: () => t ? "RUN: tap the RUN button (it lights up while on)" : "RUN: hold SHIFT while you walk", done: () => this.runT > 1.2 },
       { text: () => `GO TO THE GATE: follow the gold arrow and beam, ${dist()} ft`, done: () => dist() < 22 },

@@ -30,6 +30,8 @@ export interface Choice { label: string; cls?: "alt" | "red" | "green"; run?: ()
 
 export class UI {
   panelOpen = false;
+  /** called whenever a panel opens, so the game can free the mouse no matter which path opened it */
+  onPanelOpen: () => void = () => {};
   onPanelClose: () => void = () => {};
   private toastT = 0;
   private radioQ: HTMLElement[] = [];
@@ -73,6 +75,7 @@ export class UI {
     p.innerHTML = html;
     $("panelwrap").style.display = "grid";
     this.panelOpen = true; this.closable = o.closable !== false; this.panelTick = o.tick ?? null;
+    this.onPanelOpen();
     return p;
   }
   tickPanel() { if (this.panelOpen && this.panelTick) this.panelTick(); }

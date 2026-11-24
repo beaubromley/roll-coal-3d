@@ -7,7 +7,7 @@ import { Sim, WELL } from "./sim";
 import { Sfx } from "./audio";
 import { UI, $ } from "./ui";
 import { Game } from "./game";
-import { TitleFx } from "./titlefx";
+import { TitleScene } from "./title";
 import { TouchControls, detectTouch } from "./touch";
 import { Graphics, QUALITY_NAMES } from "./graphics";
 import { Kit } from "./models";
@@ -102,12 +102,11 @@ if (isTouch) {
 $("buildid").textContent = (import.meta.env.VITE_BUILD ?? "dev");
 $("loading").style.display = "none";
 $("intro").style.display = "grid";
-const fx = new TitleFx($("titleFx") as HTMLCanvasElement);
-fx.onThunder = () => {
-  const st = $("stage"); st.classList.remove("shake"); void st.offsetWidth; st.classList.add("shake");
-  setTimeout(() => sfx.thunder(), 120);
-};
+// the title is the real rig in a lightning storm, rendered at chunky pixel resolution
+const fx = new TitleScene(scene, engine, rig, hemi, sun, player.cam, isTouch);
+fx.onThunder = (delay) => { setTimeout(() => sfx.thunder(), delay * 1000); };
 fx.start();
+(window as any).__title = fx;
 const introOpen = () => $("intro").style.display !== "none";
 $("ctrlBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("controls").style.display = "flex"; $("btnrow").style.visibility = "hidden"; $("pressstart").style.visibility = "hidden"; });
 $("ctrlBack").addEventListener("click", () => { sfx.click(); $("controls").style.display = "none"; $("btnrow").style.visibility = "visible"; $("pressstart").style.visibility = "visible"; });
@@ -139,6 +138,7 @@ canvas.addEventListener("click", () => { if (game.started && !ui.panelOpen && !g
 player.onLockLost = () => { if (game.started && !ui.panelOpen && !game.flags.finish) game.togglePause(true); };
 document.addEventListener("visibilitychange", () => { if (document.hidden && game.started && !game.flags.finish) game.togglePause(true, { allowPanel: true }); });
 window.addEventListener("keydown", (e) => {
+  if ((e.code === "AltLeft" || e.code === "AltRight") && game.started) { e.preventDefault(); if (!e.repeat && !game.paused) player.unlock(); return; }
   if (e.repeat) return;
   if (e.code === "KeyE") game.interact();
   if (e.code === "KeyM") { sfx.setMuted(!sfx.muted); if (game.paused) $("pSound").textContent = sfx.muted ? "SOUND: OFF" : "SOUND: ON"; }
@@ -160,7 +160,7 @@ engine.runRenderLoop(() => {
   let left = dt * ts;
   while (left > 0) { const step = Math.min(1, left); sim.step(step); left -= step; }
   const s = sim.s;
-  rig.update(dt, {
+  const frame: any = {
     depth: s.depth, startDepth: WELL.startDepth,
     rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
     connecting: s.mode === "connection", tripping: s.mode === "tripping", tripFrac: 0,
@@ -168,8 +168,11 @@ engine.runRenderLoop(() => {
     near: Math.hypot(player.pos.x - 4.8, player.pos.z + 3) < 22 && player.pos.y > 4,
     screens: { depth: s.depth, wob: s.wob, rop: s.rop, spp: s.spp, flow: s.flow, pit: s.pit, mw: s.mw, mode: s.mode, rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
       kicking: s.kick.active, dd: game.veh.dd, t: clock },
-  });
+  };
+  if (fx.running) Object.assign(frame, fx.frameOverride());
+  rig.update(dt, frame);
   game.update(dt, dt);
+  fx.update(dt);                       // after game.update so the storm owns sky, fog and light while the title is up
   tutorial.update(dt);
   game.veh.postCamera(dt);
   touch?.update();

@@ -60,6 +60,7 @@ export class Game {
   constructor(public scene: Scene, public rig: Rig, public player: Player, public sim: Sim, public sfx: Sfx, public ui: UI,
               env: { hemi: HemisphericLight; sun: DirectionalLight }) {
     this.env = env;
+    this.ui.onPanelOpen = () => { this.player.enabled = false; this.player.unlock(); };
     this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
     this.player.onRampFall = (h) => {

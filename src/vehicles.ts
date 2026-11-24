@@ -847,7 +847,7 @@ export class Vehicles {
         v.vy -= 18 * dt; v.gy = gy0 + v.vy * dt; v.airT = (v.airT ?? 0) + dt;
         if (v.gy <= top) {
           const imp = -v.vy, air = v.airT ?? 0;
-          v.gy = top; v.air = false; v.vy = 0; v.airT = 0; v.vyEst = 0;
+          v.gy = top; v.air = false; v.vy = 0; v.airT = 0; v.vyEst = 0; v.vyG = 0; v.prevTop = top;   // landed: forget the climb rate from before the jump, or the truck re-launches off it
           if (imp > 6) this.game.sfx.thud();
           if (air > 0.6) this.game.ui.toast("AIR TIME " + air.toFixed(1) + " s", imp > 15 ? "…and a very hard landing." : air > 1.4 ? "That's a lot of air. The truck is proud of you." : "Nice jump.");
           if (imp > 17) { v.speed *= 0.8; this.game.propertyDamage(imp * 0.5); }

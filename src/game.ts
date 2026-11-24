@@ -605,7 +605,6 @@ export class Game {
       const st = this.active ? this.active.m.steps[this.active.i] : null;
       if (st?.act) { this.sfx.click(); this.held.use(); st.act(() => this.stepDone()); return; }
     }
-    if (this.held.kind === "gun") { this.held.use(); this.outskirts.fireGun(); return; }
     if (this.held.kind === "rod") { this.held.use(); const r = this.outskirts.fishClick(); if (r) { this.sfx.click(); this.ui.toast(r[0], r[1]); } return; }
     const [title, text, alarm] = this.held.use();
     if (alarm) this.sfx.horn(); else this.sfx.click();

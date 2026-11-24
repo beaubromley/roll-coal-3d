@@ -1,6 +1,6 @@
 import { ParticleSystem, Color4, DynamicTexture, Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
 import { Builder, type AABB } from "./builder";
-import { Wildlife, SPECIES_NAME, type Species } from "./wildlife";
+import { Wildlife } from "./wildlife";
 import { Ground } from "./ground";
 import { Human } from "./npcs";
 import type { Game } from "./game";
@@ -99,7 +99,7 @@ export class Outskirts {
       this.ground.prime([{ x: 0, z: 112 }, { x: 0, z: 0 }]); }
     this.generatorSmoke();
     this.hankFx();
-    this.wild = new Wildlife(g, this.scene, this.terrain, (k) => this.onHunt(k));
+    this.wild = new Wildlife(g, this.scene, this.terrain, () => {});
   }
 
   /** the little things Hank's shotgun and yours leave behind: a flash, a tracer line, a puff of dust */
@@ -127,34 +127,7 @@ export class Outskirts {
   }
 
   // ---------------------------------------------------------------------------------------------- Hank, the shotgun, hunting
-  /** everyone the shotgun must never be pointed at */
-  private people(): Vector3[] {
-    const g = this.g, out: Vector3[] = [], add = (h: Human) => { if (h.root.isEnabled()) out.push(h.root.getAbsolutePosition().add(new Vector3(0, 1.2, 0))); };
-    for (const h of Object.values(g.rig.humans)) add(h); for (const h of g.interns) add(h);
-    add(this.hank); add(this.lupe); add(this.rusty); for (const gd of this.guards) add(gd.h); for (const fb of this.floorBots) add(fb.h);
-    return out;
-  }
-  fireGun() {
-    const g = this.g, cam = g.player.cam;
-    if ((this.cd["gun"] ?? -9) + 0.85 > this.t) return;
-    const o = cam.position.clone(), d = cam.getForwardRay().direction.clone();
-    for (const pp of this.people()) {
-      const v = pp.subtract(o), tt = Vector3.Dot(v, d);
-      if (tt > 0 && tt < 90 && Math.sqrt(Math.max(0, v.lengthSquared() - tt * tt)) < 2.2 + 0.12 * tt) { g.ui.toast("NOT AT PEOPLE", "Hank's rule, and now yours. Point it at the critters."); return; }
-    }
-    this.cd["gun"] = this.t; g.sfx.gun(); g.player.pitch = Math.max(-1.2, g.player.pitch - 0.07);
-    { const fl = document.getElementById("gunflash") ?? (() => { const el = document.createElement("div"); el.id = "gunflash"; el.style.cssText = "position:fixed;inset:0;background:radial-gradient(circle at 60% 70%,rgba(255,200,90,.55),rgba(255,160,40,0) 60%);pointer-events:none;opacity:0;transition:opacity .12s;z-index:6"; document.body.appendChild(el); return el; })(); fl.style.transition = "none"; fl.style.opacity = "1"; requestAnimationFrame(() => { fl.style.transition = "opacity .15s"; fl.style.opacity = "0"; }); }
-    const muz = o.add(d.scale(1.4)).add(new Vector3(0, -0.2, 0));
-    this.shotFx(muz, o.add(d.scale(80)), null);
-    this.wild.shoot(o, d);
-  }
-  private onHunt(k: Species) {
-    const g = this.g, h = ((g.flags.hunted as Record<string, number> | undefined) ?? {}); h[k] = (h[k] ?? 0) + 1; g.flags.hunted = h;
-    g.sfx.good(); g.gain(0, k === "bear" ? 6 : 2);
-    const total = Object.values(h).reduce((a, c) => a + c, 0);
-    this.showCatch(SPECIES_NAME[k], `${h[k]} ${k}${h[k] > 1 ? "s" : ""} so far, ${total} in all. ${{ deer: "A clean shot. The venison is not yours to keep: Hank says it is a pond-adjacent deer.", bear: "A bear. A whole bear. You will tell this story at the next safety meeting.", snake: "It was going to rattle at someone eventually.", bird: "It circled a lot. Now it doesn't." }[k]}`, k, false, "HUNTED");
-  }
-  afterLoad() { if (this.g.flags.shotgun) this.g.held.owned.add("gun"); }
+  afterLoad() { /* nothing to restore */ }
   private hankUpdate(dt: number, px: number, pz: number) {
     const g = this.g, h = this.hank, S = this.hankSt, f = g.flags;
     const hostile = !f.hankFriend && ((px - POND.x) / (POND.rx * 1.2)) ** 2 + ((pz - POND.z) / (POND.rz * 1.2)) ** 2 < 1;
@@ -189,7 +162,7 @@ export class Outskirts {
   private talkHank() {
     const g = this.g, f = g.flags;
     if (f.hankFriend) {
-      const L = ["Catch anything? Don't lie. I can see your hands.", "Take care of that shotgun. Critters only. I MEAN IT.", "The truck's got a gas gauge that's a suggestion. Fill up before you go far.", "There's a big old fish in that pond. I call him Gerald. Don't tell Gerald I told you."];
+      const L = ["Catch anything? Don't lie. I can see your hands.", "Leave the critters alone. The deer and I have an understanding.", "The truck's got a gas gauge that's a suggestion. Fill up before you go far.", "There's a big old fish in that pond. I call him Gerald. Don't tell Gerald I told you."];
       g.say("hank" as any, L[(this.cd["hanktalk"] = ((this.cd["hanktalk"] ?? -1) + 1)) % L.length], [{ label: "Will do, Hank.", cls: "green", run: () => {} }] as any, "Hank, your friend"); return;
     }
     const fr = (f.hankFr as number | undefined) ?? 0;
@@ -205,10 +178,10 @@ export class Outskirts {
   }
   private befriend() {
     const g = this.g, f = g.flags; if (f.hankFriend) return;
-    g.say("hank" as any, "Alright. ALRIGHT. You're not like the rest of 'em. Here, take my shotgun. Critters only, never at people, I'll know. And the pond's open to you now. Pole's on the dock.", [
+    g.say("hank" as any, "Alright. ALRIGHT. You're not like the rest of 'em. The pond's open to you now. Pole's on the dock. And watch out for the bears. They don't like you any more than I did.", [
       { label: "Thanks, Hank.", cls: "green", run: () => {
-        f.hankFriend = true; f.shotgun = true; g.held.owned.add("gun"); g.held.equip("gun"); g.sfx.good(); g.gain(0.3, 6);
-        g.ui.toast("NEW FRIEND: HANK", "You got his shotgun. The old pickup is yours. The pond is open.");
+        f.hankFriend = true; g.sfx.good(); g.gain(0.3, 6);
+        g.ui.toast("NEW FRIEND: HANK", "The old pickup is yours. The pond is open.");
         g.say("hank" as any, "And take the truck. It's an old beater. Keys are in it. She'll get you where you're going, mostly.", [{ label: "I'll bring her back.", cls: "green", run: () => g.radio("hank" as any, "Bring her back with all four wheels. I mean it.", 5000) }] as any, "Hank, your friend");
       } },
     ] as any, "Hank — The Landowner");

@@ -58,9 +58,12 @@ function noiseTex(scene: Scene, base: string, speck: string[], n: number, size =
   for (let i = 0; i < n; i++) {
     c.fillStyle = speck[(Math.random() * speck.length) | 0];
     const s = 1 + Math.random() * 3;
-    c.fillRect(Math.random() * size, Math.random() * size, s, s);
+    const px = Math.random() * size, py = Math.random() * size;
+    // draw wrapped so the texture tiles seamlessly (clipped speckles left a faint grid line at every tile edge)
+    for (const ox of [0, -size]) for (const oy of [0, -size]) c.fillRect(px + ox, py + oy, s, s);
   }
   t.update();
+  t.anisotropicFilteringLevel = 8;
   t.uScale = repeat; t.vScale = repeat;
   return t;
 }

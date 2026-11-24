@@ -807,6 +807,11 @@ export class Game {
     cols.forEach((c, i) => { const h = new Human(this.scene, { shirt: c[0], pants: "#3a3a3a", hat: "#f2f2f2", skin: c[1], vest: true, scale: 0.97 }); h.root.position.set(26 - i, 0, 14 + i); this.interns.push(h); });
     this.trail = []; for (let i = 0; i < 400; i++) this.trail.push(this.player.pos.clone());
   }
+  /** interns stand on whatever is under them (they used to copy the player's height along the trail, which left them hovering when they cut a corner) */
+  private internGround(p: Vector3, dt: number) {
+    const g = this.player.support(p.x, p.z, p.y);
+    if (g < p.y) p.y = Math.max(g, p.y - 14 * dt); else p.y += (g - p.y) * Math.min(1, dt * 10);
+  }
   despawnInterns() { this.interns.forEach((h) => h.root.dispose()); this.interns = []; }
   spawnSnake() {
     const m = new StandardMaterial("snk", this.scene); m.diffuseColor = Color3.FromHexString("#7a6a3a");
@@ -1077,8 +1082,8 @@ export class Game {
         if (Math.hypot(target.x - p.x, target.z - p.z) > 2.2) {
           const sp = Math.min(6, Math.max(2.4, d * 4));
           if (d > 0.1) { p.x += (dx / d) * sp * realDt; p.z += (dz / d) * sp * realDt; pushOutXZ(this.player.colliders, p, p.y, 0.35); h.root.rotation.y = Math.atan2(dx, dz); }
-          p.y += (t.y - p.y) * Math.min(1, realDt * 8); h.animate(realDt, sp);
-        } else { h.animate(realDt, 0); p.y += (t.y - p.y) * Math.min(1, realDt * 8); }
+          this.internGround(p, realDt); h.animate(realDt, sp);
+        } else { h.animate(realDt, 0); this.internGround(p, realDt); }
       });
     }
     // deer wander

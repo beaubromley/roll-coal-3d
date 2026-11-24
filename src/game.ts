@@ -761,9 +761,10 @@ export class Game {
     const k = this.sky; if (!k) return;
     const a = ((hour - 6.5) / 13.25) * Math.PI, d = new Vector3(Math.cos(a) * 0.8, Math.sin(a) * 0.95, 0.45).normalize();
     k.sun.position.copyFrom(d.scale(1000)); k.moon.position.copyFrom(d.scale(-1000));
-    k.sun.setEnabled(!this.astMode && d.y > -0.1); k.moon.setEnabled(!this.astMode && d.y < 0.1);
+    const dk = this.asteroidT >= 0 ? Math.min(1, this.asteroidT / 6) : 0;
+    k.sun.setEnabled(!this.astMode && d.y > -0.1 && dk < 0.5); k.moon.setEnabled(!this.astMode && d.y < 0.1);
     k.sunMat.emissiveColor = Color3.Lerp(new Color3(1, 0.55, 0.28), new Color3(1, 1, 0.92), clamp(d.y * 3.2, 0, 1));
-    k.starMat.alpha = this.astMode ? 1 : clamp(night * 1.1 - 0.1, 0, 1);
+    k.starMat.alpha = this.astMode ? 1 : Math.max(clamp(night * 1.1 - 0.1, 0, 1), dk);
   }
 
   // ---------- save / load ----------
@@ -1176,12 +1177,13 @@ export class Game {
     };
     const dawn = clamp(1 - Math.abs(elev) * 4, 0, 1) * (elev > -0.2 ? 1 : 0);
     let col = sky(day, dawn);
-    if (this.asteroidT >= 0) col = Color3.Lerp(col, new Color3(0.35, 0.12, 0.08), Math.min(0.3, this.asteroidT / 25));
+    const dark = this.asteroidT >= 0 ? Math.min(1, this.asteroidT / 6) : 0;     // the asteroid is in the sky: the day goes dark
+    if (dark > 0) col = Color3.Lerp(col, new Color3(0.012, 0.01, 0.022), dark);
     if (this.astMode) { col = new Color3(0.008, 0.007, 0.018); }
     this.scene.clearColor.set(col.r, col.g, col.b, 1);
     this.scene.fogColor = col.clone();
-    this.env.hemi.intensity = this.astMode ? 0.32 : 0.5 + 0.4 * day;
-    this.env.sun.intensity = this.astMode ? 1.15 : 0.2 + 1.05 * day;
+    this.env.hemi.intensity = this.astMode ? 0.32 : (0.5 + 0.4 * day) * (1 - 0.45 * dark);
+    this.env.sun.intensity = this.astMode ? 1.15 : (0.2 + 1.05 * day) * (1 - 0.7 * dark);
     const az = (hour - 6.5) / 13.25 * Math.PI;
     const ex = Math.cos(az), ey = Math.max(0.12, elev);
     this.env.sun.direction.set(-ex * 0.8, -ey, -0.45);

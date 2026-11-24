@@ -105,10 +105,15 @@ export class UI {
     return p;
   }
 
+  /** the top-left objective: the active job, or (when nothing is asked of you) the standing objective */
   setMission(title: string, sub: string, count: string) {
-    $("mtitle").textContent = title; $("msub").textContent = sub; $("mcount").textContent = count;
-    $("mission").style.display = title ? "block" : "none";
+    this.idleObjective = !title;
+    $("mtitle").textContent = title || "MAKE HOLE"; $("msub").textContent = title ? sub : "Drill to 8,500 ft"; $("mcount").textContent = title ? count : "OBJECTIVE";
+    $("mission").style.display = "block";
   }
+  idleObjective = false;
+  /** keep the standing objective current (depth to go) while no job is active */
+  tickIdleObjective(text: string) { if (this.idleObjective) $("msub").textContent = text; }
   setPrompt(label: string | null) {
     const el = $("prompt");
     if (!label) { el.style.display = "none"; return; }

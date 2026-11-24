@@ -135,7 +135,7 @@ export class Vehicles {
     this.list.push(this.buildManlift(-7, 13, 0.4));
     this.buildPallet(9.2, 51.5, -0.6);
     for (let i = 0; i < 8; i++) this.buildPallet(11.9 + i * 2.3, -61.4, i % 2 ? 0.04 : -0.03, true);   // mud products in the yard
-    this.list.push(this.buildBackhoe(-3.6, -29.2, -Math.PI / 2));   // parked by the cuttings pit under the shakers
+    this.list.push(this.buildBackhoe(-42, -61, 0));   // parked by the cuttings pit under the shakers
     this.list.push(this.buildDrone(-20.5, 36.4, Math.PI / 2 + RYAW));
     for (const v of this.list) {
       for (let i = 0; i < v.pts.length; i++) { const b: AABB = { x0: 0, x1: 0, y0: 0, y1: v.boxH, z0: 0, z1: 0 }; v.boxes.push(b); this.colliders.push(b); }

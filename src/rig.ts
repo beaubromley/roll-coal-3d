@@ -657,7 +657,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // ---- two decanting centrifuges on stands as high as the pits, each with a solids tank underneath its discharge and a level centrate line into the active tanks ----
   const centri = (cx: number, n: number) => {
-    const cz = -34.0, Y = 2.78;
+    const cz = -23.4, Y = 2.78, CY = 2.4;
     // stand: legs, bracing, a walkable deck level with the pit roofs, rails, and a stair down on the south side
     b.slab("deck", cx - 2.9, Y - 0.2, cz - 1.5, cx + 2.0, Y, cz + 2.6, true);
     for (const px of [cx - 2.7, cx + 1.8]) for (const pz of [cz - 1.3, cz + 2.4]) b.slab("dsteel", px - 0.12, 0, pz - 0.12, px + 0.12, Y - 0.2, pz + 0.12, true);
@@ -679,6 +679,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.slab("steel", cx - 0.5, Y + 0.3, cz + 0.6, cx + 0.5, Y + 0.9, cz + 1.1);                            // liquid (centrate) discharge box
     b.cyl("red", cx + 0.2, Y + 0.55, cz + 1.9, 0.55, 0.7, { tess: 12 }); b.cyl("blue", cx + 0.2, Y + 0.9, cz + 1.9, 0.62, 0.3, { tess: 12 });   // feed pump
     b.beam("steel", v(cx + 0.2, Y + 0.9, cz + 1.9), v(cx + 0.2, Y + 0.9, cz + 2.6), 0.18);               // feed line stub toward the tanks
+    b.beam("steel", v(cx, Y + 0.35, cz + 0.85), v(cx, CY, cz + 0.85), 0.18); b.beam("steel", v(cx, CY, cz + 0.85), v(cx, CY, cz + 1.1), 0.18);   // centrate drops through the deck
     b.label("CENTRIFUGE " + n, cx - 0.2, Y + 2.3, cz - 1.25, 2.4, 0.5, Math.PI, "#233a52", "#ffd24a", 46);
     // solids chute straight down into the solids tank below
     for (const [x0, z0, x1, z1] of [[cx + 2.0, cz - 0.3, cx + 2.55, cz - 0.24], [cx + 2.0, cz + 0.24, cx + 2.55, cz + 0.3], [cx + 2.0, cz - 0.3, cx + 2.06, cz + 0.3], [cx + 2.49, cz - 0.3, cx + 2.55, cz + 0.3]] as number[][]) b.slab("steel", x0, 1.55, z0, x1, Y + 1.0, z1);
@@ -692,12 +693,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     // the solids heap under the chute is visible through the chute throat
     b.cyl("cuttings", cx + 2.28, 1.62, cz, 0.45, 0.14, { tess: 10, dia2: 0.3 });
   };
-  centri(-17.0, 1); centri(-8.5, 2);
+  centri(-27.0, 1); centri(-37.0, 2);
   // centrate lines run level at the height of the active tanks and go into their back walls
-  const CY = 2.4;
-  b.beam("steel", v(-8.5, CY, -32.9), v(-8.5, CY, -26.3), 0.18);
-  b.beam("steel", v(-17.0, CY, -32.9), v(-17.0, CY, -31.1), 0.18); b.beam("steel", v(-17.0, CY, -31.1), v(-9.7, CY, -31.1), 0.18); b.beam("steel", v(-9.7, CY, -31.1), v(-9.7, CY, -26.3), 0.18);
-  for (const [sx, sz] of [[-17.0, -31.1], [-9.7, -31.1], [-9.7, -28.5], [-8.5, -28.5]]) b.slab("dsteel", sx - 0.06, 0, sz - 0.06, sx + 0.06, CY - 0.1, sz + 0.06);
+  const CY2 = 2.4;
+  b.beam("steel", v(-27.0, CY2, -22.3), v(-27.0, CY2, -20.5), 0.18); b.beam("steel", v(-37.0, CY2, -22.3), v(-37.0, CY2, -20.5), 0.18);
+  b.beam("steel", v(-37.0, CY2, -20.5), v(-17.95, CY2, -20.5), 0.18);                            // one centrate header straight into the west wall of the first pit
+  for (const px of [-37.0, -32.0, -27.0, -23.5, -19.5]) b.slab("dsteel", px - 0.06, 0, -20.56, px + 0.06, CY2 - 0.1, -20.44);
 
   // shale-shaker spot stays on the first pit roof
   spots.shakers = v(-13.7, 4.0, -19.9);
@@ -830,6 +831,17 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     for (let z = -20; z > -58; z -= 4) b.slab("dsteel", -22.1, 0, z - 0.1, -21.9, 0.5, z + 0.1);
     for (let x = -13; x > -22; x -= 3.4) b.slab("dsteel", x - 0.1, 0, -16.5, x + 0.1, 0.5, -16.3);
     b.label("FLARE LINE", -22.3, 1.3, -38, 2.2, 0.4, -Math.PI / 2, "#7a1a14", "#ffffff", 36);
+    // drive-over ramps where the low lines cross the lease: a wedge up, a plateau over the pipe, a wedge down
+    const cross = (X: number, Z: number) => {
+      b.ramp("dsteel", X, 3.0, Z - 1.9, 0, Z - 0.55, 0.8, 0.08); b.ramp("dsteel", X, 3.0, Z + 1.9, 0, Z + 0.55, 0.8, 0.08);
+      b.slab("yellow", X - 1.5, 0.74, Z - 0.55, X + 1.5, 0.82, Z + 0.55);
+      for (const sx of [-1.4, 1.4]) { b.slab("black", X + sx - 0.05, 0.82, Z - 0.5, X + sx + 0.05, 0.84, Z + 0.5); }
+    };
+    for (const X of [-16, -4, 8, 18]) cross(X, -16.4);                                            // flowline / flare line, crossing north-south
+    b.rot = RYAW;                                                                                // the other lines run north-south, so their ramps cross east-west
+    for (const Z of [-30, -44, -57]) cross(Z, 22);                                              // flare line at x = -22   (local x = world z, local z = -world x)
+    for (const Z of [-34, -42, -50]) cross(Z, -1.7);                                            // frac transfer line at x = 1.7
+    b.rot = 0;
   }
   spots.bop = v(-5.2, 2.5, 0);
 

@@ -238,6 +238,7 @@ export class Human {
     bone.computeWorldMatrix(true);
   }
 
+  private chSatWait = 0;
   private animateChar(dt: number, speed: number) {
     const c = this.ch!;
     const next = this.seated ? "sit" : speed < 0.15 ? "idle" : speed < 4.4 ? "walk" : "run";
@@ -248,11 +249,12 @@ export class Human {
       this.chState = next;
       const g = grp[next]; g?.start(true, 1, g.from, g.to, false);
       if (next === "idle" && !c.idle && c.walk) { c.walk.start(true); c.walk.goToFrame(c.walk.from); c.walk.pause(); }
-      if (next === "sit") { g?.goToFrame(g.from); g?.pause(); this.chSat = false; }
+      if (next === "sit") { g?.goToFrame(g.from); g?.pause(); this.chSat = false; this.chSatWait = 3; }
     }
     if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.6, Math.min(1.5, speed / 2.6));
     if (next === "run" && grp.run) grp.run.speedRatio = Math.max(0.7, speed / 5.2);
-    if (next === "sit" && !this.chSat) {
+    // wait a few frames before aiming the limbs: the bones only catch up with a freshly set body rotation after a render, and aiming off stale bone matrices left the legs pointing backward
+    if (next === "sit" && !this.chSat && this.chSatWait-- <= 0) {
       // freeze the idle pose, then aim each limb segment in world space (bone axes differ between rigs, so no hard-coded axes):
       // thighs point forward, shins straight down, upper arms forward-down, forearms forward
       this.root.computeWorldMatrix(true);

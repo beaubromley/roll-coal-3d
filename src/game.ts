@@ -1222,6 +1222,7 @@ export class Game {
     this.ui.drawMap(p.pos.x, p.pos.z, p.yaw, markers.map((m) => ({ x: m.pos.x, z: m.pos.z, color: m.color })));
     const target = markers[0]?.pos ?? null; void target;
 
+    if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(`Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
     // district banner
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }

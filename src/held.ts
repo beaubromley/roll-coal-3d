@@ -110,7 +110,8 @@ export class Held {
       root.position.set(0.17, -0.15, 0.4); root.rotation.set(-0.45, -0.3, 0.05); root.scaling.setAll(0.62);
     } else {
       root.parent = this.player.body.elbowR;
-      root.position.set(0, -0.31, 0.07); root.rotation.set(-1.25, 0, 0); root.scaling.setAll(1.0);
+      // (the pole points out from the hand along the forearm's forward side; everything else lies in the palm)
+      root.position.set(0, kind === "rod" ? -0.29 : -0.31, kind === "rod" ? 0.03 : 0.07); root.rotation.set(kind === "rod" ? -0.15 : -1.25, 0, 0); root.scaling.setAll(1.0);
     }
     const f = fpv;
     if (kind === "phone") {

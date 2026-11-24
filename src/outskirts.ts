@@ -320,7 +320,7 @@ export class Outskirts {
   // ---------------------------------------------------------------------------------------------- the taco truck
   private taco(b: Builder) {
     const { x, z } = TACO;
-    b.slab("tacowhite", x - 1.2, 0.9, z - 2.7, x + 1.2, 3.4, z + 2.7, true); b.slab("tacored", x - 1.22, 0.9, z - 2.7, x + 1.22, 1.5, z + 2.7);       // body with a red skirt
+    b.slab("tacowhite", x - 1.2, 0.9, z - 2.7, x + 1.2, 3.4, z + 2.7, true); b.slab("tacored", x - 1.22, 0.9, z - 2.73, x + 1.22, 1.5, z + 2.73);       // body with a red skirt
     b.slab("tacored", x - 1.1, 0.9, z + 2.7, x + 1.1, 2.7, z + 4.6, true); b.slab("glassd", x - 1.0, 1.7, z + 4.58, x + 1.0, 2.55, z + 4.64);       // cab
     b.slab("steel", x - 1.25, 0.8, z - 2.5, x + 1.25, 0.95, z + 4.7);
     for (const wx of [-1.3, 1.3]) for (const wz of [-1.6, 1.4, 3.8]) b.cyl("black", x + wx, 0.5, z + wz, 1.0, 0.36, { axis: "x", tess: 14 });
@@ -371,7 +371,7 @@ export class Outskirts {
       if (n >= 6 && cdOk("skipgain", 20)) g.gain(0, 2); } });
     void fishN;
     out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Pick up the fishing pole", r: 3.0, ok: () => !this.poleOwned, act: () => {
-      this.poleOwned = true; this.pole.setEnabled(false); g.held.owned.add("rod"); g.held.equip("rod"); g.sfx.good();
+      this.givePole(); g.held.equip("rod"); g.sfx.good(); g.save();
       g.ui.toast("FISHING POLE", "Face the pond and click to cast. When the bobber dips, click again to set the hook. Scroll or Q to put it away."); } });
     out.push({ pos: () => v(POND.x + POND.rx - 14, 1.7, POND.z), label: () => "Fishing spot", r: 3.4, act: () => {
       g.sfx.click(); g.ui.toast("FISHING", this.poleOwned ? "Hold the pole (scroll or Q), face the water and click to cast." : "You need a pole. There's one leaning by the chair on the dock."); } });
@@ -403,6 +403,10 @@ export class Outskirts {
     return out;
   }
 
+  /** you have the pole: take it off the dock and into your items (also used when a save is loaded) */
+  givePole() { this.poleOwned = true; this.pole.setEnabled(false); this.g.held.owned.add("rod"); }
+  fishSave() { return { pole: this.poleOwned, caught: this.fish.caught, best: this.fish.best }; }
+  fishLoad(d: { pole?: boolean; caught?: number; best?: number } | undefined) { if (!d) return; if (d.pole) this.givePole(); this.fish.caught = d.caught ?? 0; this.fish.best = d.best ?? 0; }
   /** left click with the fishing pole: cast, set the hook on a bite, or reel in */
   fishClick(): [string, string] | null {
     const g = this.g, p = g.player, f = this.fish;

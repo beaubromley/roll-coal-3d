@@ -1035,7 +1035,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // safety/change room + water frac tanks
   // the safety trailer: you can walk in (the stand-down huddle happens in here), with benches, a whiteboard and a steps-and-door on the camp side
   b.room({ x0: 37, z0: 20, x1: 43, z1: 28, y0: 0.7, h: 2.7, wall: "trailer", roof: "dsteel", floor: "dsteel", door: { side: "-x", c: 24, w: 1.1 } });
-  b.slab("steel", 36.9, 0, 20, 43.1, 0.7, 28);
+  b.slab("steel", 36.9, 0, 20, 43.1, 0.6, 28);
   b.slab("steel", 35.5, 0, 23.1, 36.2, 0.35, 24.9, true); b.slab("steel", 36.2, 0, 23.1, 36.95, 0.7, 24.9, true);
   b.label("SAFETY", 36.85, 3.8, 24, 2.4, 0.6, -Math.PI / 2, "#1d5a30", "#ffffff", 64);
   for (const bz of [20.3, 27.3]) b.slab("wood", 37.2, 0.7, bz, 42.8, 1.15, bz + 0.5, true);               // benches along the long walls
@@ -1102,7 +1102,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // light towers
   for (const [x, z] of [[-28, 32], [28, 46], [-30, -34], [30, -38], [-12, 62]]) {
-    if (kit) { kit.place("lighttower", x, 0, z, Math.atan2(-x, -z) + Math.PI / 2); b.blocker(x - 0.5, 0, z - 0.5, x + 0.5, 2.0, z + 0.5); }
+    if (kit) {
+      const phi = Math.atan2(-x, -z) + Math.PI / 2;
+      kit.place("lighttower", x, 0, z, phi); b.blocker(x - 0.5, 0, z - 0.5, x + 0.5, 2.0, z + 0.5);
+      // the model's four stabilizer pads sit 16 cm below the ends of their arms with nothing between: a short post joins each pad to its arm
+      for (const al of [2.586, 3.698, 5.727, 6.839]) { const ang = al - phi; b.cyl("dsteel", x + Math.cos(ang) * 2.24, 0.22, z + Math.sin(ang) * 2.24, 0.17, 0.26, { tess: 8 }); }
+    }
     else { b.cyl("dsteel", x, 4.5, z, 0.22, 9, { tess: 6 }); b.slab("lamp", x - 0.9, 9.0, z - 0.15, x + 0.9, 9.35, z + 0.15); }
   }
 

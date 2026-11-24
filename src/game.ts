@@ -831,7 +831,7 @@ export class Game {
       for (const [k, v] of Object.entries(this.flags)) { try { JSON.stringify(v); flags[k] = v; } catch { /* skip things that can't be saved */ } }
       const p = this.player, onFoot = !this.veh.riding;
       localStorage.setItem(Game.SAVE_KEY, JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
-        approval: this.approval, morale: this.morale, incidents: this.incidents, flags, depthLog: this.depthLog, done: [...this.doneIds], realT: this.realT,
+        approval: this.approval, morale: this.morale, incidents: this.incidents, flags, depthLog: this.depthLog, done: [...this.doneIds], realT: this.realT, fishing: this.outskirts.fishSave(),
         ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled(false) : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null }));
     } catch { /* storage full or blocked */ }
   }
@@ -843,6 +843,7 @@ export class Game {
       this.active = null; this.stack = []; this.ui.setMission("", "", "");   // jobs are re-evaluated from the restored state
       this.sim.hold = d.hold ?? null; this.sim.accumDead = !!d.accumDead;
       this.approval = d.approval; this.morale = d.morale; this.incidents = d.incidents; this.flags = d.flags ?? {}; this.realT = d.realT ?? 0;
+      this.outskirts.fishLoad(d.fishing);
       this.doneIds = new Set<string>(d.done ?? []); this.depthLog = d.depthLog ?? [];
       this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));
       this.missionNo = this.doneIds.size;

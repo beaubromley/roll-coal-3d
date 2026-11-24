@@ -27,6 +27,9 @@ export class Finale {
   private freedom: TransformNode | null = null; private freedomUp = false; private freedomV = 0;
   private harry: Human | null = null; private harryFlung = 0;
   private lastDrive = 0;
+  private camPos: Vector3 | null = null;
+  private dust: { mesh: Mesh; mat: StandardMaterial; age: number }[] = [];
+  private dustI = 0; private dustT = 0;
   earth: Mesh | null = null;
 
   constructor(g: any) {
@@ -101,6 +104,13 @@ export class Finale {
     const ramp = MeshBuilder.CreateBox("ramp", { width: 26, height: 1.2, depth: rlen }, sc); ramp.material = mat("#5a544c");
     ramp.rotation.x = -ang; ramp.position.set(ox, this.RAMP_H / 2 - 0.55, oz + this.RAMP0 + rl / 2 + 0.1); ramp.freezeWorldMatrix();
     for (const s of [-1, 1]) { const rail = MeshBuilder.CreateBox("rrail", { width: 0.8, height: 0.9, depth: rlen }, sc); rail.material = mat("#e8b923"); rail.rotation.x = -ang; rail.position.set(ox + s * 12.5, this.RAMP_H / 2 + 0.1, oz + this.RAMP0 + rl / 2); rail.freezeWorldMatrix(); }
+    // painted chevrons down the run-up so the line to the ramp is obvious, and a lit post every 50 m counting down
+    const chev = mat("#000000", "#ffb23a"); chev.disableLighting = true;
+    for (let z = 30; z < this.RAMP0 - 6; z += 14) for (const s of [-1, 1]) { const c = MeshBuilder.CreateBox("chev", { width: 3.2, height: 0.05, depth: 0.7 }, sc); c.material = chev; c.position.set(ox + s * 1.4, 0.03, oz + z); c.rotation.y = s * 0.6; c.isPickable = false; c.freezeWorldMatrix(); }
+    for (const zm of [60, 110, 160, 210]) for (const s of [-1, 1]) {
+      const post = MeshBuilder.CreateCylinder("post", { diameter: 0.5, height: 4, tessellation: 8 }, sc); post.material = mat("#3a3a3a"); post.position.set(ox + s * 14, 2, oz + zm); post.isPickable = false; post.freezeWorldMatrix();
+      const lamp = MeshBuilder.CreateSphere("plamp", { diameter: 1.1, segments: 8 }, sc); lamp.material = chev; lamp.position.set(ox + s * 14, 4.2, oz + zm); lamp.isPickable = false; lamp.freezeWorldMatrix();
+    }
     const sign = MeshBuilder.CreatePlane("rsign", { width: 14, height: 3 }, sc); sign.position.set(ox, 8, oz + this.GAP0 - 8); sign.material = mat("#000000", "#ff7a1a");
     // scattered boulders (kept off the driving line)
     for (let i = 0; i < 160; i++) {
@@ -175,6 +185,12 @@ export class Finale {
       const fm = new StandardMaterial("armfm", sc); fm.disableLighting = true; fm.emissiveColor = new Color3(1, 0.65, 0.2); fm.alpha = 0.9; fm.backFaceCulling = false; fm.fogEnabled = false;
       f.material = fm; f.parent = root; f.rotation.x = Math.PI / 2; f.position.set(s * 1.0, 1.4, -4.8); f.scaling.set(1, 0.0001, 1); f.isPickable = false; this.thrustFlames.push(f);
     }
+    // grey dust puffs thrown up by the wheels
+    this.dust = [];
+    for (let i = 0; i < 28; i++) {
+      const m = new StandardMaterial("dustm", sc); m.diffuseColor = new Color3(0.55, 0.52, 0.5); m.emissiveColor = new Color3(0.2, 0.19, 0.18); m.alpha = 0; m.disableLighting = false; m.specularColor = Color3.Black();
+      const p = MeshBuilder.CreateSphere("dust", { diameter: 1, segments: 6 }, sc); p.material = m; p.isPickable = false; p.setEnabled(false); this.dust.push({ mesh: p, mat: m, age: 9 });
+    }
     root.position.set(ox + 6, 0, oz + 16); root.rotation.y = Math.PI * 0.1;
     this.armPos = v3(ox + 6, 1.4, oz + 16);
     g.colliders.push({ x0: ox + 3.5, x1: ox + 8.5, y0: 0, y1: 3.4, z0: oz + 11, z1: oz + 21 });
@@ -191,7 +207,7 @@ export class Finale {
     const g = this.g, d = this.d;
     g.player.enabled = false; g.player.ride = true; g.player.third = false; g.player.body.root.setEnabled(false); g.player.unlock();
     d.x = this.arm.position.x - this.O.x; d.z = this.arm.position.z - this.O.z; d.y = 0; d.yaw = 0; d.speed = 0; d.vy = 0; d.fuel = 1; d.thrusting = false; d.onRamp = false;
-    this.mode = "drive"; this.hud.style.display = "block"; g.player.lock();
+    this.mode = "drive"; this.camPos = null; this.hud.style.display = "block"; g.player.lock();
     g.ui.toast("ARMADILLO", "W gas · A/D steer · hold SPACE for thrusters in the air");
     g.radio("bear", "Floor it, A.J. There's a canyon up ahead. Hit the ramp fast and light the thrusters!", 9000);
     g.radio("lev", "In Russia, canyon jumps YOU.", 7000);
@@ -203,15 +219,18 @@ export class Finale {
     const steer = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
     const gy = this.groundY(d.z), grounded = d.y <= gy + 0.04 && d.vy <= 0.5 && gy > -50;
     d.thrusting = false;
+    if (!grounded && k.has("Space") && d.fuel > 0) this.shakeAmt = Math.max(this.shakeAmt, 0.06);
     if (grounded) {
       d.y = gy;
-      if (fwd > 0) d.speed += 20 * dt; else if (fwd < 0) d.speed -= (d.speed > 0 ? 34 : 14) * dt; else d.speed *= Math.exp(-0.6 * dt);
+      // a heavy truck: it pulls hard off the line, scrubs speed when you lift, and turns tighter the slower it goes
+      const pull = d.speed < 14 ? 15 : d.speed < 30 ? 11 : 8;
+      if (fwd > 0) d.speed += pull * dt; else if (fwd < 0) d.speed -= (d.speed > 0 ? 30 : 12) * dt; else d.speed *= Math.exp(-0.45 * dt);
       d.speed = Math.max(-9, Math.min(44, d.speed));
-      d.yaw += steer * (0.95 - Math.min(0.6, Math.abs(d.speed) / 60)) * dt * (d.speed >= 0 ? 1 : -1) * Math.min(1, Math.abs(d.speed) / 3);
+      d.yaw += steer * (1.15 - Math.min(0.8, Math.abs(d.speed) / 52)) * dt * (d.speed >= 0 ? 1 : -1) * Math.min(1, Math.abs(d.speed) / 3);
       d.fuel = Math.min(1, d.fuel + 0.6 * dt); d.vy = 0;
     } else {
       d.vy -= 9 * dt;
-      if (k.has("Space") && d.fuel > 0) { d.vy += 13 * dt; d.fuel = Math.max(0, d.fuel - dt / 1.6); d.thrusting = true; }
+      if (k.has("Space") && d.fuel > 0) { d.vy += 17 * dt; d.fuel = Math.max(0, d.fuel - dt / 2.0); d.thrusting = true; }
       d.yaw += steer * 0.35 * dt;
     }
     // leaving the end of the ramp: the slope sets the climb
@@ -232,6 +251,18 @@ export class Finale {
     if (d.z > this.GAP1 && d.vy === 0 && !this.flags_cleared) { this.flags_cleared = true; g.ui.toast("YOU MADE IT", "Across the canyon!"); g.radio("bear", "YEAH! A.J.! That's how you do it!", 7000); g.radio("harry", "I see you, kid! Bring it in!", 7000); }
     this.arm.position.set(this.O.x + d.x, d.y, this.O.z + d.z); this.arm.rotation.y = d.yaw; this.arm.rotation.x = Math.max(-0.5, Math.min(0.5, -d.vy * 0.03));
     const spin = d.speed * dt / 0.8; this.wheels.forEach((w) => { w.rotation.x += spin; });
+    this.dustT += dt;
+    if (grounded && Math.abs(d.speed) > 6 && this.dustT > 0.045) {
+      this.dustT = 0;
+      for (const sx of [-1, 1]) {
+        const p = this.dust[this.dustI++ % this.dust.length]; p.age = 0; p.mesh.setEnabled(true);
+        const bx = Math.sin(d.yaw), bz = Math.cos(d.yaw), rx = Math.cos(d.yaw), rz = -Math.sin(d.yaw);
+        p.mesh.position.set(this.O.x + d.x - bx * 3.4 + rx * sx * 2.1, d.y + 0.5, this.O.z + d.z - bz * 3.4 + rz * sx * 2.1);
+      }
+    }
+    for (const p of this.dust) { if (p.age > 1.4) { if (p.mesh.isEnabled()) p.mesh.setEnabled(false); continue; } p.age += dt; const u = p.age / 1.4; p.mesh.scaling.setAll(1 + u * 4.5); p.mesh.position.y += dt * 1.2; p.mat.alpha = 0.35 * (1 - u); }
+    // suspension: a little roll and bounce on the ground, more with speed
+    if (grounded) { this.arm.position.y += Math.sin(performance.now() * 0.017) * 0.03 * Math.min(1, Math.abs(d.speed) / 30); this.arm.rotation.z = Math.sin(performance.now() * 0.011) * 0.018 * Math.min(1, Math.abs(d.speed) / 30) - steer * Math.min(1, Math.abs(d.speed) / 40) * 0.05; }
     this.thrustFlames.forEach((f) => { const L = d.thrusting ? 3.2 + Math.random() * 1.2 : 0.0001; f.scaling.set(1, L, 1); f.position.z = -4.4 - L / 2; });
     // arrival at Harry's site
     if (d.z >= this.SITE_Z - 24 && d.y <= 0.05) this.stopDrive();
@@ -243,7 +274,8 @@ export class Finale {
     const g = this.g;
     this.mode = "site"; this.arrived = true; this.hud.style.display = "none";
     this.arm.position.set(this.O.x + 8, 0, this.O.z + this.SITE_Z - 16); this.arm.rotation.set(0, Math.PI * 0.2, 0);
-    g.player.ride = false; g.player.body.root.setEnabled(true); g.player.third = true; g.player.enabled = true;
+    g.player.ride = false; g.player.body.root.setEnabled(true); g.player.third = true; g.player.enabled = true; g.player.cam.fov = 0.95; this.camPos = null;
+    for (const p of this.dust) p.mesh.setEnabled(false);
     g.player.teleport(this.O.x + 2, 0.6, this.O.z + this.SITE_Z - 8, Math.PI); g.player.lock();
     g.radio("harry", "A.J.! Thank God. Get on that console and make that hole. Eight hundred feet. Not one foot less.", 10000);
   }
@@ -320,10 +352,13 @@ export class Finale {
     // camera
     const p = g.player, cam = p.cam;
     if (this.mode === "drive") {
-      const d = this.d, back = 17, up = 6.2, dirx = Math.sin(d.yaw), dirz = Math.cos(d.yaw);
-      const tx = this.O.x + d.x, tz = this.O.z + d.z;
-      cam.position.set(tx - dirx * back, d.y + up, tz - dirz * back);
-      cam.setTarget(v3(tx + dirx * 14, d.y + 1.5 + Math.max(0, d.vy) * 0.2, tz + dirz * 14));
+      const d = this.d, sp = Math.abs(d.speed), back = 15 + sp * 0.12, up = 5.4 + Math.max(0, d.y) * 0.15, dirx = Math.sin(d.yaw), dirz = Math.cos(d.yaw);
+      const tx = this.O.x + d.x, tz = this.O.z + d.z, want = v3(tx - dirx * back, d.y + up, tz - dirz * back);
+      if (!this.camPos) this.camPos = want.clone();
+      const k2 = Math.min(1, dt * 7); this.camPos.x += (want.x - this.camPos.x) * k2; this.camPos.y += (want.y - this.camPos.y) * k2; this.camPos.z += (want.z - this.camPos.z) * k2;
+      cam.position.copyFrom(this.camPos);
+      cam.setTarget(v3(tx + dirx * (12 + sp * 0.25), d.y + 1.6 + Math.max(0, d.vy) * 0.25, tz + dirz * (12 + sp * 0.25)));
+      cam.fov += ((0.95 + sp * 0.0045) - cam.fov) * Math.min(1, dt * 3);
       this.hud.innerHTML = `<div style="color:#f4c04a">ARMADILLO</div><div style="font-size:22px">${Math.round(Math.abs(d.speed))} <small style="font-size:11px;color:#9fb4c8">m/s</small></div>`
         + `<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span style="font-size:11px;color:#9fb4c8">THRUSTERS</span><div style="flex:1;height:8px;background:#1b2836"><div style="height:100%;width:${Math.round(d.fuel * 100)}%;background:${d.thrusting ? "#ffb23a" : "#e07010"}"></div></div></div>`
         + `<div style="font-size:11px;color:#9fb4c8;font-weight:600;margin-top:4px">W gas · S brake · A/D steer · hold SPACE in the air for thrusters · ${Math.max(0, Math.round(this.RAMP0 - d.z))} m to the ramp</div>`;

@@ -1254,6 +1254,13 @@ export class Game {
     if (this.sim.s.mode === "casing" && this.started && !this.flags.finish) {
       const cs = this.sim.s.casing; this.ui.setSub((cs.phase === "run" ? "Running casing: " : "Pumping cement: ") + Math.round(cs.progress * 100) + "%");
     }
+    // the White House call: the phone keeps ringing (and Earl keeps nagging) until it is answered
+    if (this.flags.ringing && this.started && !this.ui.panelOpen) {
+      this.flags.ringT = ((this.flags.ringT as number) || 0) + dt;
+      const rt = this.flags.ringT as number, last = (this.flags.ringLast as number) ?? 0;
+      if (rt - last >= 4) { this.flags.ringLast = rt; this.sfx.radio(); }
+      if (rt > 25 && !this.flags.ringNag) { this.flags.ringNag = true; this.radio("earl", "Boss. The phone. In your trailer. It has been ringing for a while.", 9000); }
+    }
     // district banner
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }

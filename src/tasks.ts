@@ -258,7 +258,8 @@ export function defineMissions(g: Game) {
       { text: "Drill to TD (8,500 ft): set weight at the driller's console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.depth >= WELL.td - 0.5 && s.mode === "idle" },
       { text: "Run the casing & cement at the console", at: sy(S.cabin), label: "Driller's console — run casing", r: 3.5, act: () => g.openCabin(), watch: () => s.mode === "casing" || s.mode === "done" },
       { text: "Casing & cement in the hole…", watch: () => s.casing.phase === "done" || s.mode === "done" },
-      { text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, enter: () => { g.sfx.horn(); g.spawnAsteroid(); g.sim.s.paused = true; g.radio("earl", "Phone's ringing in your trailer. Caller ID says… the White House?", 9000); }, act: (done) => {
+      { text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, enter: () => { g.sfx.horn(); g.spawnAsteroid(); g.sim.s.paused = true; g.flags.ringing = true; g.flags.ringT = 0; g.flags.ringLast = 0; g.flags.ringNag = false; g.radio("earl", "Phone's ringing in your trailer. Caller ID says… the White House? Head to the company man trailer, boss.", 11000); }, act: (done0) => {
+        g.flags.ringing = false; const done = () => done0();
         g.say("president", "We are faced with the very gravest of challenges. An asteroid the size of Texas is on a collision course with Earth. NASA's best astronauts can't drill. You're the best Company Man we've got, and you just delivered an 8,500-foot hole under budget-ish.", [
           { label: "Is this covered under the AFE?", cls: "alt", run: () => { g.radio("brent", "It is not. But I'll allow it."); done(); } },
           { label: "Where do I sign?", cls: "green", run: () => { g.radio("earl", "Well, boss. It's been a good tour."); done(); } },

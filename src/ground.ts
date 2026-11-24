@@ -22,7 +22,7 @@ export class Ground {
   private chunks = new Map<number, Chunk>();
   private pool: Chunk[] = [];
   private focusT = 0; private rebuildT = 0;
-  private dirtyChunks = new Set<Chunk>(); private dirtyTiles = new Set<Tile>();
+  private dirtyChunks = new Set<Chunk>(); private dirtyTiles = new Set<Tile>(); private maskDirty = new Set<Tile>();
   /** areas with no ground drawn: under the pad (it has its own mesh) */
   private skip: (x: number, z: number) => boolean;
 
@@ -72,7 +72,6 @@ export class Ground {
     for (const a of [i - 1, i]) for (const b of [j - 1, j]) {
       const ck = key(Math.floor(a / NEAR), Math.floor(b / NEAR)); this.editedChunks.add(ck);
       const ch = this.chunks.get(ck); if (ch && ch.active) { this.markChunk(ch, i, j); }
-      const t = this.tileAt(a, b); if (t) this.dirtyTiles.add(t);
     }
   }
   private markChunk(ch: Chunk, i: number, j: number) {
@@ -147,20 +146,28 @@ export class Ground {
   /** call every frame with the places that need fine detail (the player, and a point ahead of a fast vehicle) */
   update(dt: number, focus: { x: number; z: number }[]) {
     this.focusT -= dt;
-    if (this.focusT <= 0) { this.focusT = 0.2; this.stream(focus); }
+    if (this.focusT <= 0) { this.focusT = 0.2; this.stream(focus, 3); }
+    let n = 0; for (const t of this.maskDirty) { this.applyMask(t); this.maskDirty.delete(t); if (++n >= 3) break; }
     // redraw whatever was dug (throttled)
     this.rebuildT -= dt;
     if (this.rebuildT <= 0 && (this.dirtyChunks.size || this.dirtyTiles.size)) {
       this.rebuildT = 0.1;
       for (const ch of this.dirtyChunks) this.refreshChunk(ch);
       this.dirtyChunks.clear();
-      for (const t of this.dirtyTiles) { const cover = this.tileCovered(t); if (!cover) { this.heights(t.x0, t.z0, t.step, t.n, t.h); this.fill(t.mesh, t.x0, t.z0, t.step, t.n, t.h, null); } }
+      for (const t of this.dirtyTiles) { this.heights(t.x0, t.z0, t.step, t.n, t.h); this.fill(t.mesh, t.x0, t.z0, t.step, t.n, t.h, null); }
       this.dirtyTiles.clear();
     }
   }
-  private tileCovered(t: Tile) { void t; return false; }
 
-  private stream(focus: { x: number; z: number }[]) {
+  /** build everything round the focus straight away (at start-up, or after a teleport) */
+  prime(focus: { x: number; z: number }[]) { this.stream(focus, 999); for (const t of this.maskDirty) this.applyMask(t); this.maskDirty.clear(); }
+  private maskChunk(cx: number, cz: number, v: number) {
+    const t = this.tileAt((cx + 0.5) * NEAR, (cz + 0.5) * NEAR); if (!t || !t.mask) return;
+    const i0 = Math.round((cx * NEAR - t.x0) / t.step), j0 = Math.round((cz * NEAR - t.z0) / t.step), cells = Math.round(NEAR / t.step);
+    for (let j = 0; j < cells; j++) for (let i = 0; i < cells; i++) { const k = (j0 + j) * t.n + i0 + i; if (k >= 0 && k < t.mask.length) t.mask[k] = v; }
+    this.maskDirty.add(t);
+  }
+  private stream(focus: { x: number; z: number }[], maxBuild: number) {
     const R = 112, want = new Map<number, [number, number]>();
     for (const f of focus) {
       for (let cz = Math.floor((f.z - R) / NEAR); cz <= Math.floor((f.z + R) / NEAR); cz++) for (let cx = Math.floor((f.x - R) / NEAR); cx <= Math.floor((f.x + R) / NEAR); cx++) {
@@ -175,16 +182,8 @@ export class Ground {
     for (const [k, ch] of this.chunks) if (!want.has(k)) { this.release(ch); this.chunks.delete(k); }
     // build at most two new ones per pass (nearest first would be nicer, but order of discovery is fine)
     let built = 0;
-    for (const [k, [cx, cz]] of want) { if (this.chunks.has(k)) continue; if (built >= 2) break; this.chunks.set(k, this.acquire(cx, cz)); built++; }
-    // far tiles: hide the cells that a near chunk covers
-    const touched = new Set<Tile>();
-    for (const t of this.tiles) { if (!t.mask) continue; let changed = false; for (let j = 0; j < t.n; j++) for (let i = 0; i < t.n; i++) {
-      const x = t.x0 + (i + 0.5) * t.step, z = t.z0 + (j + 0.5) * t.step, covered = this.chunks.has(key(Math.floor(x / NEAR), Math.floor(z / NEAR))) ? 1 : 0;
-      if (t.mask[j * t.n + i] !== covered) { t.mask[j * t.n + i] = covered; changed = true; }
-    } if (changed) touched.add(t); }
-    for (const t of touched) { if (!this.nearTile(t, focus)) continue; this.applyMask(t); }
+    for (const [k, [cx, cz]] of want) { if (this.chunks.has(k)) continue; if (built >= maxBuild) break; this.chunks.set(k, this.acquire(cx, cz)); built++; }
   }
-  private nearTile(t: Tile, focus: { x: number; z: number }[]) { void t; void focus; return true; }
 
   private acquire(cx: number, cz: number): Chunk {
     let ch = this.pool.pop();
@@ -193,10 +192,10 @@ export class Ground {
     ch.cx = cx; ch.cz = cz; ch.active = true; ch.dirty = false; ch.lo = n; ch.hi = 0; ch.loZ = n; ch.hiZ = 0;
     this.heights(x0, z0, 1, n, ch.h); this.fill(ch.mesh, x0, z0, 1, n, ch.h, null); this.setUV(ch.mesh, x0, z0, 1, n);
     ch.mesh.position.y = 0.012;   // a hair above the far tiles where the two meet
-    ch.mesh.setEnabled(true);
+    ch.mesh.setEnabled(true); this.maskChunk(cx, cz, 1);
     return ch;
   }
-  private release(ch: Chunk) { ch.active = false; ch.mesh.setEnabled(false); this.pool.push(ch); this.dirtyChunks.delete(ch); const t = this.tileAt((ch.cx + 0.5) * NEAR, (ch.cz + 0.5) * NEAR); if (t) this.dirtyTiles.add(t); }
+  private release(ch: Chunk) { this.maskChunk(ch.cx, ch.cz, 0); ch.active = false; ch.mesh.setEnabled(false); this.pool.push(ch); this.dirtyChunks.delete(ch); const t = this.tileAt((ch.cx + 0.5) * NEAR, (ch.cz + 0.5) * NEAR); if (t) this.dirtyTiles.add(t); }
   private refreshChunk(ch: Chunk) {
     if (!ch.active) return;
     const n = NEAR_N, x0 = ch.cx * NEAR, z0 = ch.cz * NEAR, W = n + 3;

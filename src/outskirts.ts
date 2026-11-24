@@ -1,6 +1,7 @@
 import { ParticleSystem, Color4, DynamicTexture, Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
 import { Builder, type AABB } from "./builder";
 import { Wildlife, SPECIES_NAME, type Species } from "./wildlife";
+import { Ground } from "./ground";
 import { Human } from "./npcs";
 import type { Game } from "./game";
 
@@ -21,8 +22,6 @@ const HILLS: [number, number, number, number][] = [
 const MESAS: [number, number, number, number, number, number][] = [[305, 12, 26, 34, 12, 0.07], [296, 155, 30, 24, 15, 0.07], [292, 280, 26, 28, 13, 0.07], [95, -165, 24, 20, 11, 0.07]];
 const POND = { x: -175, z: 165, rx: 68, rz: 52 };
 const POND_DEPTH = 6, WATER_Y = -0.3;
-/** the dig site: a 20 m square of real, diggable ground by the gate road (the backhoe works here) */
-const DIG = { x0: -45, z0: 76, n: 20 };
 /** the BOP cellar at the wellhead: 10 ft across, 6 ft deep */
 const CELL_R = 1.525, CELL_D = 1.83, CELL_H = 6;
 /** the deep hole, out toward the middle of the pond: the rare catches live here */
@@ -45,7 +44,7 @@ export class Outskirts {
   private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh; private poleOwned = false;
   private floorBots: { h: Human; x: number; z: number; ph: number; ang: number }[] = [];
   private smoke: { ps: ParticleSystem; t: number; burst: number }[] = [];
-  private digH = new Float32Array((DIG.n + 1) * (DIG.n + 1)); private digMesh!: Mesh; private digDirty = false;
+  ground!: Ground; private blockedCells = new Set<number>(); private lastP: { x: number; z: number } | null = null;
   wild!: Wildlife;
   private hankSt = { mode: "porch" as "porch" | "chase", shotT: 1.2, yellT: 2, flinchT: 0, y: 0.55 };
   private fx!: { tracer: Mesh; flash: Mesh; puff: Mesh; tT: number; fT: number; pT: number };
@@ -54,10 +53,8 @@ export class Outskirts {
   private seen = new Set<string>();
   private cd: Record<string, number> = {};
 
-  /** the ground height at (x, z): flat, except across the hills */
-  terrain = (x: number, z: number): number => {
-    if (x * x + z * z < CELL_R * CELL_R) return -CELL_D;   // the cellar
-    if (x >= DIG.x0 && x <= DIG.x0 + DIG.n && z >= DIG.z0 && z <= DIG.z0 + DIG.n) return this.digHeight(x, z);   // the dig site
+  /** the ground before anybody has dug: flat, except for the hills, the mesas and the pond basin */
+  baseTerrain = (x: number, z: number): number => {
     {   // the pond is a real basin, with a deep hole near the middle
       const pu = ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2;
       if (pu < 1) { let d = POND_DEPTH * (1 - pu); const dd = ((x - DEEP.x) ** 2 + (z - DEEP.z) ** 2) / (DEEP.r * DEEP.r); if (dd < 1) d += DEEP.extra * Math.pow(1 - dd, 1.4); return -d; }
@@ -67,6 +64,11 @@ export class Outskirts {
     for (const [hx, hz, H, s] of HILLS) { const dx = x - hx, dz = z - hz; h += H * Math.exp(-(dx * dx + dz * dz) / (2 * s * s)); }
     for (const [mx, mz, rx, rz, H, ed] of MESAS) { const u = Math.pow(Math.pow(Math.abs(x - mx) / rx, 3) + Math.pow(Math.abs(z - mz) / rz, 3), 1 / 3); if (u < 1 + ed) { const k = Math.max(0, Math.min(1, (1 + ed - u) / (2 * ed))); h += H * k * k * (3 - 2 * k) * (0.96 + 0.04 * Math.sin(x * 0.4) * Math.cos(z * 0.35)); } }
     return h < 0.04 ? 0 : h;
+  };
+  /** the ground height at (x, z): the base ground plus whatever the backhoe has done to it */
+  terrain = (x: number, z: number): number => {
+    if (x * x + z * z < CELL_R * CELL_R) return -CELL_D;   // the cellar
+    return this.baseTerrain(x, z) + (this.ground ? this.ground.delta(x, z) : 0);
   };
 
   constructor(g: Game) {
@@ -80,7 +82,6 @@ export class Outskirts {
     for (const [k, c, o] of mats) b.defMat(k, c, o ?? {});
     this.hills(b);
     this.kickers(b);
-    this.digSite(b);
     this.pond(b);
     this.farm(b);
     this.silos(b);
@@ -91,7 +92,11 @@ export class Outskirts {
     this.cattle();
     this.skyline();
     this.cellar();
-    this.digZone();
+    // the open ground is one diggable height field now (the old flat plane sinks out of the way underneath; the pad keeps its own mesh)
+    { const og = sc.getMeshByName("ground"); if (og) { og.position.y = -14; og.receiveShadows = false; }
+      this.ground = new Ground(sc, this.baseTerrain, sc.getMaterialByName("ground"), (x, z) => Math.abs(x) <= 60 && z >= -65 && z <= 65);
+      this.buildBlocked([...g.rig.colliders, ...this.colliders]);
+      this.ground.prime([{ x: 0, z: 112 }, { x: 0, z: 0 }]); }
     this.generatorSmoke();
     this.hankFx();
     this.wild = new Wildlife(g, this.scene, this.terrain, (k) => this.onHunt(k));
@@ -305,19 +310,7 @@ export class Outskirts {
 
   // ---------------------------------------------------------------------------------------------- hills
   private hills(b: Builder) {
-    const sc = this.scene, W = 340, D = 600, cx = 205, cz = 52;
-    const m = MeshBuilder.CreateGround("hills", { width: W, height: D, subdivisionsX: 124, subdivisionsY: 218, updatable: true }, sc);
-    m.position.set(cx, 0.03, cz);
-    const pos = m.getVerticesData(VertexBuffer.PositionKind)!, uv = new Float32Array((pos.length / 3) * 2);
-    for (let i = 0; i < pos.length / 3; i++) {
-      const x = pos[i * 3] + cx, z = pos[i * 3 + 2] + cz;
-      pos[i * 3 + 1] = this.terrain(x, z);
-      uv[i * 2] = (x + 3000) / 6000; uv[i * 2 + 1] = (z + 3000) / 6000;      // the same world-space texture as the plain ground, so there is no seam
-    }
-    m.updateVerticesData(VertexBuffer.PositionKind, pos); m.setVerticesData(VertexBuffer.UVKind, uv);
-    const nrm: number[] = []; VertexData.ComputeNormals(pos, m.getIndices()!, nrm); m.updateVerticesData(VertexBuffer.NormalKind, nrm);
-    const gm = sc.getMaterialByName("ground"); if (gm) m.material = gm;
-    m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
+    const sc = this.scene;
     // sagebrush on the slopes
     const sage = MeshBuilder.CreateSphere("sage", { diameter: 1, segments: 5 }, sc); sage.material = b.getMat("sage"); sage.setEnabled(false);
     for (let i = 0; i < 260; i++) {
@@ -326,65 +319,28 @@ export class Outskirts {
     }
   }
 
-  // ---------------------------------------------------------------------------------------------- the dig site
-  /** signs and posts round the dig site */
-  private digSite(b: Builder) {
-    const x1 = DIG.x0 + DIG.n, z1 = DIG.z0 + DIG.n, cx = DIG.x0 + DIG.n / 2;
-    for (const [px, pz] of [[DIG.x0, DIG.z0], [x1, DIG.z0], [DIG.x0, z1], [x1, z1]]) { b.slab("dwood", px - 0.08, 0, pz - 0.08, px + 0.08, 1.4, pz + 0.08); b.cyl("kickyellow", px, 1.5, pz, 0.28, 0.2, { tess: 8 }); }
-    b.label("DIG SITE\nBACKHOE ONLY · BE NICE TO THE GROUND", cx, 2.2, DIG.z0 - 0.4, 4.4, 1.2, Math.PI, "#7a4a1a", "#ffe9a8", 30);
-    b.slab("dwood", cx - 2.3, 0, DIG.z0 - 0.5, cx - 2.2, 2.2, DIG.z0 - 0.4); b.slab("dwood", cx + 2.2, 0, DIG.z0 - 0.5, cx + 2.3, 2.2, DIG.z0 - 0.4);
-  }
-  /** bilinear height of the diggable ground */
-  digHeight(x: number, z: number): number {
-    const n = DIG.n, u = Math.max(0, Math.min(n - 0.001, x - DIG.x0)), v = Math.max(0, Math.min(n - 0.001, z - DIG.z0)), i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j, W = n + 1;
-    const h = this.digH, a = h[j * W + i], b = h[j * W + i + 1], c = h[(j + 1) * W + i], d = h[(j + 1) * W + i + 1];
-    return (a * (1 - fu) + b * fu) * (1 - fv) + (c * (1 - fu) + d * fu) * fv;
-  }
-  inDig(x: number, z: number) { return x >= DIG.x0 + 0.8 && x <= DIG.x0 + DIG.n - 0.8 && z >= DIG.z0 + 0.8 && z <= DIG.z0 + DIG.n - 0.8; }
-  /** the bucket edge is at (tx, ty, tz): scrape the ground down to that level round it, and return how much dirt came out (cubic metres, roughly) */
-  digAt(tx: number, ty: number, tz: number, dt: number): number {
-    const W = DIG.n + 1, R = 1.5; let removed = 0;
-    for (let j = Math.max(1, Math.floor(tz - DIG.z0 - R)); j <= Math.min(DIG.n - 1, Math.ceil(tz - DIG.z0 + R)); j++) for (let i = Math.max(1, Math.floor(tx - DIG.x0 - R)); i <= Math.min(DIG.n - 1, Math.ceil(tx - DIG.x0 + R)); i++) {
-      const d = Math.hypot(i + DIG.x0 - tx, j + DIG.z0 - tz); if (d > R) continue;
-      const k = j * W + i, h = this.digH[k], target = Math.max(-4.2, ty - 0.1);
-      if (h > target) { const dl = Math.min(h - target, 5 * dt * (1 - d / R)); this.digH[k] = h - dl; removed += dl; }
+  // ---------------------------------------------------------------------------------------------- digging
+  /** cells (2 m) within 2.5 m of anything solid that exists at start-up: the backhoe may not dig there */
+  private buildBlocked(cols: AABB[]) {
+    for (const c of cols) {
+      if (c.y1 - c.y0 < 0.4 && !c.ramp) continue;
+      const x0 = Math.floor((c.x0 - 2.5) / 2), x1 = Math.floor((c.x1 + 2.5) / 2), z0 = Math.floor((c.z0 - 2.5) / 2), z1 = Math.floor((c.z1 + 2.5) / 2);
+      if ((x1 - x0) * (z1 - z0) > 4000) continue;
+      for (let cz = z0; cz <= z1; cz++) for (let cx = x0; cx <= x1; cx++) this.blockedCells.add(cx * 100003 + cz);
     }
-    if (removed > 0) this.digDirty = true;
-    return removed;
   }
-  /** dump a bucketful: raise a mound round (tx, tz) */
-  pileAt(tx: number, tz: number, amt: number) {
-    const W = DIG.n + 1, R = 1.9; const cells: [number, number][] = []; let sum = 0;
-    for (let j = Math.max(1, Math.floor(tz - DIG.z0 - R)); j <= Math.min(DIG.n - 1, Math.ceil(tz - DIG.z0 + R)); j++) for (let i = Math.max(1, Math.floor(tx - DIG.x0 - R)); i <= Math.min(DIG.n - 1, Math.ceil(tx - DIG.x0 + R)); i++) {
-      const d = Math.hypot(i + DIG.x0 - tx, j + DIG.z0 - tz); if (d > R) continue; const w = 1 - d / R; cells.push([j * W + i, w]); sum += w;
-    }
-    if (!sum) return;
-    for (const [k, w] of cells) this.digH[k] = Math.min(4.2, this.digH[k] + (amt * w) / sum);
-    this.digDirty = true;
+  /** may the backhoe dig at this vertex? Not the pad, the lease road, the cellar, the water, anything solid, or past the cliffs */
+  canDig(x: number, z: number): boolean {
+    if (Math.abs(x) <= 62 && z >= -67 && z <= 67) return false;
+    if (Math.abs(x) < 6 && z > 36) return false;
+    if (((x - POND.x) / (POND.rx * 1.12)) ** 2 + ((z - POND.z) / (POND.rz * 1.12)) ** 2 < 1) return false;
+    if (Math.hypot(x, z) > 560) return false;
+    return !this.blockedCells.has(Math.floor(x / 2) * 100003 + Math.floor(z / 2));
   }
-  /** the diggable patch: a 1 m grid mesh that is redrawn as the ground is dug away and piled up (darker soil where it is deep) */
-  private digZone() {
-    const sc = this.scene, n = DIG.n;
-    const m = MeshBuilder.CreateGround("digzone", { width: n, height: n, subdivisions: n, updatable: true }, sc);
-    m.position.set(DIG.x0 + n / 2, 0.005, DIG.z0 + n / 2);
-    const gm = sc.getMaterialByName("ground"); if (gm) m.material = gm; m.receiveShadows = true; m.isPickable = false;
-    const pos = m.getVerticesData(VertexBuffer.PositionKind)!, uv = new Float32Array((pos.length / 3) * 2);
-    for (let i = 0; i < pos.length / 3; i++) { uv[i * 2] = (pos[i * 3] + m.position.x + 3000) / 6000; uv[i * 2 + 1] = (pos[i * 3 + 2] + m.position.z + 3000) / 6000; }
-    m.setVerticesData(VertexBuffer.UVKind, uv); m.setVerticesData(VertexBuffer.ColorKind, new Float32Array((pos.length / 3) * 4).fill(1));
-    this.digMesh = m; this.refreshDig();
-  }
-  private refreshDig() {
-    const m = this.digMesh, n = DIG.n, W = n + 1, pos = m.getVerticesData(VertexBuffer.PositionKind)!, col = m.getVerticesData(VertexBuffer.ColorKind)!;
-    for (let k = 0; k < pos.length / 3; k++) {
-      const i = Math.round(pos[k * 3] + n / 2), j = Math.round(pos[k * 3 + 2] + n / 2), h = this.digH[j * W + i];
-      pos[k * 3 + 1] = h;
-      const dark = h < 0 ? Math.min(1, -h / 2.2) : 0, light = h > 0 ? Math.min(1, h / 3) : 0;
-      col[k * 4] = 1 - dark * 0.5 + light * 0.05; col[k * 4 + 1] = 1 - dark * 0.58 + light * 0.02; col[k * 4 + 2] = 1 - dark * 0.62 - light * 0.05; col[k * 4 + 3] = 1;
-    }
-    m.updateVerticesData(VertexBuffer.PositionKind, pos); m.updateVerticesData(VertexBuffer.ColorKind, col);
-    const nrm: number[] = []; VertexData.ComputeNormals(pos, m.getIndices()!, nrm); m.updateVerticesData(VertexBuffer.NormalKind, nrm);
-    m.refreshBoundingInfo(); this.digDirty = false;
-  }
+  digHeight(x: number, z: number): number { return this.terrain(x, z); }
+  inDig(x: number, z: number) { return this.canDig(x, z); }
+  digAt(tx: number, ty: number, tz: number, dt: number): number { return this.ground.dig(tx, ty, tz, dt, (i, j) => this.canDig(i, j)); }
+  pileAt(tx: number, tz: number, amt: number) { this.ground.pile(tx, tz, amt, (i, j) => this.canDig(i, j)); }
 
   // ---------------------------------------------------------------------------------------------- kickers
   /** big steel-and-dirt launch ramps in the pasture, built to be hit at speed heading north: you get air, and the cattle are right where you land */
@@ -403,34 +359,8 @@ export class Outskirts {
 
   // ---------------------------------------------------------------------------------------------- pond
   private pond(b: Builder) {
-    const sc = this.scene, { x, z, rx, rz } = POND, M = 7;
-    // 1. the ground gets a hole where the pond goes: the big plane is replaced by four pieces round the pond's bounding box, and a sculpted basin fills it
-    const bx0 = x - rx - M, bx1 = x + rx + M, bz0 = z - rz - M, bz1 = z + rz + M;
-    sc.getMeshByName("ground")?.setEnabled(false);
-    const gmat = sc.getMaterialByName("ground");
-    const piece = (x0: number, z0: number, x1: number, z1: number) => {
-      const m = MeshBuilder.CreateGround("ground", { width: x1 - x0, height: z1 - z0, subdivisions: 1, updatable: true }, sc); m.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
-      const pos = m.getVerticesData(VertexBuffer.PositionKind)!, uv = new Float32Array((pos.length / 3) * 2);
-      for (let i = 0; i < pos.length / 3; i++) { uv[i * 2] = (pos[i * 3] + m.position.x + 3000) / 6000; uv[i * 2 + 1] = (pos[i * 3 + 2] + m.position.z + 3000) / 6000; }
-      m.setVerticesData(VertexBuffer.UVKind, uv); if (gmat) m.material = gmat; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
-    };
-    piece(-3000, -3000, bx0, 3000); piece(bx0, bz1, bx1, 3000); piece(bx0, -3000, bx1, bz0);
-    // the strip that holds the rig has a round hole cut in it for the cellar: four pieces round a square, and a ring that squares up the circle
-    piece(bx1, -3000, DIG.x0, 3000); piece(DIG.x0 + DIG.n, -3000, -CELL_H, 3000); piece(DIG.x0, -3000, DIG.x0 + DIG.n, DIG.z0); piece(DIG.x0, DIG.z0 + DIG.n, DIG.x0 + DIG.n, 3000); piece(CELL_H, -3000, 3000, 3000); piece(-CELL_H, CELL_H, CELL_H, 3000); piece(-CELL_H, -3000, CELL_H, -CELL_H);
-    if (gmat) this.holeRing(0, gmat, (px, pz) => [(px + 3000) / 6000, (pz + 3000) / 6000]);
-    const N = 110, bed = MeshBuilder.CreateGround("pondbed", { width: bx1 - bx0, height: bz1 - bz0, subdivisions: N, updatable: true }, sc);
-    bed.position.set((bx0 + bx1) / 2, 0, (bz0 + bz1) / 2);
-    const bp = bed.getVerticesData(VertexBuffer.PositionKind)!, col = new Float32Array((bp.length / 3) * 4);
-    const sand = [0.71, 0.62, 0.47], mud = [0.2, 0.18, 0.14], smooth = (k: number) => { k = Math.max(0, Math.min(1, k)); return k * k * (3 - 2 * k); };
-    for (let i = 0; i < bp.length / 3; i++) {
-      const wx = bp[i * 3] + bed.position.x, wz = bp[i * 3 + 2] + bed.position.z, h = this.terrain(wx, wz);
-      bp[i * 3 + 1] = h;
-      const k = smooth(-h / POND_DEPTH * 2.2) , nz = (Math.sin(wx * 1.3) + Math.sin(wz * 1.7)) * 0.012;
-      for (let c = 0; c < 3; c++) col[i * 4 + c] = sand[c] + (mud[c] - sand[c]) * k + nz; col[i * 4 + 3] = 1;
-    }
-    bed.updateVerticesData(VertexBuffer.PositionKind, bp); bed.setVerticesData(VertexBuffer.ColorKind, col);
-    const bn: number[] = []; VertexData.ComputeNormals(bp, bed.getIndices()!, bn); bed.updateVerticesData(VertexBuffer.NormalKind, bn);
-    const bm = new StandardMaterial("pondbedm", sc); bm.specularColor = Color3.Black(); bed.material = bm; bed.receiveShadows = true; bed.isPickable = false; bed.freezeWorldMatrix();
+    const sc = this.scene, { x, z, rx, rz } = POND;
+    // 1. the basin itself is part of the ground height field (see ground.ts); this builds what sits on and in it
     // 2. the water: a lens of translucent teal a little below the bank, so the bed shows through and darkens with depth
     const water = MeshBuilder.CreateDisc("pondwater", { radius: 1, tessellation: 72 }, sc); water.rotation.x = Math.PI / 2; water.scaling.set(rx * 0.985, rz * 0.985, 1); water.position.set(x, WATER_Y, z);
     const wm = new StandardMaterial("pondwaterm", sc); wm.diffuseColor = Color3.FromHexString("#2c6f86"); wm.specularColor = new Color3(0.9, 0.9, 0.9); wm.specularPower = 70; wm.alpha = 0.72; wm.emissiveColor = new Color3(0.03, 0.09, 0.12);
@@ -867,7 +797,11 @@ export class Outskirts {
       f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
     }
     this.updateFishing(dt);
-    if (this.digDirty) this.refreshDig();
+    { // the diggable ground follows the player (and a point ahead when going fast)
+      const lp = this.lastP ?? { x: px, z: pz }, vx = (px - lp.x) / Math.max(dt, 1e-3), vz = (pz - lp.z) / Math.max(dt, 1e-3); this.lastP = { x: px, z: pz };
+      const foc = [{ x: px, z: pz }], sp = Math.hypot(vx, vz); if (sp > 8) { const k = Math.min(60, sp * 1.2) / sp; foc.push({ x: px + vx * k, z: pz + vz * k }); }
+      this.ground.update(dt, foc);
+    }
     { // roll coal
       const near = Math.hypot(px - 25, pz) < 260;
       for (const s of this.smoke) {

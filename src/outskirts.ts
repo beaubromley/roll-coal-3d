@@ -29,7 +29,7 @@ export class Outskirts {
   colliders: AABB[] = [];
   merged: Mesh[] = [];
   private g: Game; private scene: Scene;
-  private cows: { n: TransformNode; x: number; z: number; h: number; sp: number; t: number; flee: number }[] = [];
+  private cows: { n: TransformNode; x: number; z: number; h: number; sp: number; t: number; flee: number; down: number }[] = [];
   private ducks: { m: Mesh; a: number; r: number; w: number }[] = [];
   private guards: { h: Human; x: number; z: number; wp: [number, number][]; i: number }[] = [];
   private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
@@ -403,7 +403,7 @@ export class Outskirts {
       vs.forEach((s, k) => { const ins = s.createInstance("c" + i + "_" + k); ins.parent = n; ins.isPickable = false; });
       const x = rnd(PASTURE.x0, PASTURE.x1), z = rnd(PASTURE.z0, PASTURE.z1), h = rnd(0, 6.28);
       n.position.set(x, 0, z); n.rotation.y = h; n.scaling.setAll(rnd(0.92, 1.12));
-      this.cows.push({ n, x, z, h, sp: 0, t: rnd(0, 5), flee: 0 });
+      this.cows.push({ n, x, z, h, sp: 0, t: rnd(0, 5), flee: 0, down: 0 });
     }
   }
 
@@ -577,6 +577,7 @@ export class Outskirts {
     this.cows.forEach((c, i) => {
       const d = Math.hypot(c.x - px, c.z - pz); if (d < best) { best = d; this.nearCow = i; }
       if (d > 150) return;
+      if (c.down > 0) { c.down -= dt; c.sp = 0; c.n.rotation.z = 1.5; c.n.position.set(c.x, 0.42, c.z); if (c.down <= 0) { c.n.rotation.z = 0; c.n.position.y = 0; c.flee = 0; } return; }
       c.t -= dt;
       if (c.flee > 0) { c.flee -= dt; c.sp = 3.2; }
       else if (c.t <= 0) { c.t = rnd(2, 7); if (Math.random() < 0.55) { c.sp = 0; } else { c.sp = rnd(0.5, 0.9); c.h += rnd(-1.3, 1.3); } }
@@ -584,8 +585,9 @@ export class Outskirts {
       if (nx < PASTURE.x0 || nx > PASTURE.x1 || nz < PASTURE.z0 || nz > PASTURE.z1) c.h += Math.PI * 0.6; else { c.x = nx; c.z = nz; }
       c.n.position.set(c.x, 0, c.z); c.n.rotation.y = c.h;
       if (riding && d < 3.0 && this.vehSpeed() > 4 && ((this.cd["cow"] ?? -99) + 6 < this.t)) {
-        this.cd["cow"] = this.t; c.flee = 3; c.h = Math.atan2(c.x - px, c.z - pz); g.sfx.thud(); g.sim.addCost(1800); g.inc(1, "CATTLE COLLISION");
-        g.radio("hank" as any, "THAT'S MY HEIFER! Send the bill to Houston!", 6500); g.ui.toast("CATTLE COLLISION", "$1,800. The cow is fine. The cow is furious.");
+        // you hit one: it goes down on its side, you lose a lot of speed, and Hank is going to hear about it
+        this.cd["cow"] = this.t; c.down = 75; c.h = Math.atan2(c.x - px, c.z - pz); g.veh.slow(0.4); g.sfx.thud(); g.sim.addCost(1800); g.inc(1, "CATTLE COLLISION");
+        g.radio("hank" as any, "THAT WAS MY BEST ONE!", 6500); g.ui.toast("CATTLE COLLISION", "$1,800. The cow is down. The cow is… also furious.");
       }
     });
     void speed;

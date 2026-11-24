@@ -150,7 +150,7 @@ export class Vehicles {
 
   private buildF250(x: number, z: number, yaw: number): Veh {
     const v = this.blank("f250", "Lifted F-250", "car", x, z, yaw), r = v.root;
-    Object.assign(v, { wheelbase: 5.0, maxFwd: 26, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0, -3.4], camDist: 14, camHeight: 4.6, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
+    Object.assign(v, { wheelbase: 5.0, maxFwd: 40.2, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0, -3.4], camDist: 14, camHeight: 4.6, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
       controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  SPACE handbrake  ·  V camera  ·  E get out" });
     const BODY = "#9c1c16", CH = "#c4c8ce", EXT = 1.5;                            // EXT: a proper long bed
     this.box(v, r, "#22262c", 1.5, 0.28, 5.6 + EXT, 0, 1.05, -EXT / 2);          // frame rails
@@ -438,6 +438,8 @@ export class Vehicles {
     });
   }
   /** apply the backhoe's arm angles and stabilizer position to its pivots */
+  /** knock the speed off whatever you're driving (a cow, a fence, a bad decision) */
+  slow(f: number) { if (this.active) this.active.speed *= f; }
   private poseHoe(v: Veh) {
     const h = v.bh; if (!h) return;
     h.swing.rotation.y = h.swingA; h.boom.rotation.x = -h.boomA; h.stick.rotation.x = h.stickA; h.bucket.rotation.x = h.bucketA;
@@ -733,7 +735,9 @@ export class Vehicles {
     let maxF = v.maxFwd, maxR = v.maxRev;
     if (v.kind === "lift") { const k = 1 - v.lift * 0.75; maxF *= k; maxR *= k; }
     // gas pedal
-    if (gasIn > 0) v.speed += (v.speed < -0.3 ? v.accel * 3 : v.accel) * this.gas * dt;
+    // above 60 mph (26.8 m/s) the big truck pulls harder and harder against the air: acceleration tapers off toward the 90 mph top end
+    const taper = v.id === "f250" && v.speed > 26.8 ? Math.max(0.12, 1 - ((v.speed - 26.8) / 13.4) * 0.88) : 1;
+    if (gasIn > 0) v.speed += (v.speed < -0.3 ? v.accel * 3 : v.accel * taper) * this.gas * dt;
     // brake / reverse pedal: brakes while rolling forward; reverse only after it has been released at a stop
     if (brkIn > 0) {
       if (v.speed > 0.4) { v.speed -= (v.kind === "car" ? 16 : 10) * this.brk * dt; this.revArm = false; }

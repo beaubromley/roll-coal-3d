@@ -9,6 +9,7 @@ import { Human } from "./npcs";
 import { pushOutXZ } from "./builder";
 import { Mini } from "./minigames";
 import { Vehicles } from "./vehicles";
+import { Held } from "./held";
 import { defineMissions } from "./tasks";
 
 export interface Step {
@@ -36,6 +37,7 @@ export class Game {
   started = false;
   approval = 3; morale = 62; incidents = 0;
   interacts: Interactable[] = [];
+  held!: Held;
   queue: Mission[] = [];
   active: { m: Mission; i: number } | null = null;
   stack: { m: Mission; i: number }[] = [];
@@ -64,6 +66,7 @@ export class Game {
     this.ui.onPanelOpen = () => { this.player.enabled = false; this.player.unlock(); };
     this.player.canLock = () => !this.ui.panelOpen && !this.paused;
     this.finale = new Finale(this);
+    this.held = new Held(scene, player, { kicking: () => this.sim.s.kick.active && !this.sim.s.kick.shut, ringing: () => !!this.flags.ringing, clock: () => clockString(this.sim.s.t).hhmm, depth: () => this.sim.s.depth });
     this.ui.logClock = () => { const c = clockString(this.sim.s.t); return "Day " + c.day + " " + c.hhmm; };
     this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
@@ -223,7 +226,7 @@ export class Game {
   }
   /** Vehicle hit a person: out of the vehicle, mandatory safety stand down, then reset at the trailers. */
   personStruck(name: string) {
-    this.veh.eject();
+    this.veh.eject(true);   // and the vehicle goes back where it started
     this.sfx.thud();
     this.inc(2, "STRUCK BY VEHICLE");
     this.standDown(`${name} was struck by your vehicle. They're okay, mostly. All work on location is stopped until everyone has talked about it.`, 25000, 1800, () => this.player.teleport(28, 0.5, 14, Math.PI / 2));
@@ -278,6 +281,8 @@ export class Game {
     add(() => S.frac, "Frac tanks: transfer to the pits", 4.2, () => this.openFrac());
     add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
     add(() => S.phone, "Phone", 2.6, () => this.openPhone());
+    add(() => S.donuts, "Donuts", 2.4, () => { this.sfx.click(); this.ui.toast("DONUTS", "“No thanks, I just started a new diet.”"); });
+    add(() => S.printer, "Printer", 2.4, () => { this.sfx.click(); this.ui.toast("PRINTER", "It's been broken since last hitch."); });
     add(() => S.bunk, "Rack out", 2.8, () => this.openBunk());
     add(() => S.choke, "Choke panel", 3.2, () => this.openChoke());
     add(() => S.accumulator, "BOP accumulator", 3.2, () => this.openAccum());
@@ -287,7 +292,7 @@ export class Game {
     add(() => S.gens, "Generators", 3.4, () => this.openGens());
     add(() => S.fuel, "Diesel tank", 3.4, () => this.openFuel());
     let knocks = 0;
-    add(() => S.mudlog, "Knock on the mud logger's door", 2.8, () => {
+    add(() => S.mudlog, "Knock on the mud logger's door", 1.6, () => {
       this.sfx.click(); this.ui.toast("KNOCK KNOCK", "The door is locked.");
       const n = knocks++;
       setTimeout(() => {
@@ -797,7 +802,11 @@ export class Game {
       this.missionNo = this.doneIds.size;
       this.rig.setWindmill(!this.doneIds.has("windmill"));
       this.player.body.setPPE(!!d.ppe || this.doneIds.has("ppe"));   // finishing the gate sign-in always means you have your PPE
-      if (d.pos) this.player.teleport(d.pos[0], d.pos[1], d.pos[2], d.pos[3]);
+      if (d.pos) {
+        // drove (or wandered) way off the lease? Continue at the gate instead of out in the desert
+        const far = Math.hypot(d.pos[0], d.pos[2] - 40) > 260;
+        if (far) this.player.teleport(0, 0.5, 112, Math.PI); else this.player.teleport(d.pos[0], d.pos[1], d.pos[2], d.pos[3]);
+      }
       return true;
     } catch { return false; }
   }
@@ -1228,6 +1237,8 @@ export class Game {
     const consider = (it: Interactable) => {
       if (it.ok && !it.ok()) return;
       const pos = it.pos(), d3 = pos.subtract(eye), dist = d3.length();
+      // anything inside a room can only be used from inside that same room
+      { const rm = this.roomAt(pos.x, pos.y, pos.z); if (rm && rm !== this.roomAt(p.pos.x, p.pos.y + 0.3, p.pos.z, 0.45)) return; }
       if (dist > it.r + 1 || Math.abs(pos.y - (p.pos.y + 1.2)) > 3.8) return;
       const hdist = Math.hypot(d3.x, d3.z);
       const dir = hdist > 0.01 ? new Vector3(d3.x / hdist, 0, d3.z / hdist) : fwd;
@@ -1311,12 +1322,17 @@ export class Game {
     // district banner
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }
-    $("crosshair").style.display = !p.third && this.started && !this.ui.panelOpen ? "block" : "none";
+    $("crosshair").style.display = this.started && !this.ui.panelOpen && !this.paused && !this.veh.riding ? "block" : "none";
+    this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen);
   }
 
   private beams: Mesh[] = [];
   /** Tall translucent light beam over each task target so you can spot it across the pad. */
   /** true when a solid wall-sized collider sits between the eyes and a spot (colliders that contain either end are ignored: you stand beside things, and spots sit on them) */
+  roomAt(x: number, y: number, z: number, pad = 0) {
+    for (const r of this.rig.roofs) if (x > r.x0 - pad && x < r.x1 + pad && z > r.z0 - pad && z < r.z1 + pad && y > r.y0 && y < r.y1 - 0.5) return r;
+    return null;
+  }
   blockedLOS(a: Vector3, b: Vector3): boolean {
     const d = b.subtract(a), len = d.length(); if (len < 0.5) return false;
     const n = Math.max(2, Math.ceil(len / 0.3)), E = 0.5;

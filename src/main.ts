@@ -40,6 +40,7 @@ sun.shadowMinZ = 1; sun.shadowMaxZ = 400;
 // Blender-authored props and jointed crew (falls back to procedural geometry if the models can't load)
 const kit = await Kit.load(scene);
 Human.kit = kit;
+Human.smooth = new URLSearchParams(location.search).get("rigged") === null;
 Human.char = await CharKit.load(scene, new URLSearchParams(location.search).get("char") ?? "worker.glb");
 const rig = buildRig(scene, { bump: !isTouch, kit });
 const player = new Player(scene, canvas, rig.colliders);
@@ -142,6 +143,7 @@ window.addEventListener("keydown", (e) => {
   if ((e.code === "AltLeft" || e.code === "AltRight") && game.started) { e.preventDefault(); if (!e.repeat && !game.paused) player.unlock(); return; }
   if (e.repeat) return;
   if (e.code === "KeyE") game.interact();
+  if (e.code === "KeyQ" && game.started && !game.paused && !ui.panelOpen) ui.toast(game.held.cycle(), "Q to switch what you're holding");
   if (e.code === "KeyL" && game.started && !game.paused && !ui.panelOpen && !e.repeat) game.openLog();
   if (e.code === "KeyM") { sfx.setMuted(!sfx.muted); if (game.paused) $("pSound").textContent = sfx.muted ? "SOUND: OFF" : "SOUND: ON"; }
   if ((e.code === "Escape" || e.code === "KeyP") && game.started && !game.flags.finish) {

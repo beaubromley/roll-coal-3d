@@ -630,6 +630,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // tank-roof stairs at east end
   b.stairs("dsteel", "yellow", 18.0, -22.8, "+x", 2.78, 1.1, 0.25, 0.3);
   b.rail("yellow", -17.95, -25.9, -17.95, -19.7, 2.78, 1.1);   // west end of the pit roof
+  b.rail("yellow", 17.95, -25.9, 17.95, -23.5, 2.78, 1.1); b.rail("yellow", 17.95, -22.1, 17.95, -19.7, 2.78, 1.1);   // east end by the hopper: closed in except for the stairs
   b.label("ACTIVE PITS", 0, 1.8, -19.5, 3.0, 0.7, Math.PI, "#233a52", "#ffd24a", 70);
 
   // ---- shale shakers (linear-motion, three on pit 1): possum belly at the feed end, a screen deck on rubber mounts that rises toward the discharge,
@@ -841,11 +842,22 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     for (let x = -13; x > -22; x -= 3.4) b.slab("dsteel", x - 0.1, 0, -16.5, x + 0.1, 0.5, -16.3);
     b.label("FLARE LINE", -22.3, 1.3, -38, 2.2, 0.4, -Math.PI / 2, "#7a1a14", "#ffffff", 36);
     // drive-over ramps where the low lines cross the lease: a wedge up, a plateau over the pipe, a wedge down
+    const HW = 4;   // the ramps span the whole lane, not a narrow strip
     const cross = (X: number, Z: number) => {
-      b.ramp("dsteel", X, 3.0, Z - 1.9, 0, Z - 0.55, 0.8, 0.08); b.ramp("dsteel", X, 3.0, Z + 1.9, 0, Z + 0.55, 0.8, 0.08);
-      b.slab("yellow", X - 1.5, 0.74, Z - 0.55, X + 1.5, 0.82, Z + 0.55);
-      for (const sx of [-1.4, 1.4]) { b.slab("black", X + sx - 0.05, 0.82, Z - 0.5, X + sx + 0.05, 0.84, Z + 0.5); }
+      b.ramp("dsteel", X, HW * 2, Z - 1.9, 0, Z - 0.55, 0.8, 0.08); b.ramp("dsteel", X, HW * 2, Z + 1.9, 0, Z + 0.55, 0.8, 0.08);
+      b.slab("yellow", X - HW, 0.74, Z - 0.55, X + HW, 0.82, Z + 0.55);
+      for (const sx of [-HW + 0.1, HW - 0.1]) { b.slab("black", X + sx - 0.05, 0.82, Z - 0.5, X + sx + 0.05, 0.84, Z + 0.5); }
+      b.rampSolid(X, HW * 2, Z - 1.9, 0, Z - 0.55, 0.8); b.rampSolid(X, HW * 2, Z + 1.9, 0, Z + 0.55, 0.8);
+      b.deck(X - HW, Z - 0.55, X + HW, Z + 0.55, 0.82);
     };
+    // the low pipes are solid between the ramps (the ramps carry you over them)
+    const lowPipe = (x0: number, z0: number, x1: number, z1: number, gaps: number[], alongX: boolean) => {
+      const a = alongX ? Math.min(x0, x1) : Math.min(z0, z1), e = alongX ? Math.max(x0, x1) : Math.max(z0, z1), fix = alongX ? z0 : x0;
+      const cuts = gaps.filter((g) => g > a && g < e).sort((p, q) => p - q); let cur = a;
+      for (const g of [...cuts, e + 99]) { const end = Math.min(e, g - HW); if (end > cur) { if (alongX) b.blocker(cur, 0, fix - 0.14, end, 0.75, fix + 0.14); else b.blocker(fix - 0.14, 0, cur, fix + 0.14, 0.75, end); } cur = g + HW; }
+    };
+    lowPipe(-10.9, -16.4, 24, -16.4, [-16, -4, 8, 18], true);                                    // flowline to the separator
+    lowPipe(-22, -16.4, -10.9, -16.4, [-16], true); lowPipe(-22, -16.4, -22, -59.8, [-30, -44, -57], false);   // flare line, west and then out to the stack
     for (const X of [-16, -4, 8, 18]) cross(X, -16.4);                                            // flowline / flare line, crossing north-south
     b.rot = RYAW;                                                                                // the other lines run north-south, so their ramps cross east-west
     for (const Z of [-30, -44, -57]) cross(Z, 22);                                              // flare line at x = -22   (local x = world z, local z = -world x)
@@ -860,7 +872,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.rot = RYAW;   // the camp turns a quarter turn about the rig, same direction as the rig
   b.at(CDX, CDZ, () => {
   b.room({ x0: 30, z0: 8, x1: 33.6, z1: 20, y0: 0.8, h: 2.7, wall: "trailer", roof: "dsteel", floor: "dsteel",
-    door: { side: "-x", c: 14, w: 1.1 } });
+    door: { side: "-x", c: 14, w: 1.1 }, windows: [{ side: "-x", c: 10.2, w: 2.4, y0: 1.75, y1: 3.1 }] });
   b.slab("steel", 29.9, 0, 8, 33.7, 0.7, 20);
   // porch: two steps, a deck, posts, a roof, and rails
   b.slab("deck", 26.6, 0.2, 12.4, 27.2, 0.27, 15.6, true);
@@ -879,17 +891,36 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       b.box("yellow", cx + Math.sin(a) * 0.2, cy + 0.34, cz + Math.cos(a) * 0.2, 0.06, 0.06, 0.04, false, a); }
   };
   for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) pdc(24.5 + i * 1.1, 0.14, 17.1 + j * 0.9, i + j);
-  pdc(29.3, 0.8, 12.9, 0.3); pdc(29.3, 0.8, 15.0, 1.1); pdc(28.5, 0.8, 14.0, 2.0);
   // two big TVs on the east wall: the EDR and the news
   monitor("-x", 33.46, 0.8 + 1.5, 11.6, 1.5, 0.85, "edr", tvScreens);
   monitor("-x", 33.46, 0.8 + 1.5, 15.0, 1.5, 0.85, "news", tvScreens);
-  b.slab("wood", 31.9, 0.8, 8.4, 33.4, 1.55, 10.6, true);             // desk
-  b.slab("black", 32.4, 1.55, 8.5, 33.2, 2.1, 8.8); b.slab("screen", 32.45, 1.6, 8.8, 33.15, 2.05, 8.84);
+  // one wrap-around desk: along the east wall under the TVs, round the south corner, and up the front wall under the window
+  b.slab("wood", 32.7, 0.8, 8.4, 33.4, 1.55, 16.4, true);             // east run
+  b.slab("wood", 30.2, 0.8, 8.4, 32.7, 1.55, 9.4, true);              // south run
+  b.slab("wood", 30.2, 0.8, 9.4, 31.0, 1.55, 11.4, true);             // front run, under the window
+  b.slab("black", 30.28, 1.55, 9.7, 30.4, 2.1, 10.7); b.slab("screen", 30.4, 1.6, 9.75, 30.44, 2.05, 10.65);   // the computer, facing into the room, on the front run
+  b.slab("black", 30.5, 1.55, 9.8, 30.95, 1.6, 10.6);                 // keyboard
   b.slab("steel", 30.2, 0.8, 17.2, 31.6, 1.3, 19.8, true);            // bunk
   b.slab("white", 30.25, 1.3, 17.25, 31.55, 1.45, 19.75);
+  // the bedroom: a partition across the north end with a doorway (the door stands open, swung back into the bedroom)
+  b.slab("trailer", 30.0, 0.8, 16.94, 31.3, 3.5, 17.06, true); b.slab("trailer", 32.3, 0.8, 16.94, 33.6, 3.5, 17.06, true);
+  b.slab("trailer", 31.3, 2.9, 16.94, 32.3, 3.5, 17.06);                                                // lintel
+  b.slab("dsteel", 32.3, 0.8, 17.06, 32.38, 2.9, 18.06); b.slab("steel", 32.31, 1.7, 17.8, 32.4, 1.8, 17.95);   // the open door and its handle
+  b.slab("steel", 31.3, 0.8, 16.9, 32.3, 0.84, 17.1);                                                   // threshold
   b.slab("black", 30.15, 1.7, 12.0, 30.3, 2.1, 12.4);                 // wall phone box
   b.slab("red", 30.17, 1.8, 12.05, 30.25, 1.95, 12.35);
-  spots.desk = rv(32.7 + CDX, 2.0, 9.1 + CDZ);
+  // a box of donuts on the back counter, and a printer on the end counter that has been out of order since forever
+  b.defMat("donutbox", "#f2e6d0"); b.defMat("donutpink", "#f08ab0"); b.defMat("donutdough", "#c98a4b");
+  b.slab("donutbox", 32.78, 1.55, 12.5, 33.34, 1.62, 13.9);
+  [[13.0, 0], [13.45, 1]].forEach(([z, k]) => { for (const dx of [32.98, 33.18]) { b.cyl(k ? "donutpink" : "donutdough", dx, 1.66, z + (dx > 33 ? 0.12 : -0.12), 0.17, 0.05, { tess: 14 }); b.cyl("black", dx, 1.69, z + (dx > 33 ? 0.12 : -0.12), 0.05, 0.02, { tess: 8 }); } });
+  b.cyl("donutpink", 33.08, 1.66, 12.72, 0.17, 0.05, { tess: 14 }); b.cyl("black", 33.08, 1.69, 12.72, 0.05, 0.02, { tess: 8 });
+  b.slab("white", 31.1, 1.55, 8.55, 32.0, 1.95, 9.25, true);                                    // printer body
+  b.slab("dsteel", 31.2, 1.95, 8.65, 31.9, 2.0, 9.1); b.slab("white", 31.3, 2.0, 8.7, 31.8, 2.28, 8.74);   // lid and a sheet of paper stuck in the tray
+  b.slab("black", 31.95, 1.75, 8.9, 32.02, 1.9, 9.1); b.slab("red", 31.96, 1.82, 8.95, 32.03, 1.86, 9.0);    // control panel with its one red light
+  b.slab("yellow", 31.1, 1.6, 9.24, 32.0, 1.7, 9.27); b.slab("yellow", 31.1, 1.8, 9.24, 32.0, 1.9, 9.27);    // caution tape
+  spots.donuts = rv(33.0 + CDX, 1.9, 13.2 + CDZ);
+  spots.printer = rv(31.5 + CDX, 2.0, 8.9 + CDZ);
+  spots.desk = rv(31.3 + CDX, 2.0, 10.2 + CDZ);
   spots.bunk = rv(30.9 + CDX, 1.6, 18.4 + CDZ);
   spots.phone = rv(30.4 + CDX, 1.9, 12.2 + CDZ);
   // toolpusher trailer (solid)
@@ -971,6 +1002,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   spots.gate = v(4.1, 1.4, 96.0);
   // pad edge fence posts
   for (let i = -12; i <= 12; i++) { b.box("dsteel", i * 5, 0.8, 62, 0.1, 1.6, 0.1); b.box("dsteel", i * 5, 0.8, -66, 0.1, 1.6, 0.1); }
+  b.blocker(-60, 0, 61.9, -8, 1.6, 62.1); b.blocker(8, 0, 61.9, 60, 1.6, 62.1); b.blocker(-60, 0, -66.1, 60, 1.6, -65.9);   // the fence is solid
   b.beam("dsteel", v(-60, 1.4, 62), v(-8, 1.4, 62), 0.04); b.beam("dsteel", v(8, 1.4, 62), v(60, 1.4, 62), 0.04);
   b.beam("dsteel", v(-60, 1.4, -66), v(60, 1.4, -66), 0.04);
 

@@ -40,7 +40,9 @@ interface Veh {
   wheelbase: number; maxFwd: number; maxRev: number; accel: number; radius: number; pts: number[];
   eye: { x: number; y: number; z: number }; camDist: number; camHeight: number;
   steerNodes: TransformNode[]; steerSign: number[]; spinNodes: TransformNode[]; wheelR: number[];
-  boxes: AABB[]; boxH: number; solid: boolean;
+  boxes: AABB[]; boxH: number; solid: boolean; gy?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
+  /** backhoe: either driving with the stabilizers up, or dug in with them down (no driving) and the hoe arm working */
+  bh?: { swing: TransformNode; boom: TransformNode; stick: TransformNode; bucket: TransformNode; stabs: TransformNode[]; dig: boolean; stab: number; boomA: number; stickA: number; bucketA: number; swingA: number };
   lift: number;                       // 0..1 boom angle / basket height
   ext: number; tilt: number;                   // telehandler: boom extension 0..1, fork tilt -1..1
   boomPivot?: TransformNode; boomIn?: TransformNode; tiltNode?: TransformNode; forkMark?: TransformNode;
@@ -53,7 +55,7 @@ interface Veh {
 export class Vehicles {
   list: Veh[] = [];
   active: Veh | null = null;
-  private world: AABB[];
+  private world: AABB[]; private ramps: AABB[] = [];
   private hud: HTMLElement;
   private wasThird = true;
   private chair = { on: false, hidden: false, idx: 0 };
@@ -66,7 +68,7 @@ export class Vehicles {
   dd = { inc: 2.1, azi: 270, tf: 0, sliding: false, warned: 0 };
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
-  private dmgCd = 0;
+  private dmgCd = 0; private xWas = false;
   private liftSpace = true;
   /** get-in / get-out animation: eased camera, plus the body walking to / from the vehicle */
   private blend: { t: number; dur: number; fromPos: Vector3; fromTgt: Vector3; body?: { from: Vector3; to: Vector3; mode: "in" | "out" } } | null = null;
@@ -81,7 +83,7 @@ export class Vehicles {
 
   private dash: HTMLDivElement;
   constructor(private scene: Scene, private colliders: AABB[], private player: Player, private game: Game) {
-    this.world = colliders.slice();            // static world only (vehicles don't collide with their own boxes)
+    this.world = colliders.filter((c) => !c.ramp); this.ramps = colliders.filter((c) => c.ramp);            // static world only (vehicles don't collide with their own boxes)
     this.hud = document.createElement("div");
     this.hud.style.cssText = "position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:30;display:none;padding:8px 16px;background:rgba(10,16,24,.78);border:2px solid #f4c04a;color:#fff;font:700 13px/1.45 system-ui,sans-serif;letter-spacing:.5px;text-align:center;pointer-events:none;text-transform:none;white-space:pre-wrap;max-width:94vw";
     document.body.appendChild(this.hud);
@@ -126,7 +128,7 @@ export class Vehicles {
     const root = new TransformNode(id, this.scene); root.position.set(x, 0, z); root.rotation.y = yaw;
     return { id, name, kind, root, x, z, yaw, speed: 0, steer: 0, wheelbase: 3, maxFwd: 10, maxRev: 4, accel: 5, radius: 1, pts: [0],
       eye: { x: 0, y: 1.6, z: 0 }, camDist: 7, camHeight: 2.6, steerNodes: [], steerSign: [], spinNodes: [], wheelR: [], boxes: [], boxH: 2.5, solid: true,
-      lift: 0, ext: 0, tilt: 0, casters: [], controls: "", platformY: 0, alt: 0, vy: 0, rotors: [], returning: false };
+      lift: 0, ext: 0, tilt: 0, casters: [], controls: "", platformY: 0, alt: 0, vy: 0, rotors: [], returning: false, dentCd: 0 };
   }
 
   private build() {
@@ -138,6 +140,7 @@ export class Vehicles {
     this.list.push(this.buildBackhoe(-42, -61, 0));   // parked by the cuttings pit under the shakers
     this.list.push(this.buildDrone(-20.5, 36.4, Math.PI / 2 + RYAW));
     for (const v of this.list) {
+      v.home = { x: v.x, z: v.z, yaw: v.yaw };
       for (let i = 0; i < v.pts.length; i++) { const b: AABB = { x0: 0, x1: 0, y0: 0, y1: v.boxH, z0: 0, z1: 0 }; v.boxes.push(b); this.colliders.push(b); }
       this.place(v);
     }
@@ -146,7 +149,7 @@ export class Vehicles {
   private buildF250(x: number, z: number, yaw: number): Veh {
     const v = this.blank("f250", "Lifted F-250", "car", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 5.0, maxFwd: 26, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0, -3.4], camDist: 14, camHeight: 4.6, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
-      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  V camera  ·  E get out" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  SPACE handbrake  ·  V camera  ·  E get out" });
     const BODY = "#9c1c16", CH = "#c4c8ce", EXT = 1.5;                            // EXT: a proper long bed
     this.box(v, r, "#22262c", 1.5, 0.28, 5.6 + EXT, 0, 1.05, -EXT / 2);          // frame rails
     for (const az of [2.0, -2.0 - 1.0]) { this.cyl(v, r, "#2a2d31", 0.28, 2.3, 0, 0.66, az, "x", 10); this.cyl(v, r, "#555a60", 0.22, 0.9, 0.8, 0.92, az, "y", 8); this.cyl(v, r, "#555a60", 0.22, 0.9, -0.8, 0.92, az, "y", 8); }
@@ -189,7 +192,7 @@ export class Vehicles {
   private buildBackhoe(x: number, z: number, yaw: number): Veh {
     const v = this.blank("backhoe", "Backhoe", "car", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 2.4, maxFwd: 11, maxRev: 5, accel: 4, radius: 1.3, pts: [2.0, 0, -2.2], camDist: 12, camHeight: 4.0, eye: { x: 0, y: 2.25, z: -0.15 }, boxH: 2.6,
-      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  V camera  ·  E get out" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  SPACE handbrake  ·  X dig / drive  ·  V camera  ·  E get out" });
     const Y = "#e8b100", D = "#2a2d31", G = "#9fc3d6", H = "#bfc3c8";
     this.box(v, r, D, 1.5, 0.3, 4.2, 0, 0.7, -0.2);                                  // frame
     this.box(v, r, Y, 2.0, 0.7, 3.0, 0, 1.15, -0.3);                                 // body
@@ -213,13 +216,24 @@ export class Vehicles {
     this.box(v, r, Y, 2.3, 0.08, 0.7, 0, 0.27, 3.6);                                 // bucket floor
     for (const sx of [-1.14, 1.14]) this.box(v, r, Y, 0.06, 0.45, 0.7, sx, 0.5, 3.6);
     this.box(v, r, H, 2.3, 0.05, 0.1, 0, 0.26, 3.98, { spec: 0.6 });                  // cutting edge
-    // rear hoe: swing frame, boom up and back, stick folded down, bucket tucked in, stabilizer legs
-    this.box(v, r, D, 1.1, 0.6, 0.8, 0, 1.2, -2.0);
-    const boom = this.box(v, r, Y, 0.3, 0.3, 2.6, 0, 2.0, -3.2); boom.rotation.x = 0.55;
-    const stick = this.box(v, r, Y, 0.24, 0.24, 2.0, 0, 2.0, -4.6); stick.rotation.x = -1.2;
-    this.box(v, r, D, 0.7, 0.55, 0.6, 0, 1.05, -5.0); this.box(v, r, H, 0.7, 0.06, 0.1, 0, 0.75, -5.25, { spec: 0.6 });   // hoe bucket
-    this.cyl(v, r, H, 0.1, 1.4, 0.2, 2.05, -3.2, "z", 8, { spec: 0.7 });
-    for (const sx of [-1, 1]) { this.box(v, r, Y, 0.2, 0.2, 0.9, sx * 1.3, 0.85, -2.1); this.box(v, r, D, 0.18, 0.7, 0.18, sx * 1.65, 0.5, -2.1); this.box(v, r, D, 0.7, 0.08, 0.7, sx * 1.65, 0.05, -2.1); }
+    // rear hoe: a swing frame carrying a boom, a stick and a bucket, each on its own pivot so the arm can really dig
+    const swing = new TransformNode("hoeSwing", this.scene); swing.parent = r; swing.position.set(0, 1.5, -2.0);
+    this.box(v, swing, D, 1.1, 0.6, 0.8, 0, -0.3, 0);
+    const boom = new TransformNode("hoeBoom", this.scene); boom.parent = swing; boom.position.set(0, 0.15, -0.3);
+    this.box(v, boom, Y, 0.3, 0.3, 2.6, 0, 0, -1.3);
+    this.cyl(v, boom, H, 0.1, 1.2, 0.22, 0.12, -0.8, "z", 8, { spec: 0.7 });
+    const stick = new TransformNode("hoeStick", this.scene); stick.parent = boom; stick.position.set(0, 0, -2.6);
+    this.box(v, stick, Y, 0.24, 0.24, 2.0, 0, 0, -1.0);
+    const bucket = new TransformNode("hoeBucket", this.scene); bucket.parent = stick; bucket.position.set(0, 0, -2.0);
+    this.box(v, bucket, D, 0.7, 0.5, 0.55, 0, -0.18, -0.12); this.box(v, bucket, H, 0.7, 0.06, 0.1, 0, -0.45, -0.3, { spec: 0.6 });
+    const stabs: TransformNode[] = [];
+    for (const sx of [-1, 1]) {   // stabilizers: a leg and pad on a hinge at the frame, folded up for driving and swung down to dig in
+      const st = new TransformNode("stab", this.scene); st.parent = r; st.position.set(sx * 1.2, 0.95, -2.1); stabs.push(st);
+      this.box(v, st, Y, 0.2, 0.2, 0.9, sx * 0.1, 0, 0);
+      this.box(v, st, D, 0.18, 0.9, 0.18, sx * 0.5, -0.45, 0); this.box(v, st, D, 0.7, 0.08, 0.7, sx * 0.5, -0.9, 0);
+    }
+    v.bh = { swing, boom, stick, bucket, stabs, dig: false, stab: 0, boomA: 0.55, stickA: 1.9, bucketA: 0.9, swingA: 0 };
+    this.poseHoe(v);
     // wheels: small steered fronts, big rears
     for (const s of [-1, 1]) { this.wheel(v, r, s * 0.98, 0.5, 1.4, 1.0, 0.42, 1); this.wheel(v, r, s * 1.05, 0.8, -1.0, 1.6, 0.6, null); }
     return v;
@@ -414,12 +428,67 @@ export class Vehicles {
   }
 
   private place(v: Veh) {
-    v.root.position.set(v.x, v.kind === "drone" ? v.alt : 0, v.z); v.root.rotation.y = v.yaw;
+    v.root.position.set(v.x, v.kind === "drone" ? v.alt : v.gy ?? 0, v.z); v.root.rotation.y = v.yaw;
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw);
     v.pts.forEach((o, i) => {
       const b = v.boxes[i], cx = v.x + fx * o, cz = v.z + fz * o, h = v.radius * 0.85;
       b.x0 = cx - h; b.x1 = cx + h; b.z0 = cz - h; b.z1 = cz + h; b.y1 = v.solid ? v.boxH : 0;
     });
+  }
+  /** apply the backhoe's arm angles and stabilizer position to its pivots */
+  private poseHoe(v: Veh) {
+    const h = v.bh; if (!h) return;
+    h.swing.rotation.y = h.swingA; h.boom.rotation.x = -h.boomA; h.stick.rotation.x = h.stickA; h.bucket.rotation.x = h.bucketA;
+    h.stabs.forEach((s, i) => { s.rotation.z = (i ? -1 : 1) * (1 - h.stab) * 1.45; });   // 0 = folded up and in, 1 = planted
+  }
+  /** dig mode: swing with A/D, boom R/F, stick T/G, bucket Y/H. Legs ease down or up with the mode. */
+  private hoe(v: Veh, dt: number) {
+    const h = v.bh; if (!h) return;
+    h.stab += ((h.dig ? 1 : 0) - h.stab) * Math.min(1, dt * 2.5);
+    if (h.dig && h.stab > 0.9) {
+      const d = (a: string, b: string) => (this.k(a) ? 1 : 0) - (this.k(b) ? 1 : 0), cl = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+      h.boomA = cl(h.boomA + d("KeyR", "KeyF") * dt * 0.7, -0.35, 1.0);
+      h.stickA = cl(h.stickA + d("KeyG", "KeyT") * dt * 0.9, 0.4, 2.3);
+      h.bucketA = cl(h.bucketA + d("KeyY", "KeyH") * dt * 1.2, -0.4, 1.7);
+      h.swingA = cl(h.swingA + d("KeyA", "KeyD") * dt * 0.8, -1.3, 1.3);
+    }
+    this.poseHoe(v);
+  }
+  /** X swaps the backhoe between driving (legs up) and digging (legs down, parked) */
+  private swapHoe(v: Veh) {
+    const h = v.bh; if (!h) return;
+    if (!h.dig && Math.abs(v.speed) > 1.5) { this.game.ui.toast("TOO FAST", "Slow to a stop before setting the stabilizers."); return; }
+    h.dig = !h.dig;
+    this.game.ui.toast(h.dig ? "DIG MODE" : "DRIVE MODE", h.dig ? "Stabilizers down, no driving. A/D swing · R/F boom · T/G stick · Y/H bucket · X to drive." : "Stabilizers up. X to dig again.");
+    this.game.sfx.click();
+  }
+  /** a crash leaves a mark where it landed: a scuffed, crumpled patch of body on the side that took the hit */
+  private dent(v: Veh, px: number, pz: number, o: number, speed: number) {
+    if (v.id !== "f250") return;
+    if ((v.dents ?? 0) >= 16) return;
+    v.dents = (v.dents ?? 0) + 1;
+    const len = Math.hypot(px, pz) || 1, dx = -px / len, dz = -pz / len;           // direction from the truck toward what it hit
+    const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw), rx = Math.cos(v.yaw), rz = -Math.sin(v.yaw);
+    const df = dx * fx + dz * fz, dr = dx * rx + dz * rz;                          // in the truck's own frame: forward, right
+    const big = Math.min(1, speed / 14), r = (a: number) => (Math.random() - 0.5) * a;
+    let x: number, y = 1.55 + Math.random() * 0.7, z: number, face: "f" | "b" | "s";
+    if (Math.abs(df) > 0.65) { face = df > 0 ? "f" : "b"; z = df > 0 ? 3.1 : -4.88; x = Math.max(-0.95, Math.min(0.95, dr * 0.9 + r(0.5))); }
+    else { face = "s"; x = dr > 0 ? 1.11 : -1.11; z = Math.max(-4.2, Math.min(2.6, o + r(1.2))); }
+    const sz = 0.35 + big * 0.55 + Math.random() * 0.2;
+    const mat = this.mk.bind(this);
+    void mat;
+    const root = v.root;
+    // scorched scuff, then a crumpled ridge or two standing proud of the panel
+    const scuff = face === "s" ? this.box(v, root, "#241210", 0.03, sz * 0.7, sz * 1.1, x + Math.sign(x) * 0.02, y, z) : this.box(v, root, "#241210", sz * 1.1, sz * 0.7, 0.03, x, y, z + (face === "f" ? 0.02 : -0.02));
+    scuff.rotation.y += r(0.4);
+    for (let i = 0; i < 2; i++) {
+      const rd = face === "s" ? this.box(v, root, "#6e1511", 0.1 + big * 0.08, sz * 0.5, sz * 0.4, x + Math.sign(x) * 0.05, y + r(0.2), z + r(0.3)) : this.box(v, root, "#6e1511", sz * 0.5, sz * 0.4, 0.1 + big * 0.08, x + r(0.3), y + r(0.2), z + (face === "f" ? 0.05 : -0.05));
+      rd.rotation.set(r(0.6), r(0.6), r(0.9));
+    }
+    if (face === "f" && big > 0.5) { // a hard head-on shot pushes the bumper crooked
+      const k = root.getChildMeshes().find((m) => Math.abs(m.position.z - 3.05) < 0.01 && Math.abs(m.position.y - 1.2) < 0.01);
+      if (k) { k.rotation.y += r(0.12); k.rotation.z += r(0.1); k.position.z -= 0.04 * Math.random(); }
+    }
   }
   private setSolid(v: Veh, on: boolean) { v.solid = on; this.place(v); }
 
@@ -554,11 +623,15 @@ export class Vehicles {
   }
 
   /** thrown out of the vehicle (the stand-down places the player afterwards) */
-  eject() {
+  /** throw the player out of the vehicle (reset = send the vehicle back where it started, e.g. after it hits somebody) */
+  eject(reset = false) {
     const v = this.active; if (!v) return;
-    v.speed = 0; this.active = null; this.setSolid(v, true);
+    const px = v.x, pz = v.z, pyaw = v.yaw;
+    v.speed = 0; v.steer = 0; this.active = null;
+    if (reset && v.home) { v.x = v.home.x; v.z = v.home.z; v.yaw = v.home.yaw; v.gy = 0; }
+    this.setSolid(v, true);
     this.player.ride = false; this.player.third = this.wasThird; this.hud.style.display = "none"; this.dash.style.display = "none";
-    this.player.teleport(v.x, 0, v.z, v.yaw);
+    this.player.teleport(px, 0, pz, pyaw);
   }
 
   // ---- Geronimo line: ride the escape cable from the board down to the landing pad ----
@@ -667,14 +740,19 @@ export class Vehicles {
       else v.speed *= Math.max(0, 1 - dt * 10);
     } else if (v.speed < 0.4) this.revArm = true;
     if (gasIn === 0 && brkIn === 0) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), (1.6 + Math.abs(v.speed) * 0.12) * dt);
+    if (v.bh) { const x = this.k("KeyX"); if (x && !this.xWas) this.swapHoe(v); this.xWas = x; }
+    const hand = v.kind === "car" && this.k("Space");
+    if (hand) v.speed -= Math.sign(v.speed) * Math.min(Math.abs(v.speed), 12 * dt);
     v.speed = Math.max(-maxR, Math.min(maxF, v.speed));
+    if (v.bh?.dig) v.speed = 0;   // dug in: no driving
     const thr = gasIn - brkIn;
     if (v.kind === "drone") this.flyDrone(v, dt, str); else {
     // steering (speed-sensitive)
     const lock = v.kind === "car" ? 0.62 : 0.75, tgt = -str * lock / (1 + Math.abs(v.speed) * (v.kind === "car" ? 0.07 : 0.05));
     v.steer += (tgt - v.steer) * Math.min(1, dt * 7);
     // kinematic bicycle: yaw rate follows steer angle (screen-right = +yaw)
-    const yawRate = (v.speed / v.wheelbase) * Math.tan(-v.steer);
+    if (v.bh) this.hoe(v, dt);
+    const yawRate = (v.speed / v.wheelbase) * Math.tan(-v.steer) * (hand && Math.abs(v.speed) > 4 ? 2.7 : 1);   // pulling the handbrake in a turn kicks the tail out
     v.yaw += yawRate * dt;
     v.x += Math.sin(v.yaw) * v.speed * dt; v.z += Math.cos(v.yaw) * v.speed * dt;
     // lift controls
@@ -692,18 +770,24 @@ export class Vehicles {
       }
       const sp = this.k("Space"); if (sp && !this.spaceWas) this.grab(v); this.spaceWas = sp;
     }
+    // drive-over ramps: ride up whatever drivable surface is underfoot
+    if (v.kind !== "lift") {
+      let top = 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
+      v.gy = (v.gy ?? 0) + (top - (v.gy ?? 0)) * Math.min(1, dt * 14);
+    }
     // collisions
-    let hit = false;
+    let hit = false, pushX = 0, pushZ = 0, hitO = 0;
     for (const o of v.pts) {
       const q = { x: v.x + Math.sin(v.yaw) * o, z: v.z + Math.cos(v.yaw) * o }, ox = q.x, oz = q.z;
-      if (pushOutXZ(this.world, q, 0, v.radius, 0.35, 3.2)) { v.x += q.x - ox; v.z += q.z - oz; hit = true; }
+      if (pushOutXZ(this.world, q, v.gy ?? 0, v.radius, 0.35, 3.2)) { v.x += q.x - ox; v.z += q.z - oz; hit = true; if (Math.hypot(q.x - ox, q.z - oz) > Math.hypot(pushX, pushZ)) { pushX = q.x - ox; pushZ = q.z - oz; hitO = o; } }
     }
+    if (hit && Math.abs(v.speed) > 2.5 && v.dentCd <= 0) { v.dentCd = 0.35; this.dent(v, pushX, pushZ, hitO, Math.abs(v.speed)); }
     for (const w of this.list) {
       if (w === v) continue;
       const dx = v.x - w.x, dz = v.z - w.z, d = Math.hypot(dx, dz), min = v.radius + w.radius + 0.9;
       if (d < min && d > 0.001) { v.x += (dx / d) * (min - d); v.z += (dz / d) * (min - d); hit = true; }
     }
-    this.dmgCd -= dt;
+    this.dmgCd -= dt; v.dentCd -= dt;
     const impact = Math.abs(v.speed);
     if (hit && impact > 4 && this.dmgCd <= 0) { this.dmgCd = 2.5; this.game.propertyDamage(impact); }
     if (hit && impact > 1.5) v.speed *= -0.25;
@@ -724,7 +808,7 @@ export class Vehicles {
 
     }
     // the player rides along (everything else in the game keys off player.pos)
-    const y = v.kind === "lift" ? v.platformY : v.kind === "drone" ? v.alt : 0;
+    const y = v.kind === "lift" ? v.platformY : v.kind === "drone" ? v.alt : v.gy ?? 0;
     p.pos.set(v.x, y, v.z); p.vel.setAll(0); p.grounded = true;
     // camera
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw);

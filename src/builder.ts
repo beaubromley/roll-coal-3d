@@ -3,7 +3,7 @@ import {
   DynamicTexture, TransformNode, VertexBuffer,
 } from "@babylonjs/core";
 
-export interface AABB { x0: number; x1: number; y0: number; y1: number; z0: number; z1: number }
+export interface AABB { x0: number; x1: number; y0: number; y1: number; z0: number; z1: number; /** a drivable surface: vehicles ride up it instead of being blocked */ ramp?: boolean }
 
 export interface MatOpts { emissive?: string; alpha?: number; spec?: number; tex?: any; unlit?: boolean }
 
@@ -88,6 +88,20 @@ export class Builder {
   /** min/max based box */
   slab(m: string, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, solid = false) {
     this.box(m, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, solid);
+  }
+
+  /** a walk- and drive-up slope: a run of low steps along z from (z0,y0) to (z1,y1), flagged so vehicles rise over it */
+  rampSolid(cx: number, w: number, z0: number, y0: number, z1: number, y1: number, steps = 10) {
+    for (let k = 0; k < steps; k++) {
+      const za = z0 + ((z1 - z0) * k) / steps, zb = z0 + ((z1 - z0) * (k + 1)) / steps;
+      const top = y0 + ((y1 - y0) * (Math.abs(y1 - y0) && (y1 > y0 ? k + 1 : k)) ) / steps;
+      this.deck(cx - w / 2, Math.min(za, zb), cx + w / 2, Math.max(za, zb), top);
+    }
+  }
+  /** a flat drivable top at height y over a footprint (min/max corners) */
+  deck(x0: number, z0: number, x1: number, z1: number, y: number) {
+    const [ax, az] = this.tx(x0 + this.ox, z0 + this.oz), [bx, bz] = this.tx(x1 + this.ox, z1 + this.oz);
+    this.colliders.push({ x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: 0, y1: y, z0: Math.min(az, bz), z1: Math.max(az, bz), ramp: true });
   }
 
   /** invisible collider only */
@@ -191,6 +205,8 @@ export class Builder {
     x0: number; z0: number; x1: number; z1: number; y0: number; h: number;
     wall: string; roof: string; floor: string; glass?: string;
     door: { side: "+x" | "-x" | "+z" | "-z"; c: number; w: number };
+    /** glazed openings in a wall: centre c along the wall, width w, from height y0 to y1 above the floor */
+    windows?: { side: "+x" | "-x" | "+z" | "-z"; c: number; w: number; y0: number; y1: number }[];
   }) {
     const { x0, z0, x1, z1, y0, h, wall, roof, floor, door } = opts;
     const T = 0.12;
@@ -216,10 +232,26 @@ export class Builder {
         if (e - s < 0.01) return;
         if (alongZ) seg(fixed, s, fixed, e); else seg(s, fixed, e, fixed);
       };
-      if (!hasDoor) emit(a, b);
+      const wins = (opts.windows ?? []).filter((w) => w.side === side).sort((p, q) => p.c - q.c);
+      // a run of solid wall from s to e, with any windows cut into it: strips under and over each one, and a pane of glass in the opening
+      const emitRange = (s: number, e: number) => {
+        let cur = s;
+        for (const w of wins) {
+          if (w.c - w.w / 2 < s - 1e-6 || w.c + w.w / 2 > e + 1e-6) continue;
+          emit(cur, w.c - w.w / 2); cur = w.c + w.w / 2;
+          const strip = (ya: number, yb: number, mat: string, th: number) => {
+            if (alongZ) this.slab(mat, fixed - th / 2, y0 + ya, w.c - w.w / 2, fixed + th / 2, y0 + yb, w.c + w.w / 2);
+            else this.slab(mat, w.c - w.w / 2, y0 + ya, fixed - th / 2, w.c + w.w / 2, y0 + yb, fixed + th / 2);
+          };
+          strip(0, w.y0, wall, T); strip(w.y1, h, wall, T); strip(w.y0, w.y1, "glass", T / 3);
+          if (alongZ) this.blocker(fixed - T / 2, y0, w.c - w.w / 2, fixed + T / 2, y0 + h, w.c + w.w / 2); else this.blocker(w.c - w.w / 2, y0, fixed - T / 2, w.c + w.w / 2, y0 + h, fixed + T / 2);
+        }
+        emit(cur, e);
+      };
+      if (!hasDoor) emitRange(a, b);
       else {
-        emit(a, door.c - door.w / 2);
-        emit(door.c + door.w / 2, b);
+        emitRange(a, door.c - door.w / 2);
+        emitRange(door.c + door.w / 2, b);
         // lintel
         const ly0 = y0 + 2.1;
         if (alongZ) this.slab(wall, fixed - T / 2, ly0, door.c - door.w / 2, fixed + T / 2, y0 + h, door.c + door.w / 2);

@@ -57,6 +57,8 @@ export class Human {
   legL!: TransformNode; legR!: TransformNode; armL!: TransformNode; armR!: TransformNode;
   /** set by main once the Blender kit has loaded; Humans built afterwards use the jointed model */
   static kit: Kit | null = null;
+  /** use the smooth hand-built character (rounded limbs, soft shading) instead of the faceted rigged model; ?rigged=1 brings the old one back */
+  static smooth = true;
   /** rigged character model; when present it replaces the Blender kit / procedural body */
   static char: CharKit | null = null;
   private ch: CharInstance | null = null;
@@ -68,14 +70,16 @@ export class Human {
   /** hard hat, vest, safety glasses: toggled together */
   ppe: Mesh[] = [];
   /** the hair cap: hidden under a hard hat so strands never poke through it */
-  hairCap: Mesh | null = null;
+  hairCap: Mesh | null = null; hairBack: Mesh | null = null;
   /** rigged model: the hair meshes (hidden under a hard hat so they cannot clip through the dome as the head moves) */
   hairMeshes: Mesh[] = [];
   /** the spacesuit for the finale: a glass helmet, neck ring and life-support pack, with the clothes turned white and the hard hat, vest and glasses put away */
   suitParts: Mesh[] = []; suitOn = false; private ppeOn = false;
   private suitBase: { re: RegExp; hex: string }[] = []; private suitCloth: any[] = [];
+  private suitSwap: { mesh: Mesh; orig: any }[] = [];
   setSuit(on: boolean) {
     this.suitOn = on;
+    if (this.suitSwap.length) { const white = m(this.scene, "#eef1f4"); for (const s of this.suitSwap) s.mesh.material = on ? white : s.orig; }
     this.suitParts.forEach((p) => p.setEnabled(on));
     for (const mt of this.suitCloth) { const base = this.suitBase.find((s) => s.re.test(String(mt.name).replace(/_c\d+$/, ""))); mt.set(on ? "#eef1f4" : base?.hex ?? "#808080"); }
     if (on) this.ppe.forEach((x) => x.setEnabled(false)); else this.setPPE(this.ppeOn);
@@ -86,6 +90,7 @@ export class Human {
   seated = false;
   constructor(public scene: Scene, o: HumanOpts) {
     this.root = new TransformNode("human", scene);
+    if (Human.smooth) { this.fromSmooth(o); return; }
     if (Human.char) { this.fromChar(Human.char, o); return; }
     if (Human.kit) { this.fromKit(Human.kit, o); return; }
     const mk = (mesh: Mesh, hex: string, parent: TransformNode) => {
@@ -153,6 +158,127 @@ export class Human {
     this.addDetail(o);
     this.root.scaling.setAll(o.scale ?? 1);
   }
+  /** The smooth character: capsule limbs with proper knees and elbows, a tapered torso, a real head with hair, ears, nose, brows and eyes, a collared shirt, belt,
+   *  trousers and shoes, all with soft shading. Hard hat, vest, glasses and the spacesuit are separate parts. Proportions: about 1.78 m, facing +z. */
+  private fromSmooth(o: HumanOpts) {
+    const sc = this.scene, skin = o.skin ?? "#d9a77f";
+    const seed = ++Human.count, rnd = (n: number) => { const x = Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
+    const hairCol = o.hair ?? ["#1c130c", "#3b2616", "#5a3a20", "#8a6a3a", "#c9a45a", "#6a2e14", "#7d7d7d", "#0b0b0b"][Math.floor(rnd(1) * 8) % 8];
+    const mk = (mesh: Mesh, hex: string, parent: TransformNode = this.root) => { mesh.material = m(sc, hex); mesh.parent = parent; mesh.isPickable = false; this.meshes.push(mesh); return mesh; };
+    const cap = (r: number, h: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {
+      const c = MeshBuilder.CreateCapsule("cap", { radius: r, height: h, tessellation: 16, subdivisions: 2, capSubdivisions: 6 }, sc); c.position.set(x, y, z); c.scaling.set(sx, sy, sz); return mk(c, hex, parent);
+    };
+    const ball = (dia: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, seg = 16) => {
+      const b = MeshBuilder.CreateSphere("ball", { diameter: dia, segments: seg }, sc); b.position.set(x, y, z); b.scaling.set(sx, sy, sz); return mk(b, hex, parent);
+    };
+    const cyl = (dTop: number, dBot: number, h: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sz = 1) => {
+      const c = MeshBuilder.CreateCylinder("cy", { diameterTop: dTop, diameterBottom: dBot, height: h, tessellation: 20 }, sc); c.position.set(x, y, z); c.scaling.z = sz; return mk(c, hex, parent);
+    };
+    const swap: Mesh[] = [];   // the clothes that turn white under a spacesuit
+    const cloth = (mesh: Mesh) => { swap.push(mesh); return mesh; };
+    const shoeCol = "#3a2a1c", beltCol = "#2a1d12";
+    // ---- limbs are continuous tapered tubes: each joint is a sphere exactly as wide as the limb, so there are no bulbs at the knees, elbows or shoulders
+    const tube = (rTop: number, rBot: number, len: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sz = 1) => {
+      const c = MeshBuilder.CreateCylinder("tube", { diameterTop: rTop * 2, diameterBottom: rBot * 2, height: len, tessellation: 20 }, sc); c.position.set(x, y, z); c.scaling.z = sz; return mk(c, hex, parent);
+    };
+    const joint = (r: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sz = 1) => ball(r * 2, hex, parent, x, y, z, 1, 1, sz, 14);
+    // legs: hip pivot at 0.92 m, thigh 0.42, knee, shin 0.42, so the ankle is 0.08 m off the ground and the shoe sits right on the shin
+    const leg = (side: number) => {
+      const hip = new TransformNode("hip", sc); hip.parent = this.root; hip.position.set(side * 0.092, 0.92, 0);
+      cloth(joint(0.088, o.pants, hip, 0, 0, 0));
+      cloth(tube(0.088, 0.064, 0.42, o.pants, hip, 0, -0.21, 0));
+      const knee = new TransformNode("knee", sc); knee.parent = hip; knee.position.set(0, -0.42, 0);
+      cloth(joint(0.064, o.pants, knee, 0, 0, 0));
+      cloth(tube(0.064, 0.05, 0.42, o.pants, knee, 0, -0.21, 0));
+      cloth(tube(0.058, 0.066, 0.05, o.pants, knee, 0, -0.395, 0));                          // hem, a touch fuller than the shin
+      ball(1, shoeCol, knee, 0, -0.455, 0.052, 0.104, 0.072, 0.25);                          // heel and arch
+      ball(1, shoeCol, knee, 0, -0.455, 0.145, 0.095, 0.064, 0.14);                          // toe box
+      const sole = tube(0.052, 0.053, 0.02, "#161210", knee, 0, -0.488, 0.08); sole.scaling.z = 2.7;
+      return { hip, knee };
+    };
+    const L = leg(-1), R = leg(1);
+    this.legL = L.hip; this.legR = R.hip; this.kneeL = L.knee; this.kneeR = R.knee;
+    // torso: one lofted body (hips, waist, chest, shoulder line) so it flows from the trousers into the neck
+    {
+      const prof: [number, number][] = [[0.0, 0.9], [0.125, 0.92], [0.128, 0.97], [0.118, 1.05], [0.122, 1.14], [0.136, 1.26], [0.146, 1.36], [0.13, 1.43], [0.085, 1.47], [0.06, 1.49], [0.0, 1.495]];
+      const lathe = MeshBuilder.CreateLathe("torso", { shape: prof.map(([r, y]) => new Vector3(r, y, 0)), tessellation: 28 }, sc);
+      lathe.scaling.set(1.5, 1, 0.8); cloth(mk(lathe, o.shirt));
+      const seat = MeshBuilder.CreateLathe("seat", { shape: [[0.0, 0.82], [0.12, 0.85], [0.135, 0.92], [0.13, 0.99], [0.0, 1.0]].map(([r, y]) => new Vector3(r, y, 0)), tessellation: 24 }, sc);
+      seat.scaling.set(1.45, 1, 0.82); cloth(mk(seat, o.pants));
+    }
+    cyl(0.416, 0.41, 0.06, beltCol, this.root, 0, 1.0, 0, 0.58);                             // belt: wide enough to sit outside the hips and shirt at the sides
+    { const bk = MeshBuilder.CreateBox("bk", { width: 0.06, height: 0.045, depth: 0.014 }, sc); bk.position.set(0, 1.0, 0.126); mk(bk, "#c8c8c8"); }
+    cyl(0.07, 0.078, 0.1, skin, this.root, 0, 1.52, 0.004);                                  // neck
+    cloth(cyl(0.15, 0.17, 0.04, o.shirt, this.root, 0, 1.485, 0.004, 0.95));                 // collar
+    for (const s of [-1, 1]) { const cf = MeshBuilder.CreateBox("cf", { width: 0.05, height: 0.012, depth: 0.075 }, sc); cf.position.set(s * 0.034, 1.482, 0.07); cf.rotation.set(0.5, 0, -s * 0.5); cloth(mk(cf, o.shirt)); }   // collar points
+    { const pk = MeshBuilder.CreateBox("pk", { width: 0.075, height: 0.075, depth: 0.012 }, sc); pk.position.set(-0.09, 1.3, 0.108); cloth(mk(pk, o.shirt)); }                                                                  // shirt pocket
+    // arms: shoulder pivot, upper arm 0.29, elbow, forearm 0.26, hand
+    const arm = (side: number) => {
+      const sh = new TransformNode("shoulder", sc); sh.parent = this.root; sh.position.set(side * 0.215, 1.385, 0);
+      cloth(joint(0.054, o.shirt, sh, 0, 0, 0));
+      cloth(tube(0.054, 0.045, 0.29, o.shirt, sh, 0, -0.145, 0));
+      const el = new TransformNode("elbow", sc); el.parent = sh; el.position.set(0, -0.29, 0);
+      cloth(joint(0.045, o.shirt, el, 0, 0, 0));
+      cloth(tube(0.045, 0.036, 0.26, o.shirt, el, 0, -0.13, 0));
+      cloth(tube(0.04, 0.042, 0.03, o.shirt, el, 0, -0.245, 0));                              // cuff
+      ball(0.082, "#2b2118", el, 0, -0.29, 0.006, 1, 1.2, 0.85);                              // gloved hand
+      return { sh, el };
+    };
+    const AL = arm(-1), AR = arm(1);
+    this.armL = AL.sh; this.armR = AR.sh; this.elbowL = AL.el; this.elbowR = AR.el;
+    // ---- head: skull, jaw, ears, nose, brows, eyes, mouth, hair
+    const HY = 1.665, HAIR_TILT = 0.55;
+    ball(0.225, skin, this.root, 0, HY, 0, 0.9, 1.1, 1.0, 22);                              // skull
+    ball(0.19, skin, this.root, 0, HY - 0.06, 0.012, 0.95, 0.88, 0.98, 20);                 // lower face: a soft rounded jaw that blends into the skull, no pointy chin
+    for (const s of [-1, 1]) {
+      ball(0.05, skin, this.root, s * 0.102, HY - 0.005, -0.004, 0.45, 1, 0.8, 10);       // ears
+      ball(0.026, "#f4f4f2", this.root, s * 0.04, HY + 0.012, 0.099, 1, 0.8, 0.5, 10);     // eye whites
+      ball(0.015, "#2a1d12", this.root, s * 0.04, HY + 0.012, 0.105, 1, 1, 0.6, 10);      // irises
+      const br = MeshBuilder.CreateBox("br", { width: 0.05, height: 0.01, depth: 0.016 }, sc); br.position.set(s * 0.042, HY + 0.044, 0.1); br.rotation.z = -s * 0.08; mk(br, hairCol);
+    }
+    ball(0.034, skin, this.root, 0, HY - 0.025, 0.114, 0.85, 1.3, 1.25, 10);                // nose
+    { const mo = MeshBuilder.CreateBox("mo", { width: 0.05, height: 0.008, depth: 0.012 }, sc); mo.position.set(0, HY - 0.074, 0.1); mk(mo, "#8a4a3a"); }
+    {   // hair: a front cap with a clean hairline above the brows, and the back half of the head covered down to the nape, both a hair's width outside the skull
+      const cap = MeshBuilder.CreateSphere("hair", { diameter: 1, segments: 28, slice: 0.5 }, sc);
+      cap.scaling.set(0.222, 0.27, 0.246); cap.position.set(0, HY + 0.064, 0); this.hairCap = mk(cap, hairCol);
+      const back = MeshBuilder.CreateSphere("hairback", { diameter: 1, segments: 28, slice: 0.5 }, sc);
+      back.scaling.set(0.216, 0.232, 0.236); back.position.set(0, HY + 0.014, -0.002); back.rotation.x = -Math.PI / 2; mk(back, hairCol);
+      this.hairBack = back;
+    }
+    // ---- PPE: vest, hard hat, safety glasses (hidden until setPPE(true))
+    const ppeAdd = (mesh: Mesh) => { this.ppe.push(mesh); return mesh; };
+    if (o.vest) {
+      const v = cap(0.16, 0.5, "#e8f542", this.root, 0, 1.24, 0, 1.34, 1, 0.9); ppeAdd(v);
+      for (const y of [1.14, 1.3]) { const s = cyl(0.37, 0.37, 0.05, "#cfd3d6", this.root, 0, y, 0, 0.72); ppeAdd(s); }
+    }
+    if (o.hat) for (const p of hardHatParts(sc)) { p.mesh.position.set(p.x, HY + 0.045 + p.y, p.z); ppeAdd(mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root)); }
+    // safety glasses: one clear wraparound lens that follows the curve of the face, with a dark brow bar along the top edge and temple arms back to the ears
+    {
+      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.7, 0.9, 1.0); gm.alpha = 0.28; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
+      const arcMesh = (h: number, dy: number, sx: number, sz: number, arc: number) => {
+        const c = MeshBuilder.CreateCylinder("lensarc", { diameter: 1, height: h, tessellation: 48, arc, enclose: false, sideOrientation: Mesh.DOUBLESIDE }, sc);
+        c.scaling.set(sx, 1, sz); c.position.set(0, HY + dy, 0); c.rotation.y = Math.PI + (Math.PI / 2 - arc * Math.PI); return c;   // centre the arc on the face
+      };
+      const lens = arcMesh(0.03, 0.01, 0.222, 0.246, 0.3); lens.material = gm; ppeAdd(lens);
+      ppeAdd(mk(arcMesh(0.011, 0.0285, 0.224, 0.248, 0.3), "#15171a"));      // brow bar
+      for (const s of [-1, 1]) {
+        const tp = MeshBuilder.CreateBox("temple", { width: 0.006, height: 0.01, depth: 0.1 }, sc); tp.position.set(s * 0.1, HY + 0.018, -0.012); tp.rotation.y = 0; ppeAdd(mk(tp, "#15171a"));
+      }
+    }
+    // ---- the finale's spacesuit parts (hidden), and what to whiten
+    {
+      const sp: Mesh[] = [];
+      const helm = ball(0.37, "#ffffff", this.root, 0, HY + 0.01, 0.01, 1, 1, 1, 18);
+      const gm = new StandardMaterial("helmglass", sc); gm.diffuseColor = new Color3(0.72, 0.86, 0.95); gm.alpha = 0.3; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 40; helm.material = gm; sp.push(helm);
+      sp.push(cyl(0.22, 0.24, 0.07, "#e6eaee", this.root, 0, 1.5, 0.004));
+      const pack = MeshBuilder.CreateBox("lpack", { width: 0.36, height: 0.5, depth: 0.2 }, sc); pack.position.set(0, 1.22, -0.2); sp.push(mk(pack, "#e6eaee"));
+      const chest = MeshBuilder.CreateBox("lchest", { width: 0.17, height: 0.12, depth: 0.04 }, sc); chest.position.set(0, 1.28, 0.125); sp.push(mk(chest, "#e07010"));
+      sp.forEach((x) => x.setEnabled(false)); this.suitParts = sp;
+      this.suitSwap = swap.map((mesh) => ({ mesh, orig: mesh.material }));
+    }
+    this.root.scaling.setAll(o.scale ?? 1);
+  }
+
   /** Rigged, skinned character: real animation clips, with PPE that follows the head / chest bones. */
   private fromChar(ck: CharKit, o: HumanOpts) {
     const sc = this.scene, c = ck.instantiate(1.78);
@@ -365,7 +491,7 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
-  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); }
+  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); if (this.hairBack) this.hairBack.setEnabled(!on); }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {

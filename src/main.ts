@@ -143,7 +143,8 @@ document.addEventListener("visibilitychange", () => { if (document.hidden && gam
 let wheelAt = 0;
 const handsFree = () => game.started && !game.paused && !ui.panelOpen && !game.veh.riding && !game.astMode;
 window.addEventListener("wheel", (e) => { if (!handsFree() || performance.now() - wheelAt < 130) return; wheelAt = performance.now(); ui.toast(game.held.cycle(e.deltaY > 0 ? 1 : -1), "Scroll to switch · click to use"); }, { passive: true });
-window.addEventListener("mousedown", (e) => { if (e.button === 0 && handsFree() && player.locked) game.useHeld(); });
+// left click is E when the reticle has locked onto something you can use; otherwise it uses what you are holding
+window.addEventListener("mousedown", (e) => { if (e.button === 0 && handsFree() && player.locked) { if (game.nearest) game.interact(); else game.useHeld(); } });
 window.addEventListener("keydown", (e) => {
   if ((e.code === "AltLeft" || e.code === "AltRight") && game.started) { e.preventDefault(); if (!e.repeat && !game.paused) player.unlock(); return; }
   if (e.repeat) return;

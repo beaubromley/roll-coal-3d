@@ -254,12 +254,13 @@ export class Human {
     if (o.hat) for (const p of hardHatParts(sc)) { p.mesh.position.set(p.x, HY + 0.072 + p.y, p.z); ppeAdd(mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root)); }
     // safety glasses: one clear wraparound lens that follows the curve of the face, with a dark brow bar along the top edge and temple arms back to the ears
     {
-      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.7, 0.9, 1.0); gm.alpha = 0.28; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
+      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.45, 0.72, 0.9); gm.emissiveColor = new Color3(0.1, 0.22, 0.3); gm.alpha = 0.6; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
       const arcMesh = (h: number, dy: number, sx: number, sz: number, arc: number) => {
         const c = MeshBuilder.CreateCylinder("lensarc", { diameter: 1, height: h, tessellation: 48, arc, enclose: false, sideOrientation: Mesh.DOUBLESIDE }, sc);
         c.scaling.set(sx, 1, sz); c.position.set(0, HY + dy, 0); c.rotation.y = Math.PI + (Math.PI / 2 - arc * Math.PI); return c;   // centre the arc on the face
       };
-      const lens = arcMesh(0.03, 0.01, 0.222, 0.246, 0.3); lens.material = gm; ppeAdd(lens);
+      const lens = arcMesh(0.036, 0.008, 0.222, 0.246, 0.3); lens.material = gm; ppeAdd(lens);
+      ppeAdd(mk(arcMesh(0.006, -0.011, 0.224, 0.248, 0.3), "#15171a"));      // thin frame along the bottom edge
       ppeAdd(mk(arcMesh(0.011, 0.0285, 0.224, 0.248, 0.3), "#15171a"));      // brow bar
       for (const s of [-1, 1]) {
         const tp = MeshBuilder.CreateBox("temple", { width: 0.006, height: 0.01, depth: 0.1 }, sc); tp.position.set(s * 0.1, HY + 0.018, -0.012); tp.rotation.y = 0; ppeAdd(mk(tp, "#15171a"));
@@ -491,7 +492,7 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
-  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); if (this.hairBack) this.hairBack.setEnabled(!on); }
+  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); /* the hair stays: the hat sits over the top of it and the back still shows below the brim */ }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {

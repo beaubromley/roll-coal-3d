@@ -443,11 +443,14 @@ export class Vehicles {
       } else { body.scaling.setAll(1 - ee * 0.9); }
     }
     if (k >= 1) {
-      this.blend = null; const showBody = !!this.active && this.active.kind !== "drone";
+      this.blend = null; const showBody = !!this.active && this.showsDriver(this.active);
       this.player.bodyHold = showBody; this.player.body.root.scaling.setAll(1);
       if ((this.active && !showBody) || this.chair.on || this.climb.on || this.zip.on) this.player.body.root.setEnabled(false);
     }
   }
+
+  /** who is visible at the controls: everything except the drone and the lifted pickup (the cab is too low for a hard hat) */
+  private showsDriver(v: Veh) { return v.kind !== "drone" && v.id !== "f250"; }
 
   enter(v: Veh) {
     if (this.riding) return;
@@ -456,7 +459,7 @@ export class Vehicles {
     this.active = v; v.speed = 0; this.setSolid(v, false);
     this.wasThird = this.player.third; this.player.ride = true; this.player.third = true;
     this.player.yaw = v.yaw; this.player.pitch = 0.22;
-    if (!this.blend && v.kind === "drone") this.player.body.root.setEnabled(false);
+    if (!this.blend && !this.showsDriver(v)) this.player.body.root.setEnabled(false);
     this.hud.style.display = "block";
     this.game.sfx.click();
     this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W / S climb and descend, A / D turn, arrow keys fly forward and back. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. SPACE jumps you out." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
@@ -748,7 +751,7 @@ export class Vehicles {
       cam.position.copyFrom(eye); cam.setTarget(eye.add(p.lookDir()));
     }
     // the driver is visible, seated at the wheel (standing in the manlift basket); first person hides the body
-    if (v.kind !== "drone" && !this.blend) {
+    if (this.showsDriver(v) && !this.blend) {
       const seat = v.id === "backhoe" ? { x: 0, y: 0.52, z: -0.15 } : v.kind === "car" ? { x: -0.5, y: 1.35, z: -0.12 } : v.kind === "forklift" ? { x: -0.75, y: 1.0, z: 0.3 } : { x: 0, y: 0.05, z: 0 };
       const bd = this.player.body, ry = v.yaw;
       bd.root.setEnabled(p.third); bd.seated = v.kind !== "lift";

@@ -156,8 +156,7 @@ export class Human {
       const node = new TransformNode("boot", sc); node.parent = this.root;
       const part = (mesh: Mesh, hex: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { mesh.material = m(sc, hex); mesh.parent = node; mesh.position.set(x, y, z); mesh.scaling.set(sx, sy, sz); this.meshes.push(mesh); return mesh; };
       const toeCol = lighten(boots, 0.16), solCol = "#0c0b0a";
-      part(MeshBuilder.CreateCylinder("bsh", { diameterTop: 0.132, diameterBottom: 0.118, height: 0.21, tessellation: 18 }, sc), boots, 0, 0.145, 0.0);      // tapered shaft, under the pant cuff
-      part(MeshBuilder.CreateCylinder("bcu", { diameter: 0.14, height: 0.022, tessellation: 18 }, sc), boots, 0, 0.246, 0.0);                          // padded collar
+      part(MeshBuilder.CreateCylinder("bsh", { diameterTop: 0.1, diameterBottom: 0.116, height: 0.17, tessellation: 18 }, sc), boots, 0, 0.12, 0.0);      // tapered shaft, under the pant cuff
       part(MeshBuilder.CreateSphere("bfo", { diameter: 1, segments: 16 }, sc), boots, 0, 0.068, 0.085, 0.118, 0.098, 0.3);                               // rounded foot (an ellipsoid: no square edges)
       part(MeshBuilder.CreateBox("bto2", { width: 0.05, height: 0.012, depth: 0.1 }, sc), "#b9a98c", 0, 0.118, 0.065).rotation.x = -0.5;                // tongue
       for (let li = 0; li < 3; li++) part(MeshBuilder.CreateBox("bla", { width: 0.075, height: 0.008, depth: 0.012 }, sc), "#d8cfba", 0, 0.12 + li * 0.012, 0.045 + li * 0.04).rotation.x = -0.45;   // laces

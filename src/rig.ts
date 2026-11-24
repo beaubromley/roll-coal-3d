@@ -177,10 +177,28 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.beam("steel", v(0, 3.4, -19), v(-13.5, 3.3, -19.5), 0.5);
 
   // ---- rotary table ----
-  b.cyl("dsteel", 0, F + 0.18, 0, 1.7, 0.36, { tess: 16, solid: false });
-  b.cyl("black", 0, F + 0.37, 0, 0.9, 0.04, { tess: 12 });
-  const rotMark = MeshBuilder.CreateBox("rotmark", { width: 0.7, height: 0.03, depth: 0.12 }, scene);
-  rotMark.position.set(0, F + 0.41, 0); rotMark.material = b.getMat("yellow"); rotMark.parent = rigRoot;
+  // rotary table: housing on the deck, the turning table on top, then the master bushing (with its four drive-pin lugs), the insert bowl, and the bore the pipe goes through
+  b.box("dsteel", 0, F + 0.17, 0, 1.55, 0.34, 1.55);
+  b.cyl("steel", 0, F + 0.37, 0, 1.28, 0.06, { tess: 24 });
+  b.cyl("black", 0, F + 0.43, 0, 0.92, 0.12, { tess: 24 });                                   // master bushing
+  for (const [lx, lz] of [[0.34, 0.34], [-0.34, 0.34], [0.34, -0.34], [-0.34, -0.34]]) b.box("steel", lx, F + 0.47, lz, 0.1, 0.08, 0.1);   // drive-pin lugs
+  b.cyl("dsteel", 0, F + 0.46, 0, 0.58, 0.07, { tess: 20 });                                   // insert bowl rim
+  b.cyl("black", 0, F + 0.497, 0, 0.42, 0.006, { tess: 20 });                                  // the bore: pipe passes through here
+  const rotMark = MeshBuilder.CreateBox("rotmark", { width: 0.5, height: 0.03, depth: 0.1 }, scene);
+  rotMark.position.set(0, F + 0.41, 0.52); rotMark.material = b.getMat("yellow"); rotMark.parent = rigRoot;
+  // slips: three wedge segments with hinged yellow handles. They sit in the bowl around the pipe while a connection is made or on a trip, and lie next to the hole the rest of the time.
+  const slips = node("slips", scene, 1.25, F + 0.01, -0.8); slips.parent = rigRoot;
+  for (let k = 0; k < 3; k++) {
+    const a = (k * 2 * Math.PI) / 3 + 0.5, sx = Math.sin(a), sz = Math.cos(a);
+    const seg = MeshBuilder.CreateBox("slipseg", { width: 0.16, height: 0.34, depth: 0.075 }, scene);
+    seg.material = b.getMat("dsteel"); seg.parent = slips; seg.position.set(sx * 0.135, 0.17, sz * 0.135); seg.rotation.y = a;
+    const teeth = MeshBuilder.CreateBox("slipteeth", { width: 0.13, height: 0.24, depth: 0.012 }, scene);
+    teeth.material = b.getMat("steel"); teeth.parent = slips; teeth.position.set(sx * 0.098, 0.15, sz * 0.098); teeth.rotation.y = a;
+    const post = MeshBuilder.CreateBox("slipposts", { width: 0.03, height: 0.22, depth: 0.03 }, scene);
+    post.material = b.getMat("yellow"); post.parent = slips; post.position.set(sx * 0.19, 0.42, sz * 0.19);
+    const grip = MeshBuilder.CreateBox("slipgrip", { width: 0.13, height: 0.03, depth: 0.03 }, scene);
+    grip.material = b.getMat("yellow"); grip.parent = slips; grip.position.set(sx * 0.19, 0.54, sz * 0.19); grip.rotation.y = a + Math.PI / 2;
+  }
   // red zone ring on the deck
   b.cyl("red", 0, F + 0.005, 0, 4.6, 0.01, { tess: 28 });
   b.cyl("deck", 0, F + 0.012, 0, 4.3, 0.01, { tess: 28 });
@@ -1018,6 +1036,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       : f.connecting ? F + 26 : F + 2.6 + (1 - into / 93) * 24;
     tdY += (targetY - tdY) * Math.min(1, dt * (f.connecting || f.tripping ? 2.5 : 8));
     td.position.y = tdY;
+    { const inHole = f.connecting || f.tripping; slips.position.set(inHole ? 0 : 1.25, inHole ? F + 0.4 : F + 0.01, inHole ? 0 : -0.8); slips.rotation.y = inHole ? 0 : 0.7; }
     tdBox.y0 = tdY - 2.3; tdBox.y1 = tdY + 1.8; blockBox.y0 = tdY + 2.85; blockBox.y1 = tdY + 3.9;
     tdSpin.rotation.y += f.rotating ? dt * 5 : 0;
     rotMark.rotation.y += f.rotating ? dt * 5 : 0;

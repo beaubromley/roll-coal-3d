@@ -46,6 +46,8 @@ export class Human {
   ppe: Mesh[] = [];
   /** the hair cap: hidden under a hard hat so strands never poke through it */
   hairCap: Mesh | null = null;
+  /** rigged model: the hair meshes (hidden under a hard hat so they cannot clip through the dome as the head moves) */
+  hairMeshes: Mesh[] = [];
   phase = Math.random() * 6;
   walking = false;
   /** sitting pose (thighs forward, knees bent, hands on the controls) */
@@ -183,12 +185,14 @@ export class Human {
     const sy = o.height ?? 0.95 + rnd(5) * 0.11, sx = 0.95 + rnd(6) * 0.14;
     this.chBuild = new Vector3(sy, sy, sy);   // uniform only: non-uniform scale on the root shears every rotating limb and foot (looks like smeared boots while running)
     for (const mesh of c.meshes) if (/head/i.test(mesh.name) && /^Beige/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
+    this.hairMeshes = c.meshes.filter((x) => /^Eyebrows/.test(String((x.material as any)?.name ?? "").replace(/_cd+$/, ""))) as Mesh[];
+    if (o.hat && !o.ppeOff) this.hairMeshes.forEach((x) => x.setEnabled(false));   // the hat is on from the start: no hair poking through the dome
     const mk = (mesh: Mesh, hex: string) => { mesh.material = m(sc, hex); mesh.parent = this.root; this.meshes.push(mesh); this.ppe.push(mesh); return mesh; };
     const parts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
     const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
     const hatCol = o.hat ?? "#f4f4f4";
     if (o.hat) {
-      add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 14, slice: 0.55 }, sc), hatCol, "Head", 0, -0.115, 0.0);
+      add(MeshBuilder.CreateSphere("hat", { diameter: 0.33, segments: 14, slice: 0.56 }, sc), hatCol, "Head", 0, -0.118, -0.005);
       add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, -0.105, 0.01);
       add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, -0.11, 0.17);
       add(MeshBuilder.CreateBox("rdg", { width: 0.04, height: 0.02, depth: 0.24 }, sc), hatCol, "Head", 0, 0.032, 0.0);
@@ -200,11 +204,11 @@ export class Human {
     }
     if (o.detail) {
       for (const sx of [-1, 1]) {
-        add(MeshBuilder.CreateBox("gl", { width: 0.068, height: 0.046, depth: 0.018 }, sc), "#a9dcf0", "Head", sx * 0.042, -0.18, 0.105);
-        add(MeshBuilder.CreateBox("glr", { width: 0.074, height: 0.008, depth: 0.022 }, sc), "#15171a", "Head", sx * 0.042, -0.152, 0.106);
-        add(MeshBuilder.CreateBox("glt", { width: 0.01, height: 0.012, depth: 0.1 }, sc), "#15171a", "Head", sx * 0.092, -0.18, 0.055);
+        add(MeshBuilder.CreateBox("gl", { width: 0.068, height: 0.04, depth: 0.018 }, sc), "#a9dcf0", "Head", sx * 0.042, -0.16, 0.105);
+        add(MeshBuilder.CreateBox("glr", { width: 0.074, height: 0.008, depth: 0.022 }, sc), "#15171a", "Head", sx * 0.042, -0.14, 0.106);
+        add(MeshBuilder.CreateBox("glt", { width: 0.01, height: 0.012, depth: 0.1 }, sc), "#15171a", "Head", sx * 0.092, -0.16, 0.055);
       }
-      add(MeshBuilder.CreateBox("glb", { width: 0.03, height: 0.01, depth: 0.02 }, sc), "#15171a", "Head", 0, -0.172, 0.108);
+      add(MeshBuilder.CreateBox("glb", { width: 0.03, height: 0.01, depth: 0.02 }, sc), "#15171a", "Head", 0, -0.153, 0.108);
     }
     this.chParts = parts;
     this.ppeLocal = new Vector3();
@@ -317,7 +321,7 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
-  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); }
+  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); this.hairMeshes.forEach((x) => x.setEnabled(!on)); }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {

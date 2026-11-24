@@ -306,7 +306,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.label("AL DRILLING\nRIG 107", 3.6, F + 0.52, 1.58, 1.9, 0.78, Math.PI, wrapBg, wrapFg, 42);
 
   // ---- doghouse (enterable) ----
-  b.room({ x0: -6.0, z0: -5.8, x1: -2.6, z1: -2.4, y0: F, h: 2.6, wall: "tan", roof: "dsteel", floor: "dsteel",
+  b.room({ x0: -6.0, z0: -5.8, x1: -2.6, z1: -2.4, y0: F + 0.025, h: 2.575, wall: "tan", roof: "dsteel", floor: "dsteel",
     door: { side: "+z", c: -4.3, w: 1.1 } });
   b.slab("wood", -5.8, F, -5.6, -3.0, F + 0.85, -4.9, true);                  // table
   b.slab("steel", -5.9, F, -3.6, -5.5, F + 0.5, -2.7);                         // bench
@@ -456,6 +456,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.cyl("steel", -0.2, F + 0.9, -4.8, 1.2, 1.5, { axis: "x", tess: 10 });
   b.slab("dsteel", -1.3, F, -5.6, 0.9, F + 0.35, -3.9);
   spots.drawworks = v(-0.2, F + 1.4, -3.6);
+  b.blocker(-1.1, F, -5.95, 0.7, F + 2.1, -3.65);                                          // the drawworks drum and housing are solid
   // drum flanges + spooled line, the fast line up to the crown, and the dead line to its anchor
   for (const x of [-1.0, 0.6]) b.cyl("steel", x, F + 0.9, -4.8, 2.3, 0.1, { axis: "x", tess: 18 });
   b.cyl("pipe", -0.2, F + 0.9, -4.8, 1.55, 1.5, { axis: "x", tess: 16 });
@@ -510,7 +511,17 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const cables = CROWN_X.flatMap((x) => [mkCable(x, -0.7), mkCable(x, 0.1)]);
   const stringMesh = MeshBuilder.CreateCylinder("string", { diameter: 0.19, height: 1, tessellation: 8 }, scene);
   stringMesh.material = b.getMat("pipe"); stringMesh.position.set(0, 0, 0); stringMesh.parent = rigRoot;
-  const hose = MeshBuilder.CreateCylinder("hose", { diameter: 0.2, height: 1, tessellation: 6 }, scene);
+  // the rotary (kelly) hose: a soft, flexible tube that sags in a loop between the standpipe and the gooseneck, so it follows the top drive up and down
+  const hosePath = (a: Vector3, c2: Vector3) => {
+    const len = Vector3.Distance(a, c2), sag = Math.min(4.2, 1.2 + len * 0.22), out = 0.5 + len * 0.03, pts: Vector3[] = [];
+    for (let i = 0; i <= 16; i++) {
+      const t = i / 16, bell = 4 * t * (1 - t), p = Vector3.Lerp(a, c2, t);
+      p.y -= sag * bell; p.z += out * Math.sin(Math.PI * t) * 0.9; p.x += out * 0.55 * Math.sin(Math.PI * t);
+      pts.push(p);
+    }
+    return pts;
+  };
+  let hose = MeshBuilder.CreateTube("hose", { path: hosePath(v(2.7, F + 29, -3.2), v(0, F + 26, -0.3)), radius: 0.1, tessellation: 8, updatable: true }, scene);
   hose.material = b.getMat("black"); hose.parent = rigRoot;
   // drill pipe tool-joint ring that shows on the string
   const joint = MeshBuilder.CreateCylinder("tj", { diameter: 0.27, height: 0.4, tessellation: 8 }, scene);
@@ -644,35 +655,49 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   for (const cx of [-16.6, -14.1, -11.6]) b.cyl("cuttings", cx, 1.05, -27.9, 1.7, 0.7, { tess: 12, dia2: 0.3 });
   b.label("CUTTINGS PIT", -14.2, 1.9, -26.9, 2.6, 0.6, Math.PI, "#233a52", "#ffd24a", 54);
 
-  // ---- two decanting centrifuges south of the pits, each with a solids catch pit under its discharge and a centrate line back to the active tanks ----
+  // ---- two decanting centrifuges on stands as high as the pits, each with a solids tank underneath its discharge and a level centrate line into the active tanks ----
   const centri = (cx: number, n: number) => {
-    const cz = -34.0;
-    b.slab("dsteel", cx - 2.7, 0, cz - 1.2, cx + 2.7, 0.3, cz + 1.2, true);                          // skid
-    b.cyl("steel", cx - 0.3, 1.25, cz, 0.9, 2.8, { axis: "x", tess: 20 });                          // bowl
-    b.cyl("steel", cx + 1.55, 1.25, cz, 0.35, 0.8, { axis: "x", tess: 16, dia2: 0.9 });             // conical beach, narrow end toward the solids discharge
-    for (const dx of [-1.4, 0.8]) b.cyl("dsteel", cx + dx, 1.25, cz, 1.02, 0.1, { axis: "x", tess: 20 });    // bearing rings
-    b.slab("steel", cx - 1.7, 0.3, cz - 0.55, cx + 1.0, 0.8, cz + 0.55);                             // pedestal / hood
-    b.box("orange", cx - 2.05, 1.0, cz, 0.8, 0.9, 0.95);                                              // gearbox
-    b.cyl("blue", cx - 2.7, 1.0, cz, 0.7, 0.9, { axis: "x", tess: 14 });                              // main drive motor
-    b.cyl("red", cx - 2.0, 0.6, cz + 1.0, 0.5, 0.5, { axis: "z", tess: 12 });                         // back-drive motor
-    b.slab("steel", cx + 1.9, 0.6, cz - 0.3, cx + 2.5, 1.0, cz + 0.3);                                // solids discharge housing
-    b.ramp("steel", cx + 2.25, 0.5, cz - 1.0, 0.9, cz + 1.0, 0.3, 0.04);                              // (chute lip, small)
-    b.slab("steel", cx - 0.5, 0.3, cz + 0.6, cx + 0.5, 0.9, cz + 1.1);                                // liquid (centrate) discharge box
-    b.cyl("red", cx + 0.2, 0.55, cz + 1.9, 0.55, 0.7, { tess: 12 }); b.cyl("blue", cx + 0.2, 0.9, cz + 1.9, 0.62, 0.3, { tess: 12 });   // feed pump
-    b.beam("steel", v(cx + 0.2, 0.9, cz + 1.9), v(cx + 0.2, 0.9, cz + 3.0), 0.18);                  // feed line stub toward the tanks
-    b.label("CENTRIFUGE " + n, cx - 0.2, 2.3, cz - 1.25, 2.4, 0.5, Math.PI, "#233a52", "#ffd24a", 46);
-    // solids catch pit under the discharge
-    const px0 = cx + 2.8, px1 = cx + 5.2, pz0 = cz - 1.3, pz1 = cz + 1.3;
-    b.slab("steel", px0, 0, pz0, px1, 0.2, pz1);
-    for (const [x0, z0, x1, z1] of [[px0, pz0, px1, pz0 + 0.12], [px0, pz1 - 0.12, px1, pz1], [px0, pz0, px0 + 0.12, pz1], [px1 - 0.12, pz0, px1, pz1]] as number[][]) b.slab("tank", x0, 0.2, z0, x1, 1.2, z1, true);
-    b.slab("cuttings", px0 + 0.12, 0.2, pz0 + 0.12, px1 - 0.12, 0.7, pz1 - 0.12);
-    b.cyl("cuttings", cx + 3.1, 0.9, cz, 1.4, 0.6, { tess: 12, dia2: 0.3 });
-    b.label("SOLIDS", (px0 + px1) / 2, 1.7, pz0 - 0.05, 1.4, 0.4, Math.PI, "#7a1a14", "#ffffff", 40);
+    const cz = -34.0, Y = 2.78;
+    // stand: legs, bracing, a walkable deck level with the pit roofs, rails, and a stair down on the south side
+    b.slab("deck", cx - 2.9, Y - 0.2, cz - 1.5, cx + 2.0, Y, cz + 2.6, true);
+    for (const px of [cx - 2.7, cx + 1.8]) for (const pz of [cz - 1.3, cz + 2.4]) b.slab("dsteel", px - 0.12, 0, pz - 0.12, px + 0.12, Y - 0.2, pz + 0.12, true);
+    for (const pz of [cz - 1.3, cz + 2.4]) { b.beam("dsteel", v(cx - 2.7, 0.3, pz), v(cx + 1.8, Y - 0.5, pz), 0.07); b.beam("dsteel", v(cx + 1.8, 0.3, pz), v(cx - 2.7, Y - 0.5, pz), 0.07); }
+    b.rail("yellow", cx - 2.9, cz + 2.6, cx + 2.0, cz + 2.6, Y, 1.1);
+    b.rail("yellow", cx - 2.9, cz - 1.5, cx - 2.2, cz - 1.5, Y, 1.1); b.rail("yellow", cx - 1.0, cz - 1.5, cx + 2.0, cz - 1.5, Y, 1.1);
+    b.rail("yellow", cx - 2.9, cz - 1.5, cx - 2.9, cz + 2.6, Y, 1.1);
+    b.stairs("dsteel", "yellow", cx - 1.6, cz - 1.5, "-z", Y, 1.2, 0.26, 0.3, 0, true);
+    // the machine, riding on the deck
+    b.slab("dsteel", cx - 2.7, Y, cz - 1.2, cx + 1.9, Y + 0.3, cz + 1.2, true);                          // skid
+    b.cyl("steel", cx - 0.3, Y + 1.25, cz, 0.9, 2.8, { axis: "x", tess: 20 });                          // bowl
+    b.cyl("steel", cx + 1.55, Y + 1.25, cz, 0.35, 0.8, { axis: "x", tess: 16, dia2: 0.9 });             // conical beach, narrow end toward the solids discharge
+    for (const dx of [-1.4, 0.8]) b.cyl("dsteel", cx + dx, Y + 1.25, cz, 1.02, 0.1, { axis: "x", tess: 20 });    // bearing rings
+    b.slab("steel", cx - 1.7, Y + 0.3, cz - 0.55, cx + 1.0, Y + 0.8, cz + 0.55);                         // pedestal / hood
+    b.box("orange", cx - 2.05, Y + 1.0, cz, 0.8, 0.9, 0.95);                                              // gearbox
+    b.cyl("blue", cx - 2.7, Y + 1.0, cz, 0.7, 0.9, { axis: "x", tess: 14 });                              // main drive motor
+    b.cyl("red", cx - 2.0, Y + 0.6, cz + 1.0, 0.5, 0.5, { axis: "z", tess: 12 });                         // back-drive motor
+    b.slab("steel", cx + 1.5, Y + 0.6, cz - 0.3, cx + 2.1, Y + 1.0, cz + 0.3);                            // solids discharge housing, hanging off the end of the deck
+    b.slab("steel", cx - 0.5, Y + 0.3, cz + 0.6, cx + 0.5, Y + 0.9, cz + 1.1);                            // liquid (centrate) discharge box
+    b.cyl("red", cx + 0.2, Y + 0.55, cz + 1.9, 0.55, 0.7, { tess: 12 }); b.cyl("blue", cx + 0.2, Y + 0.9, cz + 1.9, 0.62, 0.3, { tess: 12 });   // feed pump
+    b.beam("steel", v(cx + 0.2, Y + 0.9, cz + 1.9), v(cx + 0.2, Y + 0.9, cz + 2.6), 0.18);               // feed line stub toward the tanks
+    b.label("CENTRIFUGE " + n, cx - 0.2, Y + 2.3, cz - 1.25, 2.4, 0.5, Math.PI, "#233a52", "#ffd24a", 46);
+    // solids chute straight down into the solids tank below
+    for (const [x0, z0, x1, z1] of [[cx + 2.0, cz - 0.3, cx + 2.55, cz - 0.24], [cx + 2.0, cz + 0.24, cx + 2.55, cz + 0.3], [cx + 2.0, cz - 0.3, cx + 2.06, cz + 0.3], [cx + 2.49, cz - 0.3, cx + 2.55, cz + 0.3]] as number[][]) b.slab("steel", x0, 1.55, z0, x1, Y + 1.0, z1);
+    // solids tank: closed steel box on the ground under the chute, with a hatch on top
+    const px0 = cx + 1.95, px1 = cx + 4.55, pz0 = cz - 1.3, pz1 = cz + 1.3;
+    b.slab("tank", px0, 0.1, pz0, px1, 1.5, pz1, true);
+    b.slab("steel", px0 - 0.05, 0.0, pz0 - 0.05, px1 + 0.05, 0.1, pz1 + 0.05);
+    b.slab("dsteel", px0 + 0.1, 1.5, pz0 + 0.1, px1 - 0.1, 1.55, pz1 - 0.1);
+    b.slab("steel", cx + 3.1, 1.55, cz + 0.4, cx + 4.0, 1.75, cz + 1.0);                                  // hatch
+    b.label("SOLIDS", (px0 + px1) / 2, 1.05, pz0 - 0.07, 1.6, 0.5, Math.PI, "#7a1a14", "#ffffff", 42);
+    // the solids heap under the chute is visible through the chute throat
+    b.cyl("cuttings", cx + 2.28, 1.62, cz, 0.45, 0.14, { tess: 10, dia2: 0.3 });
   };
   centri(-17.0, 1); centri(-8.5, 2);
-  // centrate lines: the cleaned liquid goes back into the active tanks
-  b.beam("steel", v(-8.0, 0.7, -32.9), v(-8.0, 0.7, -26.3), 0.18);
-  b.beam("steel", v(-16.5, 0.7, -32.9), v(-16.5, 0.7, -31.7), 0.18); b.beam("steel", v(-16.5, 0.7, -31.7), v(-9.7, 0.7, -31.7), 0.18); b.beam("steel", v(-9.7, 0.7, -31.7), v(-9.7, 0.7, -26.3), 0.18);
+  // centrate lines run level at the height of the active tanks and go into their back walls
+  const CY = 2.4;
+  b.beam("steel", v(-8.5, CY, -32.9), v(-8.5, CY, -26.3), 0.18);
+  b.beam("steel", v(-17.0, CY, -32.9), v(-17.0, CY, -31.1), 0.18); b.beam("steel", v(-17.0, CY, -31.1), v(-9.7, CY, -31.1), 0.18); b.beam("steel", v(-9.7, CY, -31.1), v(-9.7, CY, -26.3), 0.18);
+  for (const [sx, sz] of [[-17.0, -31.1], [-9.7, -31.1], [-9.7, -28.5], [-8.5, -28.5]]) b.slab("dsteel", sx - 0.06, 0, sz - 0.06, sx + 0.06, CY - 0.1, sz + 0.06);
 
   // shale-shaker spot stays on the first pit roof
   spots.shakers = v(-13.7, 4.0, -19.9);
@@ -1165,9 +1190,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     joint.position.set(0, F + 0.9, 0); joint.isVisible = f.connecting || f.tripping;
     // rotary hose from standpipe to gooseneck
     const a = v(2.7, F + 29, -3.2), c2 = v(0, tdY + 1.2, -0.3);
-    const dir = c2.subtract(a), len = dir.length();
-    hose.position.copyFrom(a.add(c2).scale(0.5)); hose.scaling.y = len;
-    Quaternion.FromUnitVectorsToRef(Vector3.Up(), dir.scale(1 / len), tmpQ); hose.rotationQuaternion = tmpQ.clone();
+    hose = MeshBuilder.CreateTube("hose", { path: hosePath(a, c2), radius: 0.1, instance: hose } as any, scene) as typeof hose;
     wmSpin += (wmTarget - wmSpin) * Math.min(1, dt * (wmTarget ? 0.5 : 0.35));   // spins down slowly after the brake is pulled
     wmRotor.rotation.z += wmSpin * dt;
     // cabin monitors: live data, redrawn about three times a second and only when someone is near

@@ -1169,7 +1169,9 @@ export class Game {
     }
     for (const it of this.interacts) consider(it);
     cand.sort((a, b) => a.score - b.score);
-    this.nearest = this.ui.panelOpen || !this.started || this.paused || this.veh.riding ? null : cand[0]?.it ?? null;
+    // nothing can be used through a wall: take the closest candidate that has a clear line from the eyes
+    const clear = this.ui.panelOpen || !this.started || this.paused || this.veh.riding ? undefined : cand.find((c) => !this.blockedLOS(eye, c.it.pos()));
+    this.nearest = clear?.it ?? null;
     this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused ? this.veh.promptLabel() : this.nearest ? this.nearest.label() : null);
 
     // task arrows: one per open task (the active job plus any jobs it interrupted)
@@ -1181,6 +1183,16 @@ export class Game {
     };
     if (this.active) addM(this.active.m, this.active.i, true, 0);
     for (let j = this.stack.length - 1, c = 1; j >= 0; j--, c++) addM(this.stack[j].m, this.stack[j].i, false, c);
+    // trouble that is not a job still points at where to go: low diesel, a dead bit, dry pits, a flat accumulator, lost returns
+    {
+      const sp = this.rig.spots, st = this.sim.s, ALERT = "#ff6a3d";
+      const alert = (title: string, at: Vector3 | undefined) => { if (at) markers.push({ title, pos: at, color: ALERT, primary: false }); };
+      if (st.fuel < 1200) alert(st.fuel <= 0 ? "OUT OF DIESEL" : "LOW DIESEL", sp.fuel);
+      if (st.needTrip) alert("BIT DEAD: TRIP OUT", sp.cabin);
+      if (st.pit < 150) alert("PITS LOW: FRAC TANKS", sp.frac);
+      if (this.sim.accumDead || st.accum < 1200) alert("ACCUMULATOR", sp.accumulator);
+      if (st.loss.active) alert("LOSSES: LCM AT THE HOPPER", sp.hopper);
+    }
     const cam = this.scene.activeCamera!;
     const eng = this.scene.getEngine();
     const W = document.documentElement.clientWidth || 1, Hh = document.documentElement.clientHeight || 1;
@@ -1218,6 +1230,25 @@ export class Game {
 
   private beams: Mesh[] = [];
   /** Tall translucent light beam over each task target so you can spot it across the pad. */
+  /** true when a solid wall-sized collider sits between the eyes and a spot (colliders that contain either end are ignored: you stand beside things, and spots sit on them) */
+  blockedLOS(a: Vector3, b: Vector3): boolean {
+    const d = b.subtract(a), len = d.length(); if (len < 0.5) return false;
+    const n = Math.max(2, Math.ceil(len / 0.3)), E = 0.5;
+    const cols = this.player.colliders;
+    for (let i = 1; i < n; i++) {
+      const t = i / n, x = a.x + d.x * t, y = a.y + d.y * t, z = a.z + d.z * t;
+      if (len * (1 - t) < 0.6) break;                                   // the last bit before the spot is the spot's own surroundings
+      for (const c of cols) {
+        if (c.y1 - c.y0 < 1.0 || y < c.y0 || y > c.y1) continue;
+        if (x < c.x0 || x > c.x1 || z < c.z0 || z > c.z1) continue;
+        if (b.x > c.x0 - E && b.x < c.x1 + E && b.z > c.z0 - E && b.z < c.z1 + E && b.y > c.y0 - E && b.y < c.y1 + E) continue;   // target is on / in this object
+        if (a.x > c.x0 && a.x < c.x1 && a.z > c.z0 && a.z < c.z1) continue;                                                      // we are inside it
+        return true;
+      }
+    }
+    return false;
+  }
+
   updateBeams(markers: { pos: Vector3; color: string; primary: boolean }[]) {
     while (this.beams.length < markers.length) {
       const m = MeshBuilder.CreateCylinder("beam", { diameter: 1.2, height: 70, tessellation: 12 }, this.scene);

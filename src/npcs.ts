@@ -15,6 +15,9 @@ function m(scene: Scene, hex: string) {
   return x;
 }
 
+/** a hex colour pushed toward white by t (0..1) */
+function lighten(hex: string, t: number): string { return Color3.Lerp(Color3.FromHexString(hex), Color3.White(), t).toHexString(); }
+
 export interface HumanOpts {
   shirt: string; pants: string; hat: string | null; skin?: string; vest?: boolean; scale?: number;
   /** extra face / clothing detail (the player's own body) */
@@ -147,12 +150,16 @@ export class Human {
     const bootParts: { node: TransformNode; knee: TransformNode | null | undefined; end: TransformNode | null | undefined }[] = [];
     for (const side of ["Left", "Right"]) {
       const node = new TransformNode("boot", sc); node.parent = this.root;
-      const part = (mesh: Mesh, hex: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { mesh.material = m(sc, hex); mesh.parent = node; mesh.position.set(x, y, z); mesh.scaling.set(sx, sy, sz); this.meshes.push(mesh); };
-      part(MeshBuilder.CreateCylinder("bsh", { diameterTop: 0.125, diameterBottom: 0.115, height: 0.2, tessellation: 12 }, sc), boots, 0, 0.13, 0.01);       // shaft, under the pant cuff
-      part(MeshBuilder.CreateBox("bfo", { width: 0.115, height: 0.075, depth: 0.2 }, sc), boots, 0, 0.06, 0.1);                                           // foot
-      part(MeshBuilder.CreateSphere("bto", { diameter: 0.115, segments: 8 }, sc), boots, 0, 0.055, 0.2, 1, 0.7, 1.15);                                      // rounded toe
-      part(MeshBuilder.CreateBox("bhe", { width: 0.12, height: 0.03, depth: 0.1 }, sc), "#0c0b0a", 0, 0.015, -0.02);                                      // heel
-      part(MeshBuilder.CreateBox("bso", { width: 0.12, height: 0.026, depth: 0.31 }, sc), "#0c0b0a", 0, 0.013, 0.1);                                      // sole
+      const part = (mesh: Mesh, hex: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { mesh.material = m(sc, hex); mesh.parent = node; mesh.position.set(x, y, z); mesh.scaling.set(sx, sy, sz); this.meshes.push(mesh); return mesh; };
+      const toeCol = lighten(boots, 0.16), solCol = "#0c0b0a";
+      part(MeshBuilder.CreateCylinder("bsh", { diameterTop: 0.132, diameterBottom: 0.118, height: 0.21, tessellation: 18 }, sc), boots, 0, 0.145, 0.0);      // tapered shaft, under the pant cuff
+      part(MeshBuilder.CreateCylinder("bcu", { diameter: 0.14, height: 0.022, tessellation: 18 }, sc), boots, 0, 0.246, 0.0);                          // padded collar
+      part(MeshBuilder.CreateSphere("bfo", { diameter: 1, segments: 16 }, sc), boots, 0, 0.068, 0.085, 0.118, 0.098, 0.3);                               // rounded foot (an ellipsoid: no square edges)
+      part(MeshBuilder.CreateBox("bto2", { width: 0.05, height: 0.012, depth: 0.1 }, sc), "#b9a98c", 0, 0.118, 0.065).rotation.x = -0.5;                // tongue
+      for (let li = 0; li < 3; li++) part(MeshBuilder.CreateBox("bla", { width: 0.075, height: 0.008, depth: 0.012 }, sc), "#d8cfba", 0, 0.12 + li * 0.012, 0.045 + li * 0.04).rotation.x = -0.45;   // laces
+      part(MeshBuilder.CreateSphere("bto", { diameter: 1, segments: 14 }, sc), toeCol, 0, 0.056, 0.2, 0.112, 0.082, 0.13);                              // toe cap, a shade lighter
+      part(MeshBuilder.CreateCylinder("bhe", { diameter: 0.118, height: 0.034, tessellation: 18 }, sc), solCol, 0, 0.017, -0.035);                     // round heel block
+      part(MeshBuilder.CreateCylinder("bso", { diameter: 1, height: 0.028, tessellation: 28 }, sc), solCol, 0, 0.014, 0.1, 0.122, 1, 0.33);              // oval sole: round in plan, wider at the ball of the foot
       bootParts.push({ node, knee: this.bones[side + "Leg"], end: this.bones[side + "LegEnd"] });
     }
     sc.onAfterAnimationsObservable.add(() => {

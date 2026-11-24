@@ -1,4 +1,5 @@
 import { Vector3 } from "@babylonjs/core";
+import { rv } from "./rigxf";
 import type { Game, Mission } from "./game";
 import { F } from "./rig";
 import { WELL, FORMATIONS, formationAt } from "./sim";
@@ -37,28 +38,42 @@ export function defineMissions(g: Game) {
     } },
   ] });
 
-  // ================================================================ 2. safety meeting — spot the hazards
-  M({ id: "meeting", title: "Morning Meeting", sub: "Give the safety talk in the doghouse. Nobody will remember it.", trigger: gap(2), a: 0.15, m: 4, steps: [
-    { text: "Walk to the rig floor and find the doghouse", at: () => v3(-4.3, F + 1.2, -3.0), label: "Hold the safety meeting", r: 3.5, act: (done) => {
-      g.mini.pick({ eyebrow: "Pre-tour meeting", title: "JSA Board", intro: "Earl pins up the job safety analysis for today's tour. Which THREE hazards actually belong on it?", need: 3, options: [
-        { label: "Dropped objects", correct: true }, { label: "Pinch points", correct: true }, { label: "Slips, trips & falls", correct: true },
-        { label: "Bad vibes", correct: false }, { label: "Brent's emails", correct: false }, { label: "Too much synergy", correct: false },
-      ] }, (r) => {
+  // ================================================================ 2. morning meeting — a logic puzzle: who goes where
+  M({ id: "meeting", title: "Morning Meeting", sub: "Work out who goes where on today's tour. Everyone has opinions about it.", trigger: gap(2), a: 0.15, m: 4, steps: [
+    { text: "Walk to the rig floor and find the doghouse", at: () => rv(-4.3, F + 1.2, -3.0), label: "Plan the tour", r: 3.5, act: (done) => {
+      g.mini.assign({ eyebrow: "Pre-tour meeting", title: "Crew Assignments", intro: "Earl slaps four names and four stations on the whiteboard and walks off. \"Make it work.\" Use the clues.",
+        people: ["Dale (driller)", "Earl (toolpusher)", "Marcus (mud engineer)", "Jimbo (floorhand)"], slots: ["The brake", "The rig floor", "The mud pits", "The pipe deck"], solution: [0, 1, 2, 3],
+        clues: [
+          "Dale won't carry pipe or stand in mud.",
+          "Earl would never run the brake. \"Not my job.\"",
+          "Jimbo's back is bad: no rig floor, no mud pits.",
+          "Marcus is allergic to grease: not the rig floor, not the pipe deck, and he can't run the brake.",
+          "Whoever is on the rig floor is not the driller.",
+        ] }, (r) => {
         if (r.skipped) {
-          g.shortcutToast("You told the crew to \"be careful\" and called it a JSA.");
-          g.radio("earl", "'Be careful.' That's the whole JSA? …Alright. It's your name on it.");
-          g.addDebt({ id: "pinch", afterMin: 240, chance: 0.5, run: () => { g.radio("jimbo", "Boss, Dewayne pinched his hand in the tongs. He's fine. He says it's fine.", 9000); g.inc(1, "FIRST AID CASE"); g.gain(0, -5); } });
-        } else if (good(r)) { g.gain(0.3, 3); g.radio("earl", "Good JSA. That's the first one I've seen with the right hazards on it."); }
-        else { g.gain(0.05, 0); g.radio("earl", "Half right. The other half is a cry for help."); }
-        g.geoProg(done);
+          g.shortcutToast("You pointed at names at random and called it a plan.");
+          g.radio("earl", "Marcus is on the pipe deck? He's allergic to… never mind. It's your whiteboard.");
+          g.addDebt({ id: "pinch", afterMin: 240, chance: 0.55, run: () => { g.radio("jimbo", "Boss, Dewayne pinched his hand in the tongs. Nobody put the right person on the pipe deck. He's fine. He says it's fine.", 9000); g.inc(1, "FIRST AID CASE"); g.gain(0, -5); } });
+        } else if (good(r)) { g.gain(0.3, 3); g.radio("earl", "That actually works. Dale on the brake, me on the floor, Marcus in his mud. Nobody's allergic to anything."); }
+        else { g.gain(0.05, 0); g.radio("earl", "Fine. I fixed it. Don't make me redo your whiteboard."); }
+        g.radio("earl", "Watch the Delaware at 6,000 ft: pore 10.8, frac 12.0. There may be a gas stringer past 7,000. Weight up before we get there.", 12000);
+        done();
       });
     } },
   ] });
 
-  // ================================================================ 3. casing — order, then count the joints
-  M({ id: "casing", title: "Order Casing", sub: "Houston wants casing on location before TD. It's a phone call for them, a trailer for you.", trigger: gap(3), a: 0.3, m: 0, steps: [
-    { text: "Order casing at the computer in your trailer", at: sy(S.desk), label: "Order 9⅝″ casing", r: 3, act: () => g.orderCasing(), watch: () => g.casingOrder > 0 },
-    { text: "Wait for the casing truck…", watch: () => sim.s.t - g.orderT >= 50 },
+  // ================================================================ 3. casing — pack the truck, then count what showed up
+  M({ id: "casing", title: "Order Casing", sub: "Houston wants casing on location before TD. Pack the truck to the number, then count what shows up.", trigger: gap(3), a: 0.3, m: 0, steps: [
+    { text: "Order casing at the computer in your trailer", at: sy(S.desk), label: "Order 9⅝″ casing", r: 3, act: (done) => {
+      g.mini.orderCasing({ eyebrow: "Casing Order", title: "Pack the Truck", intro: "The hole is 8,500 ft and a joint runs about 40 ft, so you need roughly 215–235 joints with a little spare. Mix bundle sizes to land in the range. The truck only holds so many bundles.", min: 215, max: 235, maxBundles: 9, sizes: [30, 24, 18, 12, 8, 5] }, (r) => {
+        if (r.skipped) {
+          const n = [186, 204, 241, 268, 226][(Math.random() * 5) | 0];
+          g.shortcutToast("You told the vendor \"about enough\" and hung up.");
+          g.casingPicked(n);
+        } else g.casingPicked(r.value ?? 224);
+        done();
+      });
+    }, watch: () => g.casingOrder > 0 },
     { text: "Count the casing joints off the truck", at: sy(S.casing), label: "Check the casing tally", r: 5, enter: () => { g.rig.setCasingTruck(true); g.radio("brent", "Casing's on location. Please verify the tally. And be nice to the driver, he's been talking about his boat since Pecos."); }, act: (done) => {
       // the truck really carries 23-29 joints; the ticket claims the number you ordered (usually a little different)
       const real = 23 + ((Math.random() * 7) | 0), claim = Math.max(20, real + [0, 0, 1, -1, 2, -2][(Math.random() * 6) | 0]);
@@ -66,7 +81,7 @@ export function defineMissions(g: Game) {
         if (r.skipped) {
           g.shortcutToast("You signed the ticket without counting.");
           g.radio("earl", "Signed. Whatever's on that truck is now the company's problem. Yours, specifically.");
-          g.addDebt({ id: "tally", atDepth: 8200, chance: real !== claim ? 1 : 0.5, run: () => { g.radio("brent", "The casing is SIX joints short. Hot-shot truck from Odessa. Somebody signed this tally.", 11000); sim.addCost(60000); sim.s.t += 360; g.inc(1, "SHORT CASING TALLY"); } });
+          g.addDebt({ id: "tally", atDepth: 8200, chance: real !== claim || g.flags.shortCasing ? 1 : 0.5, run: () => { g.radio("brent", "The casing is SIX joints short. Hot-shot truck from Odessa. Somebody signed this tally.", 11000); sim.addCost(60000); sim.s.t += 360; g.inc(1, "SHORT CASING TALLY"); } });
         } else if (good(r)) { g.gain(0.3, 0); g.radio("marcus", real === claim ? `${real} joints, just like the ticket. He'll never forgive you for counting.` : `Ticket said ${claim}, you counted ${real}. Nice catch. That's a phone call to the vendor.`); if (real < claim) sim.addCost(-4000); }
         else { g.gain(0.05, 0); g.radio("marcus", `You said ${r.value}. There were ${r.extra}. Close enough for a Company Man.`); if (Math.abs((r.value ?? real) - real) >= 3) g.addDebt({ id: "tally2", atDepth: 8200, chance: 0.7, run: () => { g.radio("brent", "The joint count at TD doesn't match your tally. We're paying for it.", 9000); sim.addCost(24000); } }); }
         done();
@@ -74,48 +89,25 @@ export function defineMissions(g: Game) {
     } },
   ] });
 
-  // ================================================================ 4. autodriller — drill-off, then set points
-  M({ id: "auto", title: "Set the Autodriller", sub: "Find the right weight with a drill-off test, then set the autodriller's WOB, ROP and differential-pressure limits.", trigger: gap(3), a: 0.35, m: 0, steps: [
-    { text: "Run a drill-off test at the driller's console", at: sy(S.cabin), label: "Drill-off test", r: 3.5, act: (done) => {
-      g.say("dale", "Autodriller's off and we're drilling by the seat of our pants. Want a drill-off test to find the sweet spot? Or do you just want to guess the weights?", [
-        { label: "Run the test", cls: "green", run: () => g.mini.drillOff((r) => {
-          if (r.skipped) wingAuto(); else { const w = Math.round(r.value ?? 28); g.radio("dale", r.score > 0.7 ? `Knee's around ${w}. That tracks with what I'm feeling in the brake.` : `You're calling it ${w}. Okay. I'll… write that down.`); if (r.score < 0.4) g.flags.drillOffWopt = Math.round((r.value ?? 28)); }
-          done();
-        }) },
-        { label: "Just guess", cls: "alt", run: () => { wingAuto(); done(); } },
-      ], "Autodriller");
-      function wingAuto() {
-        g.shortcutToast("No test. You're guessing the set points.");
-        g.radio("dale", "Guess it is. Whatever you give me, I'm running.");
-        g.addDebt({ id: "wingauto", afterMin: 200, chance: 0.6, run: () => g.forceStall("MOTOR STALLED. Whoever picked those set points didn't run a drill-off, and the motor has opinions.") });
-      }
-    } },
-    { text: "Set the autodriller set points and engage it", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.auto.on },
-  ], end: () => g.radio("dale", "Autodriller's in control. I can finally drink my coffee while it's hot.") });
+  // ================================================================ 4. autodriller — set the limits and engage it
+  M({ id: "auto", title: "Set the Autodriller", sub: "Set the autodriller's WOB, ROP, differential-pressure and torque limits, then engage it.", trigger: gap(3), a: 0.35, m: 0, steps: [
+    { text: "Set the autodriller limits at the driller's console and engage it", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.auto.on },
+  ], end: () => g.radio("dale", "Autodriller's in control. I can finally drink my coffee while it's hot. Keep an eye on those limits — it will run right up to every one of them.") });
 
-  // ================================================================ 5. shakers — ID the cuttings, then swap the screens
-  M({ id: "shakers", title: "Check the Shakers", sub: "Climb the pit roof, identify the cuttings, and swap the torn screen.", trigger: gap(3), a: 0.2, m: 3, steps: [
-    { text: "Climb the tanks and look at the shale shakers", at: sy(S.shakers), label: "Shale shakers", r: 3.8, act: (done) => {
-      const cur = formationAt(s.depth).name;
-      const others = FORMATIONS.map((f) => f.name).filter((n) => n !== cur);
-      const opts = [{ label: cur, correct: true }, ...others.sort(() => Math.random() - 0.5).slice(0, 3).map((n) => ({ label: n, correct: false }))];
-      g.mini.pick({ eyebrow: "Shale Shakers", title: "Identify the Cuttings", intro: "Marcus holds up a handful of wet cuttings. What formation is the bit in right now? (Check the mud logger if you're not sure.)", need: 1, options: opts }, (r) => {
-        const swap = () => g.mini.sequence({ eyebrow: "Shale Shakers", title: "Swap the Screen", intro: "The center screen is torn. Unbolt the corners in the order Marcus calls them, then slide in the new one.", labels: ["NW", "NE", "SE", "SW"], length: 4 }, (r2) => {
-          if (r2.skipped) { skip(); } else { g.flags.screenTorn = false; g.flags.screensFixed = true; sim.addCost(1200); if (good(r2)) g.gain(0.2, 2); }
-          g.flags.shakersLooked = true; done();
-        });
-        if (r.skipped) { skip(); g.flags.shakersLooked = true; done(); return; }
-        if (bad(r)) g.radio("marcus", "That's not even the right formation. Look at the color."); else if (good(r)) g.radio("marcus", `${cur}. Yep. You'd make a decent mud engineer.`);
-        swap();
+  // ================================================================ 5. shakers — clear the blinded screen (Lights-Out puzzle)
+  M({ id: "shakers", title: "Check the Shakers", sub: "Climb the pit roof. The shaker screen is blinded with gumbo and the mud is running over the side.", trigger: gap(3), a: 0.2, m: 3, steps: [
+    { text: "Climb the tanks and clear the shale shaker screen", at: sy(S.shakers), label: "Shale shakers", r: 3.8, act: (done) => {
+      g.mini.lightsOut({ eyebrow: "Shale Shakers", title: "Clear the Screen", intro: "Gumbo has plugged the shaker screen in patches. Flushing a cell clears it, but it also flips the four cells around it, so a clear one clogs again. Get the whole screen clean.", size: 4 }, (r) => {
+        if (r.skipped) {
+          g.shortcutToast("You told Marcus the screen looked fine.");
+          g.radio("marcus", "Looks fine to you? It's mostly mud. Okay. …I'll note that.");
+          g.flags.screenTorn = false;
+          g.addDebt({ id: "screens", atDepth: s.depth + 700, chance: 0.65, run: () => { g.radio("marcus", "The blinded screen just dumped mud over the side of the shaker. We lost about 120 barrels.", 10000); s.pit = Math.max(150, s.pit - 120); sim.addCost(30000); } });
+        } else { g.flags.screenTorn = false; g.flags.screensFixed = true; sim.addCost(1200); if (good(r)) g.gain(0.2, 2); }
+        g.flags.shakersLooked = true; done();
       });
-      function skip() {
-        g.shortcutToast("You told Marcus the screens looked fine.");
-        g.radio("marcus", "Looks fine to you? Okay, it's your mud. …I'll note that.");
-        g.flags.screenTorn = false;                       // mission can finish, but the screen is still torn
-        g.addDebt({ id: "screens", atDepth: s.depth + 700, chance: 0.65, run: () => { g.radio("marcus", "Torn screen just dumped barite over the shaker. We lost about 120 barrels of mud.", 10000); s.pit = Math.max(150, s.pit - 120); sim.addCost(30000); } });
-      }
     }, watch: () => !!g.flags.shakersLooked },
-  ], end: () => g.radio("marcus", "Screens handled. That's four more tasks than the last Company Man ever did.") });
+  ], end: () => g.radio("marcus", "Screen's clean and the mud's back over the shaker where it belongs. That's more than the last Company Man ever did.") });
 
   // ================================================================ 6. interns
   const internSkip = (done: () => void) => {
@@ -128,28 +120,29 @@ export function defineMissions(g: Game) {
     start: () => { g.spawnInterns(); g.radio("brent", "Three summer interns are walking out to you. Please give them 'the full experience.' Please don't."); },
     steps: [
       { text: "Tour stop 1: the pipe racks", at: sy(S.tally), label: "Give the tour: pipe racks", r: 5, act: (done) => g.tourStop("tyler", "Stop 1 — Pipe racks", "'Is this where they keep the straws?'", [["Yes. Very big straws.", "Tyler writes that down. He does not realize it is a joke.", 0.05, 4], ["It's drill pipe. 30 feet each, 4 inches around.", "Tyler: 'That's what she said' — and then looks at Madison, who doesn't laugh.", 0.15, 1]], done) },
-      { text: "Tour stop 2: the BOP stack — quiz them", at: sy(S.bop), label: "Give the tour: the BOP", r: 6, act: (done) => g.mini.pick({ eyebrow: "Intern Tour — Stop 2", title: "Pop Quiz", intro: "Madison asks: \"So what does a BOP actually do?\" Pick the right answer for the interns.", need: 1, options: [
-        { label: "Seals the well if it kicks", correct: true }, { label: "Holds the mast up", correct: false }, { label: "Keeps the mud warm", correct: false }, { label: "It's mostly decorative", correct: false } ] }, (r) => {
+      { text: "Tour stop 2: the BOP — show her how it closes", at: sy(S.bop), label: "Give the tour: the BOP", r: 6, act: (done) => g.mini.pipes({ eyebrow: "Intern Tour — Stop 2", title: "Line Up the Closing Unit", intro: "Madison asks how the BOP actually closes. Show her: turn the sections of hydraulic line until the accumulator is connected all the way across to the BOP.", from: "ACCUM", to: "BOP", cols: 5, rows: 4 }, (r) => {
         if (r.skipped) return internSkip(done);
-        if (good(r)) { g.gain(0.2, 3); g.radio("tyler", "Seals the well. Got it. Brayden is touching it."); } else { g.gain(-0.05, 0); g.radio("tyler", "Wait, so it IS decorative?"); }
+        if (good(r)) { g.gain(0.2, 3); g.radio("tyler", "So the accumulator pushes fluid to the BOP and the BOP closes. Got it. Brayden is touching it."); } else { g.gain(0.05, 0); g.radio("tyler", "…so it works eventually?"); }
         done(); }) },
-      { text: "Tour stop 3: the rig floor", at: () => v3(2.3, F + 1.0, 2.6), label: "Give the tour: drill floor", r: 4, act: (done) => g.tourStop("tyler", "Stop 3 — Drill floor", "'Can I push the big red button?'", [["No. There's no button. It's a rotary table.", "Brayden: 'So it IS a button.' You let it go.", 0.1, 2], ["Sure. Press it.", "The fire alarm goes off. For three seconds. Everyone looks at you.", -0.15, 6]], done) },
+      { text: "Tour stop 3: the rig floor", at: () => rv(2.3, F + 1.0, 2.6), label: "Give the tour: drill floor", r: 4, act: (done) => g.tourStop("tyler", "Stop 3 — Drill floor", "'Can I push the big red button?'", [["No. There's no button. It's a rotary table.", "Brayden: 'So it IS a button.' You let it go.", 0.1, 2], ["Sure. Press it.", "The fire alarm goes off. For three seconds. Everyone looks at you.", -0.15, 6]], done) },
       { text: "Tour stop 4: muster point — head count", at: sy(S.muster), label: "Give the tour: muster", r: 5, act: (done) => g.mini.whack({ eyebrow: "Intern Tour — Stop 4", title: "Head Count", intro: "Muster drill! TWENTY interns just scattered across the muster area and they will not hold still. Tap every one of them before they wander off. Tap fast.", label: "intern", count: 20, seconds: 17, speed: 2.4, size: 30, life: 2.6 }, (r) => {
         if (r.skipped) return internSkip(done);
         if (good(r)) { g.gain(0.25, 4); g.radio("tyler", "Three. All present. I did not know it was a game."); } else { g.gain(0, 0); g.radio("earl", "You lost an intern at a muster drill. Impressive."); g.inc(1, "MISSING HEAD AT MUSTER"); }
         done(); }) },
     ], end: () => g.despawnInterns() });
 
-  // ================================================================ 7. porta john — slips + stuck latch
-  M({ id: "porta", title: "Porta John Standoff", sub: "Both floorhands are locked in the porta john. A connection is coming. Somebody has to pull the slips.", trigger: gap(3), a: 0.4, m: 6,
-    start: () => { g.rig.setPortaLocked(true); H.hand1.root.setEnabled(false); H.hand2.root.setEnabled(false); g.radio("dale", "BOSS! Jimbo and Dewayne are locked in the porta john and we've got a connection coming! I can't leave the brake — somebody's gotta pull the slips!", 11000); },
+  // ================================================================ 7. porta john — set the slips while Dale bobs the string, then free the floorhands
+  M({ id: "porta", title: "Porta John Standoff", sub: "Both floorhands are locked in the porta john, a connection is up, and Dale is \"helping\" by bobbing the string.", trigger: gap(3), a: 0.4, m: 6,
+    start: () => { g.rig.setPortaLocked(true); H.hand1.root.setEnabled(false); H.hand2.root.setEnabled(false); g.radio("dale", "BOSS! Jimbo and Dewayne are locked in the porta john and I've got a connection up! I'll hold the pipe for you, but somebody's gotta set the slips!", 11000); },
     steps: [
-      { text: "Go to the drill floor and pull the slips", at: () => v3(1.9, F + 1.0, 1.4), label: "Pull the slips", r: 4, act: (done) => g.mini.slips((r) => {
+      { text: "Go to the drill floor and set the slips (Dale will fake you out)", at: () => rv(1.9, F + 1.0, 1.4), label: "Set the slips", r: 4, act: (done) => g.mini.slips((r) => {
         if (r.skipped) {
           g.shortcutToast("You eyeballed the slips and waved Dale on.");
           g.radio("dale", "You sure? That wasn't set. …Okay. It's your pipe.");
           g.addDebt({ id: "slips", afterMin: 45, chance: 0.5, run: () => { g.radio("dale", "WE DROPPED THE STRING! The pipe walked right through the slips! Fishing job, boss!", 11000); sim.addCost(120000); sim.s.t += 300; sim.s.stats.npt += 5; g.inc(1, "DROPPED PIPE IN THE HOLE"); } });
-        } else if (good(r)) g.gain(0.2, 2);
+        } else if (r.score === 0) { g.radio("dale", "THE STRING'S GONE! You set it on moving pipe — it walked right through the slips! Fishing job!", 11000); sim.addCost(120000); sim.s.t += 300; sim.s.stats.npt += 5; g.inc(1, "DROPPED PIPE IN THE HOLE"); }
+        else if (good(r)) { g.gain(0.2, 2); g.radio("dale", "Clean set. I was just messing with you. A little."); }
+        else { g.gain(0.05, 0); g.radio("dale", "Took you a couple of tries. The pipe's hung. That's what matters."); }
         done(); }) },
       { text: "Free the floorhands from the porta john", at: sy(S.porta), label: "Open the porta john", r: 3, act: (done) => g.mini.mash({ eyebrow: "Porta John", title: "Jammed Latch", intro: "\"The latch just… jammed. Both of us. At the same time. On the same trip.\" Rattle it loose.", seconds: 9, label: "the latch is stuck hard." }, (r) => {
         const free = () => { g.rig.setPortaLocked(false); H.hand1.root.setEnabled(true); H.hand2.root.setEnabled(true); };
@@ -204,15 +197,26 @@ export function defineMissions(g: Game) {
     }, watch: () => g.deer.shoo >= 3 && !!g.deer.target && g.rig.deerNode.position.subtract(g.deer.target).length() < 1.5 }],
     end: () => { g.rig.deerNode.setEnabled(false); g.radio("earl", "That deer has more seniority than you at this company, and it still left."); } });
 
-  // ================================================================ 12. snake — reaction test
-  M({ id: "snake", title: "Rattlesnake in the Doghouse", sub: "It's under the table. The crew is standing on the benches. Someone has to go in there.", trigger: gap(8), a: 0.3, m: 6,
+  // ================================================================ 17. windmill off location
+  M({ id: "windmill", title: "Windmill Shutdown", sub: "A wind turbine off the lease is shredding birds and the EPA has noticed. It's the company's windmill. Of course it is.", trigger: gap(5), a: 0.3, m: 4,
+    start: () => { g.radio("earl", "Environmental called. There's a wind turbine out west of the lease and the ground under it is… feathers. Take the pickup, drive out there, and shut it off. The truck's by the company man trailer.", 12000); },
+    steps: [
+      { text: "Drive out to the wind turbine west of the lease (use the pickup)", at: sy(S.windmill), label: "Shut off the windmill", r: 6, act: (done) => g.mini.mash({ eyebrow: "Wind Turbine 7", title: "Main Brake", intro: "The brake lever is stiff and the blades are still turning. Heave it over, alternating left and right, before the next bird flies in.", seconds: 10, label: "pull the brake lever" }, (r) => {
+        const off = () => { g.rig.setWindmill(false); };
+        if (r.skipped) { off(); g.shortcutToast("You hit the E-stop and walked away."); g.radio("earl", "You just slammed a 1.5 megawatt generator to a stop with the emergency button. Somebody will hear about that.", 9000); g.addDebt({ id: "wmgear", afterMin: 60, chance: 0.5, run: () => { g.radio("brent", "The turbine's gearbox is toast. Our name is on the work order.", 9000); sim.addCost(35000); } }); g.gain(-0.05, 0); }
+        else if (r.score > 0.35) { off(); g.gain(0.3, 5); g.radio("earl", "Blades are coasting down. Good. Nobody tell the birds, they're past caring.", 8000); }
+        else { off(); g.gain(0.05, 1); g.radio("earl", "It took you ten minutes and a lot of swearing, but it's stopped.", 7000); }
+        done(); }) },
+    ] });
+
+  // ================================================================ snake — trap it in the doghouse (hex pen puzzle)
+  M({ id: "snake", title: "Rattlesnake in the Doghouse", sub: "It's under the table. The crew is standing on the benches. Someone has to box it in.", trigger: gap(8), a: 0.3, m: 6,
     start: () => { g.spawnSnake(); g.radio("jimbo", "BOSS. There's a snake in the doghouse. It's a rattler. It's rattling.", 9000); },
-    steps: [{ text: "Go to the doghouse and deal with the snake", at: () => v3(-4.3, F + 0.6, -3.2), label: "Handle the snake", r: 3.5, act: (done) => g.mini.reaction({ eyebrow: "Doghouse", title: "Snake Dance", intro: "It's coiled, and it's watching you. It will fake you out. Only jump back when it truly strikes, and you only get a heartbeat. Don't flinch early.", rounds: 6, goText: "STRIKE!", window: 420, feints: 0.5 }, (r) => {
+    steps: [{ text: "Go to the doghouse and box the snake in", at: () => rv(-4.3, F + 0.6, -3.2), label: "Handle the snake", r: 3.5, act: (done) => g.mini.snakeTrap({ eyebrow: "Doghouse", title: "Trap the Rattler", intro: "It's loose and it wants out. Drop crates on the floor tiles to wall it in. It slides one tile toward the nearest way out every time you place one, so think two moves ahead." }, (r) => {
       const bite = (why: string) => { g.radio("jimbo", why, 8000); g.inc(1, "SNAKEBITE — FIRST AID"); sim.addCost(12000); g.gain(0, -4); };
       if (r.skipped) { g.shortcutToast("You decided to just walk past it."); g.radio("earl", "Walking past a rattlesnake. Bold."); g.addDebt({ id: "bite", afterMin: 15, chance: 0.5, run: () => bite("It got you in the boot, boss. The BOOT. Count your blessings.") }); }
-      else if (good(r)) { g.gain(0.4, 4); g.radio("earl", "Dodged it. Sent it out with a broom. The crew's cheering."); }
-      else if (bad(r)) bite("It got your ankle. You're fine. The boot is not.");
-      else { g.gain(0.1, 2); g.radio("jimbo", "You got it out, but it took two tries and a lot of yelling."); }
+      else if (good(r)) { g.gain(0.4, 4); g.radio("earl", "Boxed it in with a few crates and a lot of nerve. Wildlife control is on the way. The crew's cheering."); }
+      else bite("It slipped out through the gap and got your ankle on the way. You're fine. The boot is not.");
       done(); }) }],
     end: () => g.despawnSnake() });
 
@@ -247,19 +251,6 @@ export function defineMissions(g: Game) {
       } },
     ] });
 
-  // ================================================================ 15. Houston — type the buzzwords
-  M({ id: "houston", title: "Houston Calls", sub: "The office wants 'a quick one-pager' and 'a few bullets' — at 3 a.m., mid-sentence, on a Sunday.", trigger: gap(8), a: 0.4, m: -4,
-    start: () => { g.flags.houstonPending = true; g.sfx.horn(); g.radio("earl", "Your phone in the trailer won't stop ringing. It's Houston. It's always Houston.", 9000); },
-    steps: [{ text: "Answer the phone in your trailer", at: sy(S.phone), label: "Answer the phone", r: 3, watch: () => !!g.flags.houstonDone, act: () => g.say("brent", "Hey! Quick one. I need the one-pager typed into the system — word for word, the VP is very particular about the language. Can you do that right now, live?", [
-      { label: "Fine. Go.", cls: "green", run: () => g.mini.typing({ eyebrow: "Houston", title: "The One-Pager", intro: "Type Brent's approved language exactly as written.", text: "We will leverage synergies to deliver value at scale", seconds: 16 }, (r) => {
-        if (r.skipped) { g.shortcutToast("\"I'll send it later.\""); g.radio("brent", "Later. Okay. Great. I'll put a pin in it."); g.gain(-0.1, 0); g.addDebt({ id: "onepager", afterMin: 50, chance: 0.8, run: () => { g.radio("brent", "Just following up on the one-pager. Also following up on following up. Also the VP is cc'd.", 10000); g.gain(-0.4, -5); } }); }
-        else if (good(r)) { g.gain(0.35, 0); g.radio("brent", "Flawless. Not a single typo. I'm forwarding this to people who don't read."); }
-        else { g.gain(0.05, -2); g.radio("brent", "There are typos. Bring it to the Tuesday call."); }
-        g.flags.houstonDone = true; }) },
-      { label: "I'll send it later", cls: "alt", run: () => { g.shortcutToast("\"I'll send it later.\""); g.radio("brent", "Later. Okay. Great. I'll put a pin in it."); g.addDebt({ id: "onepager", afterMin: 50, chance: 0.8, run: () => { g.radio("brent", "Just following up on the one-pager. Also following up on following up. Also the VP is cc'd.", 10000); g.gain(-0.4, -5); } }); g.flags.houstonDone = true; } },
-    ], "Houston") }],
-    end: () => { g.flags.houstonPending = false; } });
-
   // ================================================================ 16. ARMAGEDDON (finale)
   M({ id: "armageddon", title: "Armageddon", sub: "Drill to TD, set casing, and then — apparently — save the planet.", trigger: () => g.flags.chainDone === true, a: 1.0, m: 20,
     start: () => { g.hold = null; sim.hold = null; g.radio("dale", "Released the hold. We're drilling to TD, boss.", 8000); },
@@ -278,18 +269,6 @@ export function defineMissions(g: Game) {
       { text: "Walk to the drill console on the asteroid", at: () => g.arm.console, label: "Take the driller's seat", r: 4, act: () => g.openArm(), watch: () => g.arm.depth > 0 },
       { text: "Drill 800 feet through the asteroid", watch: () => g.arm.depth >= 800 },
       { text: "Plant the bomb and detonate", at: () => g.arm.console, label: "Detonate", r: 4, act: () => g.openArm() },
-    ] });
-
-  // ================================================================ 17. windmill off location
-  M({ id: "windmill", title: "Windmill Shutdown", sub: "A wind turbine off the lease is shredding birds and the EPA has noticed. It's the company's windmill. Of course it is.", trigger: gap(5), a: 0.3, m: 4,
-    start: () => { g.radio("earl", "Environmental called. There's a wind turbine out west of the lease and the ground under it is… feathers. Take the pickup, drive out there, and shut it off. The truck's by the company man trailer.", 12000); },
-    steps: [
-      { text: "Drive out to the wind turbine west of the lease (use the pickup)", at: sy(S.windmill), label: "Shut off the windmill", r: 6, act: (done) => g.mini.mash({ eyebrow: "Wind Turbine 7", title: "Main Brake", intro: "The brake lever is stiff and the blades are still turning. Heave it over, alternating left and right, before the next bird flies in.", seconds: 10, label: "pull the brake lever" }, (r) => {
-        const off = () => { g.rig.setWindmill(false); };
-        if (r.skipped) { off(); g.shortcutToast("You hit the E-stop and walked away."); g.radio("earl", "You just slammed a 1.5 megawatt generator to a stop with the emergency button. Somebody will hear about that.", 9000); g.addDebt({ id: "wmgear", afterMin: 60, chance: 0.5, run: () => { g.radio("brent", "The turbine's gearbox is toast. Our name is on the work order.", 9000); sim.addCost(35000); } }); g.gain(-0.05, 0); }
-        else if (r.score > 0.35) { off(); g.gain(0.3, 5); g.radio("earl", "Blades are coasting down. Good. Nobody tell the birds, they're past caring.", 8000); }
-        else { off(); g.gain(0.05, 1); g.radio("earl", "It took you ten minutes and a lot of swearing, but it's stopped.", 7000); }
-        done(); }) },
     ] });
 
   g.missionTotal = g.queue.length;

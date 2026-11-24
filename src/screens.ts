@@ -6,7 +6,7 @@ export interface ScreenData {
   rotating: boolean; kicking: boolean; dd: { inc: number; azi: number; tf: number; sliding: boolean }; t: number;
 }
 
-export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan";
+export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news";
 
 const W = 256, H = 160;
 const BG = "#050a12", GRID = "rgba(120,170,220,0.16)", CY = "#4fd6ff", GR = "#5dff8a", AM = "#ffb02a", RD = "#ff5a4a", TX = "#cfe6f7", DIM = "#6f8aa1";
@@ -78,6 +78,37 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
       for (let i = 0; i < 4; i++) { const x = 16 + i * 60, lv = Math.max(0.1, Math.min(0.95, (d.pit + [0, -40, -90, -140][i]) / 760));
         c.fillStyle = "#0e1b2b"; c.fillRect(x, 26, 34, 102); c.fillStyle = i === 0 ? (d.kicking ? RD : CY) : "#3aa0c8"; c.fillRect(x, 26 + 102 * (1 - lv), 34, 102 * lv);
         c.fillStyle = TX; c.font = "9px monospace"; c.textAlign = "center"; c.fillText(`${Math.round(lv * 760)}`, x + 17, 138); c.fillStyle = DIM; c.fillText(["ACT", "RSV", "TRIP", "SLUG"][i], x + 17, 150); }
+      break;
+    }
+    case "edr": {
+      frame(c, "EDR · RIG 107 · LIVE");
+      trace(c, hist.rop, 8, 26, 148, 34, 380, GR); trace(c, hist.wob, 8, 66, 148, 34, 60, CY); trace(c, hist.spp, 8, 108, 240, 40, 4000, AM);
+      c.font = "bold 9px monospace"; c.textAlign = "left"; c.fillStyle = GR; c.fillText(`ROP ${Math.round(d.rop)}`, 12, 33); c.fillStyle = CY; c.fillText(`WOB ${Math.round(d.wob)}`, 12, 73); c.fillStyle = AM; c.fillText(`SPP ${Math.round(d.spp)}`, 12, 115);
+      c.fillStyle = TX; c.textAlign = "right"; c.fillText(`${Math.round(d.depth)} FT`, W - 8, 9);
+      // rig-floor camera footage, top right: dusk sky, mast, and a top drive that rides up and down with the hole
+      { const x = 164, y = 24, w = 84, h = 76; c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
+        const g = c.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, "#27324a"); g.addColorStop(1, "#6b5a48"); c.fillStyle = g; c.fillRect(x, y, w, h);
+        c.strokeStyle = "#e8742a"; c.lineWidth = 3; c.beginPath(); c.moveTo(x + 26, y + h); c.lineTo(x + 38, y); c.moveTo(x + 58, y + h); c.lineTo(x + 46, y); c.stroke();
+        c.strokeStyle = "#cfd6dc"; c.lineWidth = 1; for (let k = 0; k < 6; k++) { const yy = y + 6 + k * 12; c.beginPath(); c.moveTo(x + 30 + k * 0.7, yy); c.lineTo(x + 54 - k * 0.7, yy + 6); c.stroke(); }
+        const ty = y + 12 + ((d.depth % 93) / 93) * 40 + (d.rotating ? Math.sin(d.t * 30) * 0.6 : 0);
+        c.fillStyle = "#c9ccd0"; c.fillRect(x + 36, ty, 12, 10); c.fillStyle = "#e8b923"; c.fillRect(x + 40, ty + 10, 4, y + h - ty - 22);
+        c.fillStyle = "#2a2f36"; c.fillRect(x, y + h - 14, w, 14); c.fillStyle = "#c4561a"; c.fillRect(x + 8, y + h - 24, 5, 10); c.fillRect(x + 66, y + h - 24, 5, 10);
+        c.fillStyle = "rgba(255,255,255,0.05)"; for (let k = 0; k < h; k += 3) c.fillRect(x, y + k, w, 1);
+        c.restore(); c.strokeStyle = GRID; c.strokeRect(x + 0.5, y + 0.5, w, h);
+        c.fillStyle = (Math.floor(d.t * 1.6) % 2) ? RD : "#5a1a14"; c.beginPath(); c.arc(x + 8, y + 7, 3, 0, 6.3); c.fill();
+        c.fillStyle = TX; c.font = "bold 8px monospace"; c.textAlign = "left"; c.fillText("CAM 1 · RIG FLOOR", x + 14, y + 8); }
+      break;
+    }
+    case "news": {
+      const heads = ["MAN WINS ARGUMENT WITH GPS, GPS DEMANDS RECOUNT", "BIGFOOT SPOTTED IN PERMIAN WALMART, BUYS ONLY ICE", "SENATOR CHALLENGES THE MOON TO A DEBATE", "GOAT ELECTED MAYOR; VOTER TURNOUT UP 400%", "SCIENTISTS CONFIRM MONDAY STILL MONDAY", "LOCAL TRUCK 'JUST NEEDS A LITTLE FREON'", "TOWN BANS SUNDAY AFTER 'TOO MANY MONDAYS'", "EXPERT: PROBABLY FINE. ANOTHER EXPERT: PROBABLY NOT"];
+      const i = Math.floor(d.t / 7) % heads.length;
+      c.fillStyle = "#0a1a3a"; c.fillRect(0, 0, W, H);
+      c.fillStyle = "#5a7ab8"; c.fillRect(150, 30, 90, 90); c.fillStyle = "#e0b48f"; c.beginPath(); c.arc(195, 56, 14, 0, 6.3); c.fill(); c.fillStyle = "#1a1a2a"; c.fillRect(173, 72, 44, 48);
+      c.fillStyle = "#c01818"; c.fillRect(0, 0, W, 20); c.fillStyle = "#fff"; c.font = "bold 12px sans-serif"; c.textAlign = "left"; c.textBaseline = "middle"; c.fillText("BREAKING", 6, 10);
+      c.fillStyle = "#fff"; c.font = "bold 13px sans-serif"; const words = heads[i].split(" "); let line = "", y = 52;
+      for (const w of words) { if ((line + w).length > 17) { c.fillText(line, 8, y); y += 17; line = ""; } line += w + " "; } c.fillText(line, 8, y);
+      c.fillStyle = "#c01818"; c.fillRect(0, 124, W, 36); c.fillStyle = "#fff"; c.font = "bold 12px sans-serif"; c.fillText("FAUX NEWS 24", 6, 133);
+      const tk = heads.join("   ●   "); const off = (d.t * 40) % (tk.length * 7); c.save(); c.beginPath(); c.rect(0, 140, W, 20); c.clip(); c.fillStyle = "#ffe04a"; c.fillText(tk + "   ●   " + tk, 6 - off, 150); c.restore();
       break;
     }
     case "alarms": {

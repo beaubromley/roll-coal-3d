@@ -20,6 +20,13 @@ export class Builder {
   setTile(key: string, metres: number) { this.tiles.set(key, metres); }
   private mats = new Map<string, StandardMaterial>();
 
+  /** world offset applied to everything built inside at() */
+  ox = 0; oz = 0;
+  /** quarter-turn applied to everything built while set (0 or -PI/2): local (x, z) -> (-z, x) */
+  rot = 0;
+  private tx(x: number, z: number): [number, number] { return this.rot ? [-z, x] : [x, z]; }
+  at(dx: number, dz: number, fn: () => void) { const a = this.ox, c = this.oz; this.ox += dx; this.oz += dz; try { fn(); } finally { this.ox = a; this.oz = c; } }
+
   constructor(public scene: Scene) {}
 
   defMat(key: string, hex: string, o: MatOpts = {}): StandardMaterial {
@@ -50,22 +57,29 @@ export class Builder {
 
   /** center-based box */
   box(m: string, cx: number, cy: number, cz: number, w: number, h: number, d: number, solid = false, rotY = 0) {
+    cx += this.ox; cz += this.oz;
+    [cx, cz] = this.tx(cx, cz);
     const mesh = MeshBuilder.CreateBox("b", { width: w, height: h, depth: d }, this.scene);
     mesh.position.set(cx, cy, cz);
-    mesh.rotation.y = rotY;
+    mesh.rotation.y = rotY + this.rot;
     this.push(m, mesh);
     if (solid && rotY === 0) {
-      this.colliders.push({ x0: cx - w / 2, x1: cx + w / 2, y0: cy - h / 2, y1: cy + h / 2, z0: cz - d / 2, z1: cz + d / 2 });
+      const hw = (this.rot ? d : w) / 2, hd = (this.rot ? w : d) / 2;
+      this.colliders.push({ x0: cx - hw, x1: cx + hw, y0: cy - h / 2, y1: cy + h / 2, z0: cz - hd, z1: cz + hd });
     }
   }
 
   /** smooth sloped plank spanning z0 (at y0) to z1 (at y1), top surface on the line */
   ramp(m: string, cx: number, w: number, z0: number, y0: number, z1: number, y1: number, t = 0.1) {
+    cx += this.ox; z0 += this.oz; z1 += this.oz;
+    const rawZ = (z0 + z1) / 2, rawCx = cx;
     const dz = z1 - z0, dy = y1 - y0, len = Math.hypot(dz, dy);
     const mesh = MeshBuilder.CreateBox("ramp", { width: w, height: t, depth: len }, this.scene);
     const ang = Math.atan2(-dy, dz); // +z end lower when dy < 0
     mesh.rotation.x = ang;
-    mesh.position.set(cx, (y0 + y1) / 2 - (t / 2) * Math.cos(ang), (z0 + z1) / 2 + (t / 2) * Math.sin(ang));
+    const rzp = rawZ + (t / 2) * Math.sin(ang);
+    const [px, pz] = this.tx(rawCx, rzp);
+    mesh.position.set(px, (y0 + y1) / 2 - (t / 2) * Math.cos(ang), pz); mesh.rotation.y = this.rot;
     this.push(m, mesh);
   }
 
@@ -76,26 +90,33 @@ export class Builder {
 
   /** invisible collider only */
   blocker(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) {
-    this.colliders.push({ x0, x1, y0, y1, z0, z1 });
+    const [ax, az] = this.tx(x0 + this.ox, z0 + this.oz), [bx, bz] = this.tx(x1 + this.ox, z1 + this.oz);
+    this.colliders.push({ x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0, y1, z0: Math.min(az, bz), z1: Math.max(az, bz) });
   }
 
   cyl(m: string, cx: number, cy: number, cz: number, dia: number, h: number,
       o: { axis?: "x" | "y" | "z"; tess?: number; solid?: boolean; dia2?: number } = {}) {
+    cx += this.ox; cz += this.oz;
+    [cx, cz] = this.tx(cx, cz);
     const mesh = MeshBuilder.CreateCylinder("c", {
       diameterTop: o.dia2 ?? dia, diameterBottom: dia, height: h, tessellation: Math.max(o.tess ?? 10, dia > 0.5 ? 20 : 12),
     }, this.scene);
     mesh.position.set(cx, cy, cz);
     if (o.axis === "x") mesh.rotation.z = Math.PI / 2;
     if (o.axis === "z") mesh.rotation.x = Math.PI / 2;
+    mesh.rotation.y = this.rot;
     this.push(m, mesh);
     if (o.solid) {
       const r = dia / 2;
-      const hx = o.axis === "x" ? h / 2 : r, hy = (!o.axis || o.axis === "y") ? h / 2 : r, hz = o.axis === "z" ? h / 2 : r;
+      let hx = o.axis === "x" ? h / 2 : r; const hy = (!o.axis || o.axis === "y") ? h / 2 : r; let hz = o.axis === "z" ? h / 2 : r;
+      if (this.rot) [hx, hz] = [hz, hx];
       this.colliders.push({ x0: cx - hx, x1: cx + hx, y0: cy - hy, y1: cy + hy, z0: cz - hz, z1: cz + hz });
     }
   }
 
   sphere(m: string, cx: number, cy: number, cz: number, dia: number, seg = 14) {
+    cx += this.ox; cz += this.oz;
+    [cx, cz] = this.tx(cx, cz);
     const mesh = MeshBuilder.CreateSphere("s", { diameter: dia, segments: seg }, this.scene);
     mesh.position.set(cx, cy, cz);
     this.push(m, mesh);
@@ -103,6 +124,8 @@ export class Builder {
 
   /** thin cylinder between two points */
   beam(m: string, a: Vector3, b: Vector3, t = 0.1, tess = 5) {
+    if (this.ox || this.oz) { const o = new Vector3(this.ox, 0, this.oz); a = a.add(o); b = b.add(o); }
+    if (this.rot) { a = new Vector3(-a.z, a.y, a.x); b = new Vector3(-b.z, b.y, b.x); }
     const dir = b.subtract(a);
     const len = dir.length();
     if (len < 1e-4) return;
@@ -205,6 +228,8 @@ export class Builder {
 
   label(text: string, x: number, y: number, z: number, w: number, h: number, rotY: number,
         bg = "#1b2a3a", fg = "#ffffff", fontPx = 56) {
+    x += this.ox; z += this.oz;
+    [x, z] = this.tx(x, z); rotY += this.rot;
     // 1024px-wide texture, 16x anisotropic: stays crisp at grazing angles instead of smearing out
     const TW = 1024, TH = Math.max(64, Math.round(TW * (h / w))), k = TW / 512;
     const tex = new DynamicTexture("lbl", { width: TW, height: TH }, this.scene, true);

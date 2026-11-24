@@ -46,7 +46,7 @@
   #alert { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); padding: 8px 22px; font-family: var(--display); font-size: 26px; letter-spacing: 2px; text-transform: uppercase; background: var(--red); color: #fff; display: none; animation: blink .7s infinite; }
   @keyframes blink { 50% { opacity: .55; } }
 
-  #radio { position: absolute; left: 22px; bottom: 214px; width: 380px; display: flex; flex-direction: column; gap: 6px; }
+  #radio { position: absolute; left: 22px; bottom: 340px; width: 380px; display: flex; flex-direction: column; gap: 6px; }
   .rmsg { display: flex; gap: 10px; background: rgba(8,13,20,.82); border-left: 3px solid var(--gold); padding: 8px 10px; animation: slidein .25s ease-out; }
   .rmsg img { width: 40px; height: 40px; object-fit: cover; border: 1px solid #3a4a5c; }
   .rmsg .who { font-size: 11px; letter-spacing: 1.4px; color: var(--gold); text-transform: uppercase; font-weight: 800; }
@@ -312,6 +312,22 @@
   .tgt.dead { background: var(--green); opacity: .35; pointer-events: none; }
   .dochart { width: 100%; height: auto; display: block; border: 2px solid var(--line); margin: 10px 0 4px; background: #0b1118; }
   .autobox { background: #121c28; border: 2px solid var(--gold); padding: 10px 12px; }
+  .lo-grid { display: grid; gap: 6px; margin: 12px auto; max-width: 280px; }
+  .lo { aspect-ratio: 1; border: 2px solid #3a526b; background: #1a2735; cursor: pointer; border-radius: 4px; padding: 0; }
+  .lo.on { background: #6b4a22; border-color: #b9833a; box-shadow: inset 0 0 14px rgba(0,0,0,.55); }
+  .pp-wrap { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+  .pp-end { font-family: var(--display); letter-spacing: 1px; font-size: 12px; color: var(--gold); writing-mode: vertical-rl; transform: rotate(180deg); }
+  .pp-grid { display: grid; gap: 3px; flex: 1; }
+  .pp { aspect-ratio: 1; background: #141f2b; border: 1px solid #2c3f53; padding: 0; cursor: pointer; color: #5c7a96; }
+  .pp.wet { color: #4fc3f7; background: #12283a; }
+  .pp svg { width: 100%; height: 100%; display: block; }
+  .asg { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .asg select { background: #1a2735; color: #fff; border: 2px solid #3a526b; padding: 6px; font-size: 14px; }
+  .qty { display: flex; align-items: center; gap: 8px; } .qty b { min-width: 28px; text-align: center; }
+  .hex { margin: 12px auto; width: fit-content; touch-action: none; }
+  .hr { display: flex; } .hr.odd { margin-left: 17px; }
+  .hc { width: 34px; height: 34px; margin: 1px; border-radius: 50%; border: 2px solid #2c3f53; background: #1a2735; padding: 0; cursor: pointer; font-size: 18px; line-height: 1; }
+  .hc.edg { border-color: #8a3a32; } .hc.blk { background: #8a6a3a; border-color: #d1a45a; cursor: default; } .hc.snk { background: #2c4a2c; border-color: #6ad16a; }
   .opt.alt { background: #2b3d50; } .opt { min-width: 46%; text-align: left; font-size: 15px; }
   #panel .btns .b.green { color: #07140b; }
 </style>

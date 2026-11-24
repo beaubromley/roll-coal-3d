@@ -16,6 +16,7 @@ import { F } from "./rig";
  */
 
 const FB = F + 25;
+import { RYAW, rv } from "./rigxf";
 const mats = new Map<string, StandardMaterial>();
 function mat(scene: Scene, hex: string, o: { emissive?: number; alpha?: number; spec?: number } = {}) {
   const key = hex + (o.emissive ?? "") + (o.alpha ?? "");
@@ -58,8 +59,8 @@ export class Vehicles {
   private chair = { on: false, hidden: false, idx: 0 };
   /** 0 = driller's chair, 1 / 2 = the directional drillers' seats */
   private seats = [
-    { name: "Driller's chair", pos: new Vector3(4.5, F + 0.5, -3.2), yaw: -Math.PI / 2, npc: "driller", off: new Vector3(4.8, F, -1.1) },
-    { name: "Directional driller's seat", pos: new Vector3(5.4, F + 0.5, -4.7), yaw: Math.PI / 2, npc: "dd1", off: new Vector3(4.9, F, -3.75) },
+    { name: "Driller's chair", pos: rv(4.5, F + 0.5, -3.2), yaw: -Math.PI / 2 + RYAW, npc: "driller", off: rv(4.8, F, -1.1) },
+    { name: "Directional driller's seat", pos: rv(5.4, F + 0.5, -4.7), yaw: Math.PI / 2 + RYAW, npc: "dd1", off: rv(4.9, F, -3.75) },
   ];
   /** steering the well from the DD seat */
   dd = { inc: 2.1, azi: 270, tf: 0, sliding: false, warned: 0 };
@@ -72,15 +73,21 @@ export class Vehicles {
   private uiKind = "";
   /** pedals: travel 0..1; reverse only engages after the brake has been released at a stop */
   private gas = 0; private brk = 0; private revArm = true; private spaceWas = false;
-  private pallet!: TransformNode; private palletHeld = false; private palletVy = 0; private palletV!: Veh;
+  private pallets: TransformNode[] = []; private held: TransformNode | null = null; private palletVs: Veh[] = []; private palletVy = new Map<TransformNode, number>();
+  private mudPallets = new Set<TransformNode>();
+  get palletHeld() { return !!this.held; }
   private climb = { on: false, y: 0 };
   private zip = { on: false, t: 0 };
 
+  private dash: HTMLDivElement;
   constructor(private scene: Scene, private colliders: AABB[], private player: Player, private game: Game) {
     this.world = colliders.slice();            // static world only (vehicles don't collide with their own boxes)
     this.hud = document.createElement("div");
     this.hud.style.cssText = "position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:30;display:none;padding:8px 16px;background:rgba(10,16,24,.78);border:2px solid #f4c04a;color:#fff;font:700 13px/1.45 system-ui,sans-serif;letter-spacing:.5px;text-align:center;pointer-events:none;text-transform:none;white-space:pre-wrap;max-width:94vw";
     document.body.appendChild(this.hud);
+    this.dash = document.createElement("div");
+    this.dash.style.cssText = "position:fixed;right:22px;bottom:22px;z-index:30;display:none;width:290px;padding:10px 12px 8px;background:rgba(10,16,24,.84);border:2px solid #f4c04a;color:#fff;font:700 12px/1.4 system-ui,sans-serif;letter-spacing:.4px;pointer-events:none";
+    document.body.appendChild(this.dash);
     const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "KeyT" && this.chair.on && this.chair.idx === 0 && !e.repeat) this.toggleAuto(); };
     const up = (e: KeyboardEvent) => this.pressed.delete(e.code);
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", () => this.pressed.clear());
@@ -90,7 +97,7 @@ export class Vehicles {
   get riding() { return !!this.active || this.chair.on || this.climb.on || this.zip.on; }
   private k(...codes: string[]) { return codes.some((c) => this.pressed.has(c)); }
 
-  setShadow(sg: ShadowGenerator) { for (const v of [...this.list, this.palletV]) v.casters.forEach((m) => sg.addShadowCaster(m)); }
+  setShadow(sg: ShadowGenerator) { for (const v of [...this.list, ...this.palletVs]) v.casters.forEach((m) => sg.addShadowCaster(m)); }
 
   // ---------------------------------------------------------------------------------------------- building
   private mk(v: Veh, m: Mesh, hex: string, parent: TransformNode, x: number, y: number, z: number, o: { emissive?: number; alpha?: number; spec?: number } = {}) {
@@ -123,11 +130,12 @@ export class Vehicles {
   }
 
   private build() {
-    this.list.push(this.buildF250(22, 22.8, Math.PI));
+    this.list.push(this.buildF250(-14.0, 40.0, Math.PI * 1.5 + RYAW));
     this.list.push(this.buildForklift(14, 44, -0.6));
     this.list.push(this.buildManlift(-7, 13, 0.4));
     this.buildPallet(9.2, 51.5, -0.6);
-    this.list.push(this.buildDrone(26.6, 10.2, Math.PI / 2));
+    for (let i = 0; i < 8; i++) this.buildPallet(11.9 + i * 2.3, -61.4, i % 2 ? 0.04 : -0.03, true);   // mud products in the yard
+    this.list.push(this.buildDrone(-20.5, 36.4, Math.PI / 2 + RYAW));
     for (const v of this.list) {
       for (let i = 0; i < v.pts.length; i++) { const b: AABB = { x0: 0, x1: 0, y0: 0, y1: v.boxH, z0: 0, z1: 0 }; v.boxes.push(b); this.colliders.push(b); }
       this.place(v);
@@ -136,12 +144,12 @@ export class Vehicles {
 
   private buildF250(x: number, z: number, yaw: number): Veh {
     const v = this.blank("f250", "Lifted F-250", "car", x, z, yaw), r = v.root;
-    Object.assign(v, { wheelbase: 3.9, maxFwd: 26, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0], camDist: 14, camHeight: 4.6, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
+    Object.assign(v, { wheelbase: 5.0, maxFwd: 26, maxRev: 8, accel: 9, radius: 1.15, pts: [2.0, 0, -2.0, -3.4], camDist: 14, camHeight: 4.6, eye: { x: -0.5, y: 2.9, z: 0.15 }, boxH: 2.6,
       controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  V camera  ·  E get out" });
-    const BODY = "#9c1c16", CH = "#c4c8ce";
-    this.box(v, r, "#22262c", 1.5, 0.28, 5.6, 0, 1.05, 0);                       // frame rails
-    for (const az of [2.0, -2.0]) { this.cyl(v, r, "#2a2d31", 0.28, 2.3, 0, 0.66, az, "x", 10); this.cyl(v, r, "#555a60", 0.22, 0.9, 0.8, 0.92, az, "y", 8); this.cyl(v, r, "#555a60", 0.22, 0.9, -0.8, 0.92, az, "y", 8); }
-    this.box(v, r, BODY, 2.15, 0.7, 5.9, 0, 1.6, -0.1);                          // lower body
+    const BODY = "#9c1c16", CH = "#c4c8ce", EXT = 1.5;                            // EXT: a proper long bed
+    this.box(v, r, "#22262c", 1.5, 0.28, 5.6 + EXT, 0, 1.05, -EXT / 2);          // frame rails
+    for (const az of [2.0, -2.0 - 1.0]) { this.cyl(v, r, "#2a2d31", 0.28, 2.3, 0, 0.66, az, "x", 10); this.cyl(v, r, "#555a60", 0.22, 0.9, 0.8, 0.92, az, "y", 8); this.cyl(v, r, "#555a60", 0.22, 0.9, -0.8, 0.92, az, "y", 8); }
+    this.box(v, r, BODY, 2.15, 0.7, 5.9 + EXT, 0, 1.6, -0.1 - EXT / 2);             // lower body
     this.box(v, r, BODY, 2.05, 0.42, 1.85, 0, 2.15, 1.95);                       // hood
     this.box(v, r, "#1b1f25", 0.9, 0.12, 1.2, 0, 2.38, 2.0);                     // hood scoop
     this.box(v, r, BODY, 2.1, 1.0, 1.9, 0, 2.45, -0.35);                         // cab
@@ -149,28 +157,30 @@ export class Vehicles {
     this.box(v, r, "#9fc3d6", 2.12, 0.55, 1.5, 0, 2.55, -0.3, { alpha: 0.55 });  // side + rear windows
     this.box(v, r, "#9fc3d6", 1.8, 0.5, 0.06, 0, 2.55, 0.64, { alpha: 0.55 });   // windshield
     for (const s of [-1, 1]) {                                                    // bed walls
-      this.box(v, r, BODY, 0.12, 0.62, 2.7, s * 1.02, 2.15, -2.0);
-      this.box(v, r, "#2a2d31", 0.14, 0.05, 2.72, s * 1.02, 2.5, -2.0);
+      this.box(v, r, BODY, 0.12, 0.62, 2.7 + EXT, s * 1.02, 2.15, -2.0 - EXT / 2);
+      this.box(v, r, "#2a2d31", 0.14, 0.05, 2.72 + EXT, s * 1.02, 2.5, -2.0 - EXT / 2);
       this.box(v, r, CH, 0.18, 0.5, 0.1, s * 1.05, 1.25, 0.95, { spec: 0.6 });   // running boards stay chrome
       this.box(v, r, CH, 0.4, 0.07, 1.6, s * 1.25, 1.2, -0.3, { spec: 0.6 });
     }
-    this.box(v, r, BODY, 2.1, 0.62, 0.12, 0, 2.15, -3.32);                       // tailgate
-    this.box(v, r, "#0b0d10", 1.9, 0.08, 2.6, 0, 1.9, -2.0);                     // bed floor
+    this.box(v, r, BODY, 2.1, 0.62, 0.12, 0, 2.15, -3.32 - EXT);                 // tailgate
+    this.box(v, r, "#0b0d10", 1.9, 0.08, 2.6 + EXT, 0, 1.9, -2.0 - EXT / 2);     // bed floor
+    this.box(v, r, BODY, 2.1, 0.62, 0.12, 0, 2.15, -0.68);                       // bed headboard
+    for (const s of [-1, 1]) this.box(v, r, BODY, 0.3, 0.5, 1.3, s * 1.05, 1.95, -3.0, { spec: 0.1 });   // rear fenders
     this.box(v, r, CH, 2.35, 0.34, 0.3, 0, 1.2, 3.05, { spec: 0.7 });            // front bumper
-    this.box(v, r, CH, 2.35, 0.3, 0.3, 0, 1.2, -3.3, { spec: 0.7 });             // rear bumper
+    this.box(v, r, CH, 2.35, 0.3, 0.3, 0, 1.2, -3.3 - EXT, { spec: 0.7 });        // rear bumper
     this.box(v, r, "#0b0d10", 1.3, 0.5, 0.1, 0, 1.95, 2.9);                      // grille
     this.box(v, r, CH, 1.4, 0.05, 0.12, 0, 2.2, 2.93, { spec: 0.7 });
     for (const s of [-1, 1]) {
       this.box(v, r, "#fff6c8", 0.4, 0.2, 0.08, s * 0.8, 2.0, 2.93, { emissive: 0.8 });   // headlights
-      this.box(v, r, "#ff2a1a", 0.22, 0.26, 0.08, s * 0.92, 2.1, -3.37, { emissive: 0.7 }); // tail lights
+      this.box(v, r, "#ff2a1a", 0.22, 0.26, 0.08, s * 0.92, 2.1, -3.37 - EXT, { emissive: 0.7 }); // tail lights
       this.box(v, r, BODY, 0.1, 0.16, 0.26, s * 1.16, 2.7, 0.55);                // mirrors
       this.cyl(v, r, CH, 0.12, 2.6, s * 1.0, 2.9, -1.05, "y", 8, { spec: 0.7 });   // dual stacks
     }
     this.box(v, r, "#ffe9a8", 1.5, 0.12, 0.22, 0, 3.12, 0.4, { emissive: 0.9 });  // roof light bar
     for (let i = 0; i < 4; i++) this.cyl(v, r, "#ffe9a8", 0.2, 0.06, -0.55 + i * 0.37, 2.4, 3.0, "z", 10, { emissive: 0.9 }); // bumper pods
-    this.box(v, r, "#14171c", 0.5, 0.25, 0.04, 0, 1.65, -3.4);
+    this.box(v, r, "#14171c", 0.5, 0.25, 0.04, 0, 1.65, -3.4 - EXT);
     const W = 1.35;
-    for (const s of [-1, 1]) { this.wheel(v, r, s * 1.12, W / 2, 2.0, W, 0.55, 1); this.wheel(v, r, s * 1.12, W / 2, -2.0, W, 0.55, null); }
+    for (const s of [-1, 1]) { this.wheel(v, r, s * 1.12, W / 2, 2.0, W, 0.55, 1); this.wheel(v, r, s * 1.12, W / 2, -3.0, W, 0.55, null); }
     return v;
   }
 
@@ -207,11 +217,19 @@ export class Vehicles {
     return v;
   }
 
-  private buildPallet(x: number, z: number, yaw: number) {
-    const v = this.blank("pallet", "Pipe pallet", "car", x, z, yaw); this.palletV = v;
-    const r = v.root; this.pallet = r;
+  private buildPallet(x: number, z: number, yaw: number, mud = false) {
+    const v = this.blank("pallet", mud ? "Mud pallet" : "Pipe pallet", "car", x, z, yaw); this.palletVs.push(v);
+    const r = v.root; this.pallets.push(r); if (mud) this.mudPallets.add(r);
     this.box(v, r, "#8a6a40", 1.5, 0.14, 1.2, 0, 0.12, 0);
     for (const sx of [-0.6, 0, 0.6]) this.box(v, r, "#6e5230", 0.18, 0.12, 1.2, sx, 0.05, 0);
+    if (mud) {
+      const cols = ["#d9d3c2", "#b9b3a2", "#c8a870", "#9aa0a8"];
+      for (let layer = 0; layer < 4; layer++) for (let i = 0; i < 3; i++) for (let k = 0; k < 2; k++) {
+        this.box(v, r, cols[(i + k + layer) % 4], 0.46, 0.2, 0.52, -0.5 + i * 0.5 + (layer % 2) * 0.03, 0.29 + layer * 0.21, -0.28 + k * 0.56);
+      }
+      this.box(v, r, "#e8b923", 1.46, 0.03, 0.04, 0, 1.08, 0.2);   // strap
+      return;
+    }
     for (let row = 0; row < 3; row++) for (let i = 0; i < 5 - (row % 2); i++) {
       this.cyl(v, r, "#8d9299", 0.24, 1.4, 0, 0.32 + row * 0.22, -0.46 + i * 0.235 + (row % 2) * 0.12, "x", 8);
     }
@@ -269,27 +287,33 @@ export class Vehicles {
   private forkPos(v: Veh): Vector3 { v.root.computeWorldMatrix(true); v.forkMark!.computeWorldMatrix(true); return v.forkMark!.getAbsolutePosition().clone(); }
 
   private grab(v: Veh) {
-    const f = this.forkPos(v), pl = this.pallet;
-    if (!this.palletHeld) {
-      const pp = pl.getAbsolutePosition();
-      if (Math.hypot(f.x - pp.x, f.z - pp.z) < 1.4 && Math.abs(f.y - (pp.y + 0.1)) < 0.6) {
-        pl.setParent(v.tiltNode!); this.palletHeld = true; this.game.sfx.click();
-        this.game.ui.toast("PIPE PALLET LOADED", "Boom up, tilt back, and mind the people.");
-      } else this.game.ui.toast("NO LOAD", "Drive the forks under the pallet, level with it, then press SPACE.");
+    const f = this.forkPos(v);
+    if (!this.held) {
+      let best: TransformNode | null = null, bd = 1.4;
+      for (const pl of this.pallets) {
+        const pp = pl.getAbsolutePosition(), d = Math.hypot(f.x - pp.x, f.z - pp.z);
+        if (d < bd && Math.abs(f.y - (pp.y + 0.1)) < 0.6) { bd = d; best = pl; }
+      }
+      if (best) {
+        best.setParent(v.tiltNode!); this.held = best; this.palletVy.set(best, 0); this.game.sfx.click();
+        this.game.ui.toast(this.mudPallets.has(best) ? "MUD PALLET LOADED" : "PIPE PALLET LOADED", "Boom up, tilt back, and mind the people.");
+      } else this.game.ui.toast("NO LOAD", "Drive the forks under a pallet, level with it, then press SPACE.");
       return;
     }
-    const h = pl.getAbsolutePosition().y;
-    pl.setParent(null); this.palletHeld = false; this.palletVy = 0;
+    const pl = this.held, h = pl.getAbsolutePosition().y;
+    pl.setParent(null); this.held = null; this.palletVy.set(pl, 0);
     const fw = pl.getDirection(Vector3.Forward()); pl.rotationQuaternion = null; pl.rotation.set(0, Math.atan2(fw.x, fw.z), 0);
     this.game.sfx.click();
+    if (this.mudPallets.has(pl)) this.game.mudPalletSet(pl.position.x, pl.position.z);
     if (h > 1.5) { this.game.inc(1, "DROPPED OBJECT"); this.game.sim.addCost(12000); this.game.radio("earl", "That pallet came off the forks from " + Math.round(h * 3.28) + " feet. Set it down, don't drop it.", 7000); }
   }
   private updatePallet(dt: number) {
-    if (this.palletHeld || !this.pallet) return;
-    const p = this.pallet.position;
-    if (p.y > 0.001) { this.palletVy -= 9.8 * dt; p.y = Math.max(0, p.y + this.palletVy * dt); if (p.y === 0) { this.palletVy = 0; if (this.palletFell > 1.5) { this.game.sfx.thud(); } } }
+    for (const pl of this.pallets) {
+      if (pl === this.held) continue;
+      const p = pl.position;
+      if (p.y > 0.001) { const vy = (this.palletVy.get(pl) ?? 0) - 9.8 * dt; p.y = Math.max(0, p.y + vy * dt); this.palletVy.set(pl, p.y === 0 ? 0 : vy); }
+    }
   }
-  private palletFell = 0;
 
   private sphere(v: Veh, p: TransformNode, hex: string, dia: number, x: number, y: number, z: number, em = 0) {
     return this.mk(v, MeshBuilder.CreateSphere("vs", { diameter: dia, segments: 8 }, this.scene), hex, p, x, y, z, em ? { emissive: em } : {});
@@ -341,10 +365,10 @@ export class Vehicles {
   interacts() {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning });
-    out.push({ pos: () => new Vector3(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
+    out.push({ pos: () => rv(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : "Sit in the directional driller's seat", r: i === 0 ? 2.2 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
-    out.push({ pos: () => new Vector3(0, F + 1.2, 2.1), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
-    out.push({ pos: () => new Vector3(0, FB + 1.2, 0.9), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
+    out.push({ pos: () => rv(-3.9, F + 1.2, 2.4), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
+    out.push({ pos: () => rv(-3.0, FB + 1.2, 2.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
   }
 
@@ -377,7 +401,11 @@ export class Vehicles {
         this.player.body.animate(dt, 2.6);
       } else { body.scaling.setAll(1 - ee * 0.9); }
     }
-    if (k >= 1) { this.blend = null; this.player.bodyHold = false; this.player.body.root.scaling.setAll(1); if (this.active || this.chair.on || this.climb.on || this.zip.on) this.player.body.root.setEnabled(false); }
+    if (k >= 1) {
+      this.blend = null; const showBody = !!this.active && this.active.kind !== "drone";
+      this.player.bodyHold = showBody; this.player.body.root.scaling.setAll(1);
+      if ((this.active && !showBody) || this.chair.on || this.climb.on || this.zip.on) this.player.body.root.setEnabled(false);
+    }
   }
 
   enter(v: Veh) {
@@ -387,7 +415,7 @@ export class Vehicles {
     this.active = v; v.speed = 0; this.setSolid(v, false);
     this.wasThird = this.player.third; this.player.ride = true; this.player.third = true;
     this.player.yaw = v.yaw; this.player.pitch = 0.22;
-    if (!this.blend) this.player.body.root.setEnabled(false);
+    if (!this.blend && v.kind === "drone") this.player.body.root.setEnabled(false);
     this.hud.style.display = "block";
     this.game.sfx.click();
     this.game.ui.toast(v.name.toUpperCase(), v.kind === "drone" ? "W / S climb and descend, A / D turn, arrow keys fly forward and back. E sends it home." : v.kind === "lift" ? "R / F raise and lower the basket. SPACE jumps you out." : v.kind === "forklift" ? "R/F boom, T/G extend, Y/H tilt, SPACE to pick up the pipe pallet." : "W is the gas, S is brake then reverse. Steer with A and D.");
@@ -398,7 +426,7 @@ export class Vehicles {
     const p = this.player, dir = new Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
     const from = new Vector3(v.x, v.platformY + 0.05, v.z).add(dir.scale(1.0));
     this.active = null; this.setSolid(v, true); v.speed = 0;
-    p.ride = false; p.third = this.wasThird; this.hud.style.display = "none";
+    p.ride = false; p.third = this.wasThird; this.hud.style.display = "none"; this.dash.style.display = "none";
     p.teleport(from.x, from.y, from.z, p.yaw);
     p.vel.set(dir.x * 3.2, 3.2, dir.z * 3.2); p.grounded = false;
     this.startBlend(0.45); this.game.sfx.click();
@@ -408,7 +436,7 @@ export class Vehicles {
   /** the drone flies itself home; the pilot stands at the dock */
   private dockDrone(v: Veh) {
     this.active = null; v.returning = true; v.speed = 0; v.vy = 0; this.setSolid(v, false);
-    this.player.ride = false; this.player.third = this.wasThird; this.hud.style.display = "none";
+    this.player.ride = false; this.player.third = this.wasThird; this.hud.style.display = "none"; this.dash.style.display = "none";
     const d = v.dock!; this.player.teleport(d.x + 1.9, 0, d.z + 1.1, -Math.PI / 2 - 0.4);
     this.game.sfx.click(); this.game.ui.toast("DRONE RETURNING", "Redocking at the company man trailer.");
   }
@@ -447,11 +475,12 @@ export class Vehicles {
     }
     if (!spot) spot = new Vector3(v.x - rx * off, 0, v.z - rz * off);
     this.active = null; this.setSolid(v, true); v.speed = 0;
+    this.player.body.seated = false; this.player.bodyHold = false;
     this.player.ride = false; this.player.third = this.wasThird;
     this.startBlend(0.55, { from: new Vector3(v.x, spot.y, v.z), to: spot, mode: "out" });
     this.player.teleport(spot.x, spot.y, spot.z, v.yaw);
     this.player.body.root.scaling.setAll(0.2); this.exitPop = 0.35;
-    this.hud.style.display = "none";
+    this.hud.style.display = "none"; this.dash.style.display = "none";
     this.game.sfx.click();
   }
   private exitPop = 0;
@@ -472,8 +501,8 @@ export class Vehicles {
     this.chair.on = false;
     if (this.chair.hidden) this.game.rig.humans[st.npc].root.setEnabled(true);
     this.player.ride = false; this.player.third = this.wasThird;
-    this.player.teleport(st.off.x, st.off.y, st.off.z, Math.PI);
-    this.hud.style.display = "none";
+    this.player.teleport(st.off.x, st.off.y, st.off.z, Math.PI + RYAW);
+    this.hud.style.display = "none"; this.dash.style.display = "none";
   }
   private toggleAuto() {
     const s = this.game.sim.s;
@@ -484,7 +513,7 @@ export class Vehicles {
   eject() {
     const v = this.active; if (!v) return;
     v.speed = 0; this.active = null; this.setSolid(v, true);
-    this.player.ride = false; this.player.third = this.wasThird; this.hud.style.display = "none";
+    this.player.ride = false; this.player.third = this.wasThird; this.hud.style.display = "none"; this.dash.style.display = "none";
     this.player.teleport(v.x, 0, v.z, v.yaw);
   }
 
@@ -493,7 +522,7 @@ export class Vehicles {
     if (this.riding) return;
     this.zip.on = true; this.zip.t = 0;
     this.wasThird = this.player.third; this.player.third = false; this.player.ride = true;
-    this.player.yaw = 0; this.player.pitch = 0.12;
+    this.player.yaw = RYAW; this.player.pitch = 0.12;
     this.hud.style.display = "block"; this.game.sfx.click();
     this.game.radio("earl", "GERONIMO! Hold on, boss. Knees together, and don't let go of the lanyard.", 6000);
   }
@@ -501,13 +530,13 @@ export class Vehicles {
     const z = this.zip, p = this.player; z.t = Math.min(1, z.t + dt / 9);
     const e = Math.pow(z.t, 1.35), zz = 5.7 + (38.6 - 5.7) * e, lineY = (FB + 2.6) + (0.55 - (FB + 2.6)) * ((zz - 5.7) / (38.6 - 5.7));
     const y = Math.max(0.4, lineY - 1.7);
-    p.pos.set(0, y, zz); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(0, y + 1.45, zz);
+    p.pos.set(-zz, y, 0); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(-zz, y + 1.45, 0);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     this.hud.textContent = `GERONIMO LINE   ${Math.max(0, Math.round((y) * 3.281))} FT   HOLD ON\nlook around with the mouse / drag`;
     if (z.t >= 1) {
-      z.on = false; this.hud.style.display = "none"; p.ride = false; p.third = this.wasThird;
-      p.teleport(0, 0.4, 36.9, 0);
+      z.on = false; this.hud.style.display = "none"; this.dash.style.display = "none"; p.ride = false; p.third = this.wasThird;
+      p.teleport(-36.9, 0.4, 0, RYAW);
       this.game.ui.toast("TOUCHDOWN", "The Geronimo line works. Now walk back up the ladder.");
       this.game.gain(0.05, 2);
     }
@@ -518,14 +547,14 @@ export class Vehicles {
     if (this.riding) return;
     this.climb.on = true; this.climb.y = y;
     this.wasThird = this.player.third; this.player.third = false; this.player.ride = true;
-    this.player.yaw = Math.PI; this.player.pitch = 0;
+    this.player.yaw = Math.PI / 2 + RYAW; this.player.pitch = 0;
     this.hud.style.display = "block";
     this.game.sfx.click();
   }
   private finishClimb(top: boolean) {
-    this.climb.on = false; this.hud.style.display = "none";
+    this.climb.on = false; this.hud.style.display = "none"; this.dash.style.display = "none";
     this.player.ride = false; this.player.third = this.wasThird;
-    if (top) this.player.teleport(0, FB + 0.12, 0.8, 0); else this.player.teleport(0, F, 2.35, 0);
+    if (top) { const q = rv(-2.6, FB + 0.12, 2.2); this.player.teleport(q.x, q.y, q.z, Math.PI / 2 + RYAW); } else { const q = rv(-4.1, F, 2.4); this.player.teleport(q.x, q.y, q.z, Math.PI / 2 + RYAW); }
   }
   private updateClimb(dt: number) {
     const p = this.player, c = this.climb, joy = p.touchMove;
@@ -534,8 +563,8 @@ export class Vehicles {
     if (c.y >= FB - 0.01 && dir > 0.2) { this.finishClimb(true); return; }
     if (c.y <= F + 0.01 && dir < -0.2) { this.finishClimb(false); return; }
     c.y = Math.max(F, Math.min(FB, c.y));
-    p.pos.set(0, c.y, 1.95); p.vel.setAll(0); p.grounded = true;
-    const eye = new Vector3(0, c.y + 1.5, 1.93);
+    const cp = rv(-3.0, c.y, 2.4); p.pos.set(cp.x, cp.y, cp.z); p.vel.setAll(0); p.grounded = true;
+    const eye = new Vector3(cp.x, c.y + 1.5, cp.z);
     p.cam.position.copyFrom(eye); p.cam.setTarget(eye.add(p.lookDir()));
     this.hud.textContent = `CLIMBING   ${Math.round(c.y * 3.281)} FT\nW/S climb  ·  SHIFT climb faster  ·  keep going to the top or bottom`;
   }
@@ -677,11 +706,53 @@ export class Vehicles {
       const eye = new Vector3(ex, y + v.eye.y, ez);
       cam.position.copyFrom(eye); cam.setTarget(eye.add(p.lookDir()));
     }
+    // the driver is visible, seated at the wheel (standing in the manlift basket); first person hides the body
+    if (v.kind !== "drone" && !this.blend) {
+      const seat = v.kind === "car" ? { x: -0.5, y: 1.35, z: -0.12 } : v.kind === "forklift" ? { x: -0.75, y: 1.0, z: 0.3 } : { x: 0, y: 0.05, z: 0 };
+      const bd = this.player.body, ry = v.yaw;
+      bd.root.setEnabled(p.third); bd.seated = v.kind !== "lift";
+      bd.root.position.set(v.x + fz * seat.x + fx * seat.z, y + seat.y, v.z - fx * seat.x + fz * seat.z); bd.root.rotation.y = ry;
+      bd.animate(dt, 0);
+    }
     const mph = Math.round(Math.abs(v.speed) * 2.237);
     const extra = v.kind === "drone" ? "" : v.kind === "forklift" ? `   FORKS ${(this.forkPos(v).y * 3.281).toFixed(0)} ft   REACH ${(v.ext * 3.4 * 3.281).toFixed(0)} ft${this.palletHeld ? "   LOAD ON" : ""}` : v.kind === "lift" ? `   BASKET ${(v.platformY * 3.281).toFixed(0)} ft` : "";
     const bar = (t: number) => "■".repeat(Math.round(t * 5)) + "□".repeat(5 - Math.round(t * 5));
     if (v.kind === "drone") { this.hud.textContent = this.dronePrompt + `   GAS ${bar(this.gas)}  BRAKE ${bar(this.brk)}` + (document.body.classList.contains("touch") ? "" : "\n" + v.controls); return; }
-    this.hud.textContent = `${v.name.toUpperCase()}   ${mph} MPH${extra}   GAS ${bar(this.gas)}  BRAKE ${bar(this.brk)}${document.body.classList.contains("touch") ? "" : "\n" + v.controls}`;
+    this.hud.style.display = "none"; this.dashUpdate(v, mph);
+  }
+
+  /** the driving panel: speed and pedals for every ground vehicle, plus a live side view of the Skytrak's boom and forks or the manlift's basket */
+  private dashUpdate(v: Veh, mph: number) {
+    const d = this.dash; d.style.display = "block";
+    const pct = (x: number) => Math.round(Math.max(0, Math.min(1, x)) * 100);
+    const bar = (label: string, x: number, col: string) => `<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:44px;color:#9fb4c8;font-size:10px">${label}</span><div style="flex:1;height:7px;background:#1b2836"><div style="height:100%;width:${pct(x)}%;background:${col}"></div></div></div>`;
+    let diagram = "", extra = "";
+    if (v.kind === "forklift") {
+      const fp = this.forkPos(v), ang = v.lift * 1.5 - 0.34, L = 52 + v.ext * 46, P = { x: 86, y: 84 };
+      const tip = { x: P.x + L * Math.cos(ang), y: P.y - L * Math.sin(ang) }, tr = v.tilt * 0.45;
+      const fe = { x: tip.x + 34 * Math.cos(tr), y: tip.y + 34 * Math.sin(tr) };
+      const gy = 124, tipY = Math.min(gy, tip.y);
+      let near = false; if (!this.held) for (const pl of this.pallets) { const pp = pl.getAbsolutePosition(); if (Math.hypot(fp.x - pp.x, fp.z - pp.z) < 1.4 && Math.abs(fp.y - (pp.y + 0.1)) < 0.6) near = true; }
+      const loadSvg = this.held ? `<g transform="translate(${(tip.x + fe.x) / 2} ${(tip.y + fe.y) / 2 - 8}) rotate(${(tr * 180) / Math.PI})"><rect x="-17" y="-8" width="34" height="16" fill="${this.mudPallets.has(this.held) ? "#c9bfa4" : "#8d9299"}" stroke="#333"/><rect x="-17" y="6" width="34" height="3" fill="#8a6a40"/></g>` : "";
+      diagram = `<svg viewBox="0 0 270 138" width="100%" style="display:block;margin:4px 0 2px;background:#0b141e;border:1px solid #243649">
+        <line x1="0" y1="${gy}" x2="270" y2="${gy}" stroke="#6b5a48" stroke-width="3"/>
+        <rect x="14" y="88" width="94" height="24" rx="3" fill="#e8b923"/><rect x="18" y="64" width="34" height="26" rx="3" fill="#cfa51c"/><rect x="24" y="68" width="22" height="14" fill="#7fb6d4"/>
+        <circle cx="32" cy="116" r="10" fill="#15171a"/><circle cx="92" cy="116" r="10" fill="#15171a"/><circle cx="32" cy="116" r="4" fill="#777"/><circle cx="92" cy="116" r="4" fill="#777"/>
+        <line x1="${P.x}" y1="${P.y}" x2="${tip.x}" y2="${tip.y}" stroke="#e8b923" stroke-width="9" stroke-linecap="round"/>
+        <line x1="${P.x}" y1="${P.y}" x2="${P.x + (tip.x - P.x) * 0.55}" y2="${P.y + (tip.y - P.y) * 0.55}" stroke="#a88410" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="${P.x}" cy="${P.y}" r="5" fill="#333"/>
+        <line x1="${tip.x - 8 * Math.sin(tr)}" y1="${tip.y - 8 * Math.cos(tr)}" x2="${tip.x + 12 * Math.sin(tr)}" y2="${tip.y + 12 * Math.cos(tr)}" stroke="#bbb" stroke-width="3"/>
+        <line x1="${tip.x}" y1="${tip.y}" x2="${fe.x}" y2="${fe.y}" stroke="#ddd" stroke-width="3" stroke-linecap="round"/>
+        ${loadSvg}
+        <line x1="${tip.x}" y1="${tipY}" x2="${tip.x}" y2="${gy}" stroke="#4fd6ff" stroke-dasharray="3 3" stroke-width="1"/>
+        <text x="${Math.min(236, tip.x + 4)}" y="${Math.max(14, tipY - 6)}" fill="#4fd6ff" font-size="10" font-family="monospace">${(fp.y * 3.281).toFixed(1)} ft</text>
+        <circle cx="256" cy="14" r="5" fill="${this.held ? "#2fd05a" : near ? "#f4c04a" : "#3a4a5c"}"/>
+      </svg>`;
+      extra = `<div style="display:flex;justify-content:space-between;color:#cfe6f7"><span>BOOM ${Math.round((ang * 180) / Math.PI)}°</span><span>REACH ${(v.ext * 3.4 * 3.281).toFixed(0)} ft</span><span>TILT ${Math.round((v.tilt * 0.45 * 180) / Math.PI)}°</span></div><div style="color:${this.held ? "#2fd05a" : near ? "#f4c04a" : "#9fb4c8"}">${this.held ? "LOAD ON THE FORKS: SPACE sets it down" : near ? "PALLET IN REACH: press SPACE to pick up" : "No load. Drive the forks under a pallet."}</div>`;
+    } else if (v.kind === "lift") {
+      diagram = `<div style="display:flex;gap:10px;align-items:flex-end;margin:6px 0"><div style="width:34px;height:96px;background:#0b141e;border:1px solid #243649;position:relative"><div style="position:absolute;left:0;right:0;bottom:0;height:${pct(v.lift)}%;background:#e8b923"></div></div><div style="font-size:22px;color:#e8b923">${(v.platformY * 3.281).toFixed(0)} ft</div><div style="color:#9fb4c8;font-size:10px">basket height<br>R / F raise and lower</div></div>`;
+    }
+    d.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="color:#f4c04a">${v.name.toUpperCase()}</span><span style="font-size:20px">${mph}<small style="font-size:10px;color:#9fb4c8"> MPH</small></span></div>${bar("GAS", this.gas, "#2fd05a")}${bar("BRAKE", this.brk, "#e5483b")}${diagram}${extra}${document.body.classList.contains("touch") ? "" : `<div style="color:#9fb4c8;font-size:10px;margin-top:4px;font-weight:600">${v.controls}</div>`}`;
   }
 
   /** quadcopter flight: W/S speed, A/D yaw, R/F climb and descend */

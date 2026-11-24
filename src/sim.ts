@@ -49,6 +49,9 @@ export const woptFor = (f: Formation) => Math.max(16, Math.min(42, 30 / Math.pow
 /** Mud-motor differential pressure from WOB and rock hardness (original game formula). */
 export const diffPressure = (wob: number, f: Formation) => (wob > 0 ? (wob * 12) / (f.hardness / 1.5) : 0);
 export const STALL_DP = 1650;
+/** surface torque (ft-lb): string drag grows with depth, bit torque with WOB and rock hardness */
+export const torqueFor = (wob: number, f: Formation, depth: number) => 600 + depth * 0.35 + (wob > 0 ? wob * (160 + 120 * f.hardness) : 0);
+export const TORQUE_MAX = 16500;
 
 export type Mode = "idle" | "drilling" | "connection" | "tripping" | "shutin" | "killing" | "casing" | "done";
 
@@ -60,6 +63,7 @@ export interface SimState {
   bit: number; rop: number; spp: number;
   pit: number;            // active pit volume bbl
   pitBase: number;
+  fracBbl: number;        // water/mud left in the frac tanks behind the pits
   cost: number;
   fuel: number;           // gallons
   accum: number;          // accumulator psi
@@ -78,19 +82,20 @@ export interface SimState {
   casing: { progress: number; phase: "none" | "run" | "cement" | "done" };
   stats: { connections: number; feetDrilled: number; npt: number; kicksKilled: number; trips: number; stalls: number };
   paused: boolean;
-  dp: number; stallT: number;
-  auto: { on: boolean; wob: number; rop: number; dp: number; limit: "" | "WOB" | "ROP" | "DIFF" };
+  dp: number; torque: number; stallT: number;
+  auto: { on: boolean; wob: number; rop: number; dp: number; torque: number; limit: "" | "WOB" | "ROP" | "DIFF" | "TORQUE" };
 }
 
 export type SimEvent =
   | { type: "kickAlarm" } | { type: "autoShutIn" } | { type: "lossStart" } | { type: "lossHealed" }
   | { type: "connection" } | { type: "bitDead" } | { type: "tripDone" } | { type: "formation"; name: string }
   | { type: "td" } | { type: "casingDone" } | { type: "killDone"; good: boolean } | { type: "fractured" }
-  | { type: "blackout" } | { type: "stall" };
+  | { type: "blackout" } | { type: "stall" } | { type: "pitLow" };
 
 export class Sim {
   s: SimState;
   events: SimEvent[] = [];
+  pitLowFlag = false;
   private dist = 0;
   hold: number | null = null;
   accumDead = false;
@@ -100,7 +105,7 @@ export class Sim {
       t: 0, depth: WELL.startDepth, mode: "idle",
       wob: 0, wobTarget: 18, flow: 550, flowTarget: 550,
       mw: 9.0, mwTarget: 9.0, lcm: 0, lcmTarget: 0,
-      bit: 100, rop: 0, spp: 0, pit: 600, pitBase: 600, cost: 2_050_000, fuel: 5200, accum: 3000,
+      bit: 100, rop: 0, spp: 0, pit: 600, pitBase: 600, fracBbl: 1000, cost: 2_050_000, fuel: 5200, accum: 3000,
       connTimer: 0, needTrip: false, tripT: 0, tripTotal: 0, tripOut: true, standsRacked: 0,
       kick: { active: false, gain: 0, alarm: false, alarmT: 0, shut: false, shutT: 0, pore: 8.6, sidpp: 0, sicp: 0, count: 0, gasPocketDone: false },
       loss: { active: false, rate: 0, healed: 0, total: 0 },
@@ -108,8 +113,8 @@ export class Sim {
       casing: { progress: 0, phase: "none" },
       stats: { connections: 0, feetDrilled: 0, npt: 0, kicksKilled: 0, trips: 0, stalls: 0 },
       paused: true,
-      dp: 0, stallT: 0,
-      auto: { on: false, wob: 20, rop: 200, dp: 1200, limit: "" },
+      dp: 0, torque: 0, stallT: 0,
+      auto: { on: false, wob: 20, rop: 200, dp: 1200, torque: 10000, limit: "" },
     };
   }
 
@@ -208,7 +213,7 @@ export class Sim {
         s.loss.healed += (s.lcm / 30) * dt * 0.6;
         if (s.loss.healed > 25 && s.lcm > 20) { s.loss.active = false; s.loss.rate = 0; this.events.push({ type: "lossHealed" }); }
       } else if (s.loss.active) { s.loss.active = false; s.loss.rate = 0; this.events.push({ type: "lossHealed" }); }
-      if (!s.loss.active && s.pit < s.pitBase && !s.kick.active) s.pit = Math.min(s.pitBase, s.pit + 0.8 * dt); // top up
+      // (no passive top-up any more: when the pits run low someone has to transfer from the frac tanks)
     }
 
     // ---- modes ----
@@ -218,9 +223,14 @@ export class Sim {
         const mudF = 1.1 - s.mw * 0.015;
         const bitF = 0.35 + 0.65 * (s.bit / 100);
         const wopt = woptFor(f), fac = flowF * mudF * bitF;
+        // pits run dry: the pumps lose suction and you cannot drill. Transfer from the frac tanks.
+        if (s.pit < 120 && circulating) {
+          if (!this.pitLowFlag) { this.pitLowFlag = true; this.events.push({ type: "pitLow" }); }
+          s.rop = 0; s.wob = Math.max(0, s.wob - 8 * dt); s.dp = 0; s.torque = 0; s.stats.npt += dt / 60; break;
+        } else if (s.pit > 180) this.pitLowFlag = false;
         // motor stalled: pick up off bottom and wait it out
         if (s.stallT > 0) {
-          s.stallT -= dt; s.stats.npt += dt / 60; s.wob = Math.max(0, s.wob - 10 * dt); s.rop = 0; s.dp = 0; s.spp = 900;
+          s.stallT -= dt; s.stats.npt += dt / 60; s.wob = Math.max(0, s.wob - 10 * dt); s.rop = 0; s.dp = 0; s.torque = 0; s.spp = 900;
           break;
         }
         // AUTODRILLER: hold the lowest of the WOB set point, the WOB that would exceed the ROP limit, and the WOB that would exceed the diff limit
@@ -228,14 +238,17 @@ export class Sim {
           const effMax = (s.auto.rop * f.hardness) / (6 * Math.max(0.05, fac));
           const wRop = effMax <= wopt ? effMax : wopt + (effMax - wopt) / 0.3;
           const wDp = (s.auto.dp * (f.hardness / 1.5)) / 12;
-          const w = Math.min(s.auto.wob, wRop, wDp);
-          s.auto.limit = w === s.auto.wob ? "WOB" : w === wRop ? "ROP" : "DIFF";
+          const tqLim = s.auto.torque ?? 10000;
+          const wTq = Math.max(0, (tqLim - 600 - s.depth * 0.35) / (160 + 120 * f.hardness));
+          const w = Math.min(s.auto.wob, wRop, wDp, wTq);
+          s.auto.limit = w === s.auto.wob ? "WOB" : w === wRop ? "ROP" : w === wDp ? "DIFF" : "TORQUE";
           s.wobTarget = Math.max(0, Math.round(w * 10) / 10);
         } else s.auto.limit = "";
         s.wob += Math.sign(s.wobTarget - s.wob) * Math.min(Math.abs(s.wobTarget - s.wob), 3 * dt);
         const eff = s.wob <= wopt ? s.wob : wopt + (s.wob - wopt) * 0.3;
         s.dp = diffPressure(s.wob, f) * (1 + (Math.random() * 0.15 - 0.075));
-        if (s.dp > STALL_DP && Math.random() < 1 - Math.exp(-0.5 * dt)) {
+        s.torque = torqueFor(s.wob, f, s.depth) * (1 + (Math.random() * 0.1 - 0.05));
+        if ((s.dp > STALL_DP || s.torque > TORQUE_MAX) && Math.random() < 1 - Math.exp(-0.5 * dt)) {
           s.stallT = 12; s.stats.stalls++; s.cost += 8000; this.events.push({ type: "stall" });
         }
         let rop = eff > 0 ? (eff * 6) / f.hardness : 0;

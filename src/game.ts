@@ -1,7 +1,7 @@
 import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture } from "@babylonjs/core";
 import { Rig, F } from "./rig";
 import { Player } from "./player";
-import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP } from "./sim";
+import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
 import { UI, Who, Choice, $ } from "./ui";
 import { Human } from "./npcs";
@@ -271,6 +271,7 @@ export class Game {
     add(() => S.board, "Work the board — rack a stand", 3.2, () => this.workBoard(), () => this.player.pos.y > 20);
     add(() => S.cabin, "Driller's console", 3.2, () => this.openCabin());
     add(() => S.hopper, "Mud hopper", 3.4, () => this.openHopper());
+    add(() => S.frac, "Frac tanks: transfer to the pits", 4.2, () => this.openFrac());
     add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
     add(() => S.phone, "Phone", 2.6, () => this.openPhone());
     add(() => S.bunk, "Rack out", 2.8, () => this.openBunk());
@@ -281,7 +282,15 @@ export class Game {
     add(() => S.pumps, "Mud pumps", 3.4, () => this.openPumps());
     add(() => S.gens, "Generators", 3.4, () => this.openGens());
     add(() => S.fuel, "Diesel tank", 3.4, () => this.openFuel());
-    add(() => S.mudlog, "Mud logging unit", 2.8, () => this.openMudlog());
+    let knocks = 0;
+    add(() => S.mudlog, "Knock on the mud logger's door", 2.8, () => {
+      this.sfx.click(); this.ui.toast("KNOCK KNOCK", "The door is locked.");
+      const n = knocks++;
+      setTimeout(() => {
+        this.radio("marcus", ["(muffled) Busy! I'm logging!", "(muffled) Go away, I'm in the middle of a sample.", "(muffled) …Fine. Report's coming under the door."][Math.min(n, 2)], 5000);
+        if (n >= 2) setTimeout(() => this.openMudlog(), 1400);
+      }, 1000);
+    });
     add(() => S.bop, "BOP stack", 3.6, () => this.openBop());
     add(() => S.coffee, "Coffee", 2.2, () => { if (this.flags.coffeeEmpty) this.radio("earl", "Pot's empty. Somebody's going to have to make coffee."); else { this.gain(0, 3); this.ui.toast("+3 MORALE", "Tastes like diesel."); } });
     const talk = (key: "driller" | "pusher" | "mudeng" | "hand3" | "dd1", who: Who, lines: string[]) => {
@@ -315,13 +324,13 @@ export class Game {
   openCabin() {
     const s = this.sim.s;
     const render = () => {
-      const k = s.kick, a = s.auto, opt = this.flags.drillOffWopt as number | undefined;
+      const k = s.kick, a = s.auto;
       const busy = s.mode === "tripping" || s.mode === "casing";
       return `<div class="eyebrow">Driller's Cabin</div><h2>Driller's Console</h2>
         <div class="grid2">
           <div>
             <div class="row"><span>Depth</span><b id="c_depth"></b></div><div class="row"><span>Formation</span><b id="c_form"></b></div>
-            <div class="row"><span>ROP</span><b id="c_rop"></b></div><div class="row"><span>Diff pressure</span><b id="c_dp"></b></div>
+            <div class="row"><span>ROP</span><b id="c_rop"></b></div><div class="row"><span>Diff pressure</span><b id="c_dp"></b></div><div class="row"><span>Surface torque</span><b id="c_tq"></b></div>
             <div class="row"><span>Bit health</span><b id="c_bit"></b></div><div class="row"><span>Standpipe pressure</span><b id="c_spp"></b></div>
             <div class="row"><span>Mud weight</span><b id="c_mw"></b></div><div class="row"><span>Pit volume</span><b id="c_pit"></b></div>
             <div class="row"><span>Mode</span><b id="c_mode"></b></div>
@@ -329,14 +338,16 @@ export class Game {
           <div>
             <div class="autobox">
               <div class="row"><span>AUTODRILLER</span><b id="a_state" class="warn">${a.on ? "ON" : "OFF"}</b></div>
-              <div class="hint">WOB set point: <b id="aw">${a.wob}</b> klbs${opt ? ` · drill-off knee ≈ ${opt}` : ""}</div>
+              <div class="hint">WOB set point: <b id="aw">${a.wob}</b> klbs</div>
               <input type="range" id="a_wob" min="5" max="60" step="1" value="${a.wob}" />
               <div class="hint">ROP limit: <b id="ar">${a.rop}</b> ft/hr</div>
               <input type="range" id="a_rop" min="40" max="380" step="10" value="${a.rop}" />
               <div class="hint">Differential pressure limit: <b id="ad">${a.dp}</b> psi <span style="color:var(--red)">(motor stalls above 1,650)</span></div>
               <input type="range" id="a_dp" min="300" max="2400" step="50" value="${a.dp}" />
+              <div class="hint">Torque limit: <b id="at">${a.torque ?? 10000}</b> ft-lb <span style="color:var(--red)">(string twists off above 16,500)</span></div>
+              <input type="range" id="a_tq" min="3000" max="20000" step="250" value="${a.torque ?? 10000}" />
               <div class="hint" id="a_lim" style="min-height:18px"></div>
-              <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button><button class="b alt" id="a_test" ${busy ? "disabled" : ""}>Drill-off test</button></div>
+              <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button></div>
             </div>
             <div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
             <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
@@ -355,26 +366,21 @@ export class Game {
       sl("a_wob", "aw", (v) => { s.auto.wob = v; });
       sl("a_rop", "ar", (v) => { s.auto.rop = v; });
       sl("a_dp", "ad", (v) => { s.auto.dp = v; });
+      sl("a_tq", "at", (v) => { s.auto.torque = v; });
       q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
       q("a_toggle").onclick = () => {
         const a = s.auto;
         if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
-        const opt = this.flags.drillOffWopt as number | undefined, notes: string[] = [];
+        const notes: string[] = [];
         if (a.dp > 1650) notes.push("A diff limit over 1,650 won't stop a motor stall. That's not a limit, that's a suggestion.");
         if (a.rop < 100) notes.push("That ROP limit is going to strangle us. We'll crawl.");
-        if (opt && a.wob > opt + 6) notes.push(`Weight over the knee (≈${opt}) just wears the bit and buys nothing.`);
-        if (opt && a.wob < opt - 8) notes.push(`We're leaving ROP on the table below ≈${opt} klbs.`);
-        if (!opt) notes.push("No drill-off, so those weights are a guess. Hope you're feeling lucky.");
+        if ((a.torque ?? 10000) > TORQUE_MAX) notes.push("A torque limit over 16,500 won't save the string. It'll twist off first.");
+        if (a.wob > 45) notes.push("Forty-five klbs on a bit that size is a lot of weight for not much hole.");
         a.on = true; this.sfx.good();
         this.radio("dale", notes.length ? notes[0] : "Autodriller's in. Set points look sane — nice.", 8000);
-        if (!notes.length || notes.length === 1 && !!opt) this.gain(0.15, 0);
+        if (!notes.length) this.gain(0.15, 0);
         this.rerenderCabin(p, render, bind);
       };
-      q("a_test").onclick = () => this.mini.drillOff((r) => {
-        if (r.skipped) { this.shortcutToast("Skipped the test."); this.radio("dale", "Guessing it is."); }
-        else { this.gain(r.score > 0.7 ? 0.15 : 0, 0); this.radio("dale", r.score > 0.7 ? `Knee's around ${Math.round(r.value ?? 28)}. That tracks.` : `You're calling it ${Math.round(r.value ?? 28)}. Okay.`, 6000); }
-        this.openCabin();
-      });
       const btns: string[] = [];
       if (s.kick.active && !s.kick.shut) btns.push(`<button class="b red" data-a="shut">SHUT IN THE WELL</button>`);
       if (s.kill.stage === "flowcheck") btns.push(`<button class="b green" data-a="open">Flow check OK — open BOP & resume</button>`);
@@ -393,10 +399,11 @@ export class Game {
       const set = (id: string, v: string, cls = "") => { const e = p.querySelector<HTMLElement>("#" + id); if (e) { e.textContent = v; if (cls !== undefined) e.className = cls; } };
       set("c_depth", fmt(s.depth) + " ft"); set("c_form", formationAt(s.depth).name); set("c_rop", fmt(s.rop) + " ft/hr");
       set("c_dp", fmt(s.dp) + " psi" + (s.stallT > 0 ? " · STALLED" : ""), s.dp > STALL_DP * 0.9 || s.stallT > 0 ? "bad" : "");
+      set("c_tq", fmt(s.torque) + " ft-lb", s.torque > TORQUE_MAX * 0.9 ? "bad" : "");
       set("c_bit", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : ""); set("c_spp", fmt(s.spp) + " psi"); set("c_mw", s.mw.toFixed(2) + " ppg");
       set("c_pit", fmt(s.pit) + " bbl", s.kick.active ? "bad" : ""); set("c_mode", s.mode.toUpperCase());
       const lim = p.querySelector<HTMLElement>("#a_lim");
-      if (lim) lim.innerHTML = s.auto.on ? `Holding <b>${s.wobTarget.toFixed(1)}</b> klbs — limited by <b class="${s.auto.limit === "WOB" ? "ok" : "warn"}">${s.auto.limit === "WOB" ? "your WOB set point" : s.auto.limit === "ROP" ? "the ROP limit" : "the diff-pressure limit"}</b>` : "";
+      if (lim) lim.innerHTML = s.auto.on ? `Holding <b>${s.wobTarget.toFixed(1)}</b> klbs — limited by <b class="${s.auto.limit === "WOB" ? "ok" : "warn"}">${s.auto.limit === "WOB" ? "your WOB set point" : s.auto.limit === "ROP" ? "the ROP limit" : s.auto.limit === "TORQUE" ? "the torque limit" : "the diff-pressure limit"}</b>` : "";
     };
   }
   private rerenderCabin(p: HTMLElement, render: () => string, bind: () => void) {
@@ -429,6 +436,26 @@ export class Game {
     if (s.kill.stage === "weightup" && s.kill.kmw > 0) return Math.max(0, s.kill.kmw - s.mwTarget + 0.05);
     if (s.depth >= 4500 && s.depth < 6200) return Math.max(0, 10.9 - s.mwTarget + 0.05);
     return 0;
+  }
+  openFrac() {
+    const s = this.sim.s;
+    const xfer = (n: number) => {
+      const room = 900 - s.pit, amt = Math.max(0, Math.min(n, s.fracBbl, room));
+      if (amt <= 0) { this.ui.toast(s.fracBbl <= 0 ? "FRAC TANKS EMPTY" : "PITS FULL", s.fracBbl <= 0 ? "Order more water" : "Nothing more fits"); return; }
+      s.fracBbl -= amt; s.pit += amt; s.cost += amt * 8; this.sfx.good();
+      this.ui.toast("+" + Math.round(amt) + " BBL", "Transferred to the active pits");
+      this.openFrac();
+    };
+    this.inspect("Frac Tanks", [["Frac tank volume", fmt(s.fracBbl) + " bbl", s.fracBbl < 150 ? "bad" : "ok"], ["Active pits", fmt(s.pit) + " bbl", s.pit < 150 ? "bad" : "ok"], ["Pits can hold", "about 900 bbl"]],
+      `<p class="hint">Losses, trips and kills draw the pits down and nothing refills them by itself. Below about 120 bbl the pumps lose suction and drilling stops.</p>`,
+      [{ label: "Transfer 100 bbl", cls: "green", run: () => xfer(100) }, { label: "Transfer 300 bbl", run: () => xfer(300) }]);
+  }
+  /** a pallet of mud product (from the yard) was set down: near the hopper it counts as delivered */
+  mudPalletSet(x: number, z: number) {
+    if (Math.hypot(x - 25, z + 21.5) < 4.5) {
+      this.flags.mudPallets = ((this.flags.mudPallets as number) || 0) + 1;
+      this.ui.toast("PALLET DELIVERED", "Mud products at the hopper: " + this.flags.mudPallets); this.gain(0.1, 2); this.sfx.good();
+    }
   }
   openHopper() {
     const s = this.sim.s;
@@ -1011,6 +1038,7 @@ export class Game {
     for (const e of this.sim.drain()) {
       switch (e.type) {
         case "kickAlarm": this.wake("PIT GAIN!"); break;
+        case "pitLow": this.radio("dale", "Pits are nearly dry, boss. Pumps are sucking air. I can't drill like this. Somebody run a transfer from the frac tanks behind the pits.", 12000); this.wake("PITS LOW"); break;
         case "autoShutIn": this.radio("dale", "I shut it in myself. Late. Got a bigger gain than I'd like.", 9000); this.inc(1); break;
         case "lossStart": this.radio("marcus", "We're losing returns! Pits are dropping — you're over frac. Back off the mud weight or pump LCM.", 10000); this.wake("LOSSES"); break;
         case "lossHealed": this.radio("marcus", "Losses healed. Pits are stable.", 6000); break;
@@ -1210,12 +1238,14 @@ export class Game {
     if (y > 6 && Math.abs(x) < 7 && Math.abs(z) < 7) return "Drill Floor";
     if (Math.abs(x) < 7 && Math.abs(z) < 6.5) return "Substructure";
     if (z > 70) return "Lease Road";
-    if (x > 27 && z > 4 && z < 40) return "Camp";
+    if (x < -16 && x > -58 && z > 15 && z < 60) return "Camp";
+    if (x > -1 && x < 32 && z < -54) return "Frac Tanks & Mud Yard";
     if (x > 38 && z < -20) return "Water Tanks";
     if (z < -17 && z > -28 && x > -19 && x < 20) return "Mud Tanks";
-    if (x < -18 && x > -45 && z < 4) return "Power House";
-    if (z < -8 && z > -16 && x < 2 && x > -14) return "Pump Room";
-    if (z > 12 && z < 38 && Math.abs(x) < 13) return "Pipe Racks";
+    if (x > 10 && x < 52 && z > -9 && z < 8.5) return "Power House";
+    if (x > 8 && x < 23 && z < -9 && z > -16) return "Pump Room";
+    if (x > -13 && x < -3 && z < -9 && z > -16) return "Choke Manifold";
+    if (x < -16 && x > -36 && Math.abs(z) < 12) return "Pipe Racks";
     if (z < -17) return "Backyard";
     return "Location";
   }

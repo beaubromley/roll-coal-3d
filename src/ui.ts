@@ -174,16 +174,18 @@ export class UI {
     c.scale(1, 1);
     rect(-3.5, 40, 3.5, 400, "#6b665d");           // road
     rect(-60, -66, 60, 62, "#d8c8a6");               // pad
-    rect(-6.5, -6, 6.5, 6, "#2c5d8a");               // substructure
-    rect(-1, 6, 1, 34, "#7a5a38");                   // catwalk
-    rect(-11, 17, -2, 34, "#8a4b2b"); rect(2, 17, 11, 34, "#8a4b2b"); // pipe racks
+    rect(-6, -6.5, 6, 6.5, "#2c5d8a");               // substructure
+    rect(-34, -1, -6, 1, "#7a5a38");                   // catwalk
+    rect(-34, -11, -17, -2, "#8a4b2b"); rect(-34, 2, -17, 11, "#8a4b2b"); // pipe racks
     rect(-18, -26, 18, -19.6, "#6b747c");            // tanks
-    rect(-12, -14.5, 0, -9.5, "#a8221c");            // pumps
-    rect(-33, -28, -26, 0, "#1d6fb5");               // gensets
-    rect(-17, 9, -9.5, 14, "#2e7a45");               // accumulator
-    rect(8.5, 6.5, 15.5, 11.5, "#a8221c");           // choke
-    rect(30, 8, 33.6, 36, "#e0dccb"); rect(37, 8, 43, 28, "#9aa6b2"); // trailers
-    rect(43, 40, 49, 44, "#2f9a4a");                 // muster
+    rect(9.5, -14.5, 21.5, -9.5, "#a8221c");         // pumps
+    rect(-11, -14.4, -4, -9.4, "#8a2a2a");           // choke
+    rect(11.75, -5.5, 39.25, 0.5, "#1d6fb5");        // gensets
+    rect(43, -9, 51, 1, "#7a1a14"); rect(22, 3.2, 34, 6.4, "#e9eef3");   // VFD, diesel
+    rect(10.4, -63.4, 30.6, -59.4, "#8a6a40"); rect(0, -64.4, 10.4, -56, "#3aa0c8");   // mud yard, frac tanks
+    rect(8.5, 7, 16, 12, "#2e7a45");                 // accumulator
+    rect(-46, 42, -18, 45.6, "#e0dccb"); rect(-27, 50.7, -17, 53.3, "#9aa6b2"); rect(-38, 49, -30, 55, "#b6c0c9"); // trailers
+    rect(27, 40, 33, 44, "#2f9a4a");                 // muster
     rect(5, 94, 8.4, 98, "#e0dccb");
     c.restore();
     // task markers are drawn in screen space (always upright) and clamped to the map edge

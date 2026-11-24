@@ -1,5 +1,4 @@
 import type { Game } from "./game";
-import { woptFor, formationAt } from "./sim";
 
 export interface MiniResult { score: number; skipped: boolean; value?: number; extra?: number }
 type Done = (r: MiniResult) => void;
@@ -359,61 +358,230 @@ export class Mini {
     };
   }
 
-  // ---------------------------------------------------------------- 9b. SLIPS (timing bar)
+  // ---------------------------------------------------------------- 9b. SLIPS: the real loop. The driller bobs the string and fakes you out.
   slips(done: Done) {
-    let t = 0, hits = 0, tries = 0;
-    const p = this.open(this.shell("Drill Floor", "Pull the Slips", "The floorhands are in the porta john and a connection is up. Hit SET SLIPS while the marker is in the green. Three clean sets.",
-      `<div class="slipbar"><div class="zone"></div><div class="mk" id="mk"></div></div><div class="row"><span>Clean sets</span><b id="sh">0 / 3</b></div><div id="mgResult" class="hint">Space or tap.</div>`, `<button class="b" id="mgSet">SET SLIPS</button>`));
+    // h = how far the joint is from the right height above the rotary (m); v = its speed. Slips only bite when it is level AND still.
+    let h = 1.7, v = 0, t = 0, fails = 0, ok = false, finished = false;
+    type Leg = { to: number; speed: number; hold: number };
+    const fakeCount = 2 + ((Math.random() * 2) | 0);
+    const legs: Leg[] = [];
+    let side = Math.random() < 0.5 ? 1 : -1;
+    for (let i = 0; i < fakeCount; i++) { legs.push({ to: side * (0.32 + Math.random() * 0.5), speed: 0.7 + Math.random() * 0.5, hold: 0.45 + Math.random() * 0.55 }); side *= -1; }
+    legs.push({ to: 0, speed: 0.55, hold: 1.05 });                     // the real stop
+    legs.push({ to: 1.7, speed: 0.9, hold: 0.2 });                      // …then he hoists it away again
+    let li = 0, holdT = 0, ph = 0;
+    const W = 300, H = 330;
+    const body = `<div style="display:flex;justify-content:center;margin:8px 0"><canvas id="sl" width="${W}" height="${H}" style="width:min(100%,${W}px);aspect-ratio:${W}/${H};background:#0c1219;border:2px solid var(--line)"></canvas></div>
+      <div class="row"><span>Sets that failed</span><b id="slf">0 / 3</b></div><div id="mgResult" class="hint">Dale is "helping". Wait until the joint is level with the bowl and has STOPPED, then set the slips. Moving pipe will jerk right out of them.</div>`;
+    const p = this.open(this.shell("Drill Floor", "Set the Slips", "The floorhands are locked in the porta john, and Dale has been bobbing the string up and down for ten minutes, just to watch you flinch. Set the slips on the pipe body when the joint is steady at the right height.", body, `<button class="b" id="mgSet">SET SLIPS</button>`));
     this.skip(done, p);
-    const act = () => {
-      if (!this.alive) return; tries++;
-      const pos = (Math.sin(t * 3.1) + 1) / 2, ok = pos > 0.42 && pos < 0.58;
+    const cv = p.querySelector<HTMLCanvasElement>("#sl")!, c = cv.getContext("2d")!;
+    const set = () => {
+      if (!this.alive || finished) return;
+      const good = Math.abs(h) < 0.1 && Math.abs(v) < 0.07;
       const res = document.getElementById("mgResult")!;
-      if (ok) { hits++; res.textContent = "Slips set. Clean."; this.g.sfx.good(); } else { res.textContent = pos < 0.5 ? "Too early — the string bounced." : "Too late — pipe's sliding!"; this.g.sfx.bad(); this.g.sim.addCost(2000); }
-      document.getElementById("sh")!.textContent = `${hits} / 3`;
-      if (hits >= 3) this.end(done, { score: clamp(3 / tries, 0.3, 1), skipped: false, value: tries }, "Pipe is hung in the slips.");
+      if (good) { finished = true; ok = true; this.g.sfx.good(); this.end(done, { score: fails ? 0.65 : 1, skipped: false, value: fails }, "Slips are in. The pipe is hung."); return; }
+      fails++; this.g.sfx.bad(); this.g.sim.addCost(3000);
+      document.getElementById("slf")!.textContent = `${fails} / 3`;
+      res.textContent = Math.abs(v) > 0.07 ? "The string was still moving. It tore through the slips." : "Wrong height. The slips grabbed the tool joint.";
+      if (fails >= 3) { finished = true; this.end(done, { score: 0, skipped: false, value: fails }, "The pipe went right through. Fishing job."); }
     };
-    this.key((e) => { if (e.code === "Space") { e.preventDefault(); act(); } });
-    p.querySelector<HTMLButtonElement>("#mgSet")!.addEventListener("pointerdown", (e) => { e.preventDefault(); act(); });
-    const mk = p.querySelector<HTMLElement>("#mk")!;
-    this.g.miniTick = (dt: number) => { if (!this.alive) return; t += dt; mk.style.left = `calc(${((Math.sin(t * 3.1) + 1) / 2) * 100}% - 3px)`; };
+    this.key((e) => { if (e.code === "Space") { e.preventDefault(); set(); } });
+    p.querySelector<HTMLButtonElement>("#mgSet")!.addEventListener("pointerdown", (e) => { e.preventDefault(); set(); });
+    const px = 95;                              // pixels per metre
+    this.g.miniTick = (dt: number) => {
+      if (!this.alive || finished) return;
+      t += dt; ph += dt;
+      const leg = legs[li];
+      if (Math.abs(h - leg.to) > 0.02 && holdT <= 0) { const dir = Math.sign(leg.to - h); v = dir * Math.min(leg.speed, Math.abs(leg.to - h) / Math.max(dt, 0.001) * 0.5 + 0.06); h += v * dt; if ((leg.to - h) * dir < 0) h = leg.to; }
+      else { v = (Math.random() - 0.5) * (leg.to === 0 ? 0.02 : 0.1); h += v * dt; holdT += dt; if (holdT >= leg.hold) { li = li + 1 < legs.length ? li + 1 : 0; holdT = 0; if (li === 0) { /* he hoisted it out and started over */ legs.length = 0; let s2 = Math.random() < 0.5 ? 1 : -1; const n = 2 + ((Math.random() * 2) | 0); for (let i = 0; i < n; i++) { legs.push({ to: s2 * (0.32 + Math.random() * 0.5), speed: 0.7 + Math.random() * 0.5, hold: 0.45 + Math.random() * 0.55 }); s2 *= -1; } legs.push({ to: 0, speed: 0.55, hold: 1.05 }, { to: 1.7, speed: 0.9, hold: 0.2 }); h = 1.7; } } }
+      // ---- draw
+      const tableY = 262, jointY = tableY - 0.8 * px - h * px, cx = W / 2;
+      c.clearRect(0, 0, W, H); c.fillStyle = "#0c1219"; c.fillRect(0, 0, W, H);
+      const aligned = Math.abs(h) < 0.1 && Math.abs(v) < 0.07;
+      // derrick shadow lines
+      c.strokeStyle = "#16212d"; c.lineWidth = 1; for (let y = 10; y < H; y += 30) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+      // pipe body (hangs down through the rotary)
+      c.fillStyle = "#8d9299"; c.fillRect(cx - 12, 0, 24, tableY + 60);
+      c.fillStyle = "#6a7078"; c.fillRect(cx + 3, 0, 9, tableY + 60);
+      // hatched SLIPS ZONE on the body, between the table and the tool joint
+      c.save(); c.beginPath(); c.rect(cx - 12, jointY + 36, 24, 62); c.clip();
+      c.fillStyle = "rgba(244,192,74,.28)"; c.fillRect(cx - 12, jointY + 36, 24, 62);
+      c.strokeStyle = "#f4c04a"; c.lineWidth = 3; for (let k = -80; k < 100; k += 11) { c.beginPath(); c.moveTo(cx - 14, jointY + 36 + k); c.lineTo(cx + 14, jointY + 36 + k + 24); c.stroke(); }
+      c.restore();
+      // tool joint (the fat upset end) with its yellow band
+      c.fillStyle = "#a6acb4"; c.fillRect(cx - 19, jointY - 6, 38, 42); c.fillStyle = "#e8b923"; c.fillRect(cx - 19, jointY + 8, 38, 9);
+      c.strokeStyle = "#2a2f35"; c.lineWidth = 2; c.strokeRect(cx - 19, jointY - 6, 38, 42);
+      // rotary table + slip bowl
+      c.fillStyle = "#2a3038"; c.fillRect(20, tableY, W - 40, 34); c.fillStyle = "#3a424c"; c.fillRect(20, tableY, W - 40, 8);
+      c.fillStyle = "#0c1219"; c.fillRect(cx - 24, tableY, 48, 34);
+      c.fillStyle = "#8d9299"; c.fillRect(cx - 12, tableY, 24, 34);
+      c.strokeStyle = aligned ? "#3dbb6a" : "#f4c04a"; c.lineWidth = aligned ? 4 : 2; c.strokeRect(cx - 26, tableY - 3, 52, 8);
+      // target gauge on the right: where the joint is vs where it should be
+      c.fillStyle = "#16212d"; c.fillRect(W - 34, 20, 14, 230); c.fillStyle = "#3dbb6a55"; c.fillRect(W - 34, 20 + 115 - 9, 14, 18);
+      const my = 20 + 115 - (h / 1.8) * 105; c.fillStyle = aligned ? "#3dbb6a" : "#fff"; c.fillRect(W - 38, my - 3, 22, 6);
+      c.fillStyle = "#93a4b5"; c.font = "10px sans-serif"; c.fillText("LEVEL", W - 41, 14);
+    };
   }
 
-  // ---------------------------------------------------------------- 10. DRILL-OFF TEST (autodriller)
-  drillOff(done: Done) {
-    const s = this.g.sim.s, f = formationAt(s.depth), wopt = woptFor(f);
-    const W0 = Math.min(70, wopt * 2.1), rate = 4.2;                     // klbs/s bleeding off
-    const fac = (this.g.sim as any).ropFactor?.() ?? 1;
-    const ropAt = (w: number) => { const e = w <= wopt ? w : wopt + (w - wopt) * 0.3; return Math.min(380, (e * 6 / f.hardness) * fac) * (1 + (Math.random() - 0.5) * 0.08); };
-    const pts: [number, number][] = []; let w = W0, marked: number | null = null, t = 0, running = true;
-    const p = this.open(this.shell("Autodriller", "Drill-Off Test", "Lock the brake and let the string drill off weight. Plot ROP against WOB, then mark where adding weight stops paying — the knee of the curve.",
-      `<canvas id="dochart" width="600" height="230" class="dochart"></canvas><div class="fillnum">WOB <b id="dow">${W0.toFixed(0)}</b> klbs · ROP <b id="dor">0</b> ft/hr</div><div id="mgResult" class="hint">Click MARK when ROP starts to fall off steeply as weight comes off.</div>`,
-      `<button class="b" id="doMark">MARK OPTIMUM</button>`), undefined, true);
+  // ---------------------------------------------------------------- 10. LIGHTS-OUT (flush a clogged shaker screen)
+  lightsOut(o: { eyebrow: string; title: string; intro: string; size?: number }, done: Done) {
+    const N = o.size ?? 4;
+    const grid: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
+    const press = (g: boolean[][], x: number, y: number) => { for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx >= 0 && xx < N && yy >= 0 && yy < N) g[yy][xx] = !g[yy][xx]; } };
+    let par = 0; const lit = () => grid.flat().filter(Boolean).length;
+    while (lit() < 4 || par < N + 2) { press(grid, (Math.random() * N) | 0, (Math.random() * N) | 0); par++; if (par > 40) break; }
+    const start = grid.map((r) => [...r]);
+    let moves = 0;
+    const body = `<div class="lo-grid" id="lo" style="grid-template-columns:repeat(${N},1fr)"></div><div class="row"><span>Flushes</span><b id="lom">0</b></div><div id="mgResult" class="hint">Each flush clears a cell and its four neighbours — but also re-clogs any clear ones. Clear the whole screen.</div>`;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body, `<button class="b alt" id="loReset">RESET</button>`));
     this.skip(done, p);
-    const cv = p.querySelector<HTMLCanvasElement>("#dochart")!, c = cv.getContext("2d")!;
-    const maxR = ropAt(W0 + 0.01) * 1.25 + 40;
-    const X = (wv: number) => 40 + ((W0 - wv) / W0) * 540, Y = (r: number) => 210 - (r / Math.max(120, maxR)) * 190;
+    const box = p.querySelector<HTMLElement>("#lo")!;
+    const draw = () => { box.innerHTML = grid.map((row, y) => row.map((on, x) => `<button class="lo ${on ? "on" : ""}" data-x="${x}" data-y="${y}"></button>`).join("")).join(""); box.querySelectorAll<HTMLButtonElement>(".lo").forEach((b) => b.onclick = () => click(Number(b.dataset.x), Number(b.dataset.y))); };
+    const click = (x: number, y: number) => {
+      if (!this.alive) return; press(grid, x, y); moves++; this.g.sfx.click(); document.getElementById("lom")!.textContent = String(moves); draw();
+      if (lit() === 0) this.end(done, { score: moves <= par + 4 ? 1 : 0.7, skipped: false, value: moves }, "Screen is clean. Mud is flowing again.");
+    };
+    p.querySelector<HTMLButtonElement>("#loReset")!.onclick = () => { for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) grid[y][x] = start[y][x]; moves = 0; document.getElementById("lom")!.textContent = "0"; draw(); };
+    draw();
+  }
+
+  // ---------------------------------------------------------------- 11. PIPES (rotate the lines to connect source to sink)
+  pipes(o: { eyebrow: string; title: string; intro: string; from: string; to: string; cols?: number; rows?: number }, done: Done) {
+    const C = o.cols ?? 5, R = o.rows ?? 4, N = 1, E = 2, S = 4, Wd = 8;
+    const rot = (m: number) => ((m << 1) & 15) | ((m >> 3) & 1);
+    // a random self-avoiding route from the top-left to the bottom-right, so it is always solvable
+    let path: [number, number][] = [];
+    for (let tries = 0; tries < 300; tries++) {
+      path = [[0, 0]]; const seen = new Set(["0,0"]); let x = 0, y = 0, guard = 0;
+      while ((x !== C - 1 || y !== R - 1) && guard++ < 60) {
+        const opts = ([[1, 0], [0, 1], [-1, 0], [0, -1]] as [number, number][]).filter(([dx, dy]) => { const nx = x + dx, ny = y + dy; return nx >= 0 && nx < C && ny >= 0 && ny < R && !seen.has(nx + "," + ny); });
+        if (!opts.length) break;
+        const fwd = opts.filter(([dx, dy]) => dx > 0 || dy > 0), pool = Math.random() < 0.6 && fwd.length ? fwd : opts, [dx, dy] = pool[(Math.random() * pool.length) | 0];
+        x += dx; y += dy; seen.add(x + "," + y); path.push([x, y]);
+      }
+      if (x === C - 1 && y === R - 1 && path.length >= C + R + 1) break;
+      if (tries === 299) { path = []; for (let i = 0; i < C; i++) path.push([i, 0]); for (let j = 1; j < R; j++) path.push([C - 1, j]); }
+    }
+    const mask: number[][] = Array.from({ length: R }, () => Array(C).fill(0));
+    const bit = (dx: number, dy: number) => (dx === 1 ? E : dx === -1 ? Wd : dy === 1 ? S : N);
+    for (let i = 0; i < path.length; i++) {
+      const [x, y] = path[i];
+      if (i === 0) mask[y][x] |= Wd; if (i === path.length - 1) mask[y][x] |= E;
+      if (i > 0) mask[y][x] |= bit(path[i - 1][0] - x, path[i - 1][1] - y);
+      if (i < path.length - 1) mask[y][x] |= bit(path[i + 1][0] - x, path[i + 1][1] - y);
+    }
+    const onPath = new Set(path.map((q) => q[0] + "," + q[1]));
+    const shapes = [5, 10, 3, 6, 12, 9, 7, 11, 13, 14];
+    for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) if (!onPath.has(x + "," + y)) mask[y][x] = Math.random() < 0.12 ? 0 : shapes[(Math.random() * shapes.length) | 0];
+    for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) for (let k = (Math.random() * 4) | 0; k > 0; k--) mask[y][x] = rot(mask[y][x]);
+    const flow = (): Set<string> => {
+      const seen = new Set<string>(); if (!(mask[0][0] & Wd)) return seen;
+      const q: [number, number][] = [[0, 0]]; seen.add("0,0");
+      while (q.length) {
+        const [x, y] = q.pop()!, m = mask[y][x];
+        for (const [dx, dy, b, ob] of [[1, 0, E, Wd], [-1, 0, Wd, E], [0, 1, S, N], [0, -1, N, S]] as [number, number, number, number][]) {
+          const nx = x + dx, ny = y + dy; if (!(m & b) || nx < 0 || nx >= C || ny < 0 || ny >= R || seen.has(nx + "," + ny)) continue;
+          if (mask[ny][nx] & ob) { seen.add(nx + "," + ny); q.push([nx, ny]); }
+        }
+      }
+      return seen;
+    };
+    const svg = (m: number, wet: boolean) => {
+      const col = wet ? "#4aa3e8" : "#8d9299", L = (x1: number, y1: number) => `<line x1="30" y1="30" x2="${x1}" y2="${y1}" stroke="${col}" stroke-width="12" stroke-linecap="round"/>`;
+      return `<svg viewBox="0 0 60 60" width="100%" height="100%">${m & N ? L(30, 0) : ""}${m & E ? L(60, 30) : ""}${m & S ? L(30, 60) : ""}${m & Wd ? L(0, 30) : ""}${m ? `<circle cx="30" cy="30" r="8" fill="${col}"/>` : ""}</svg>`;
+    };
+    let moves = 0;
+    const body = `<div class="pp-wrap"><div class="pp-end">${o.from}</div><div class="pp-grid" id="pp" style="grid-template-columns:repeat(${C},1fr)"></div><div class="pp-end">${o.to}</div></div><div class="row"><span>Turns</span><b id="ppm">0</b></div><div id="mgResult" class="hint">Click a section to rotate it. Connect the line all the way across.</div>`;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body));
+    this.skip(done, p);
+    const box = p.querySelector<HTMLElement>("#pp")!;
     const draw = () => {
-      c.clearRect(0, 0, 600, 230); c.fillStyle = "#0b1118"; c.fillRect(0, 0, 600, 230);
-      c.strokeStyle = "#243445"; c.lineWidth = 1; for (let i = 0; i <= 6; i++) { c.beginPath(); c.moveTo(40 + i * 90, 10); c.lineTo(40 + i * 90, 210); c.stroke(); }
-      c.fillStyle = "#93a4b5"; c.font = "11px sans-serif"; for (let i = 0; i <= 6; i++) c.fillText(String(Math.round(W0 - (i / 6) * W0)), 34 + i * 90, 224);
-      c.fillText("WOB (klbs) →  weight bleeds off", 220, 12);
-      c.strokeStyle = "#f4c04a"; c.lineWidth = 2; c.beginPath(); pts.forEach((q, i) => { const x = X(q[0]), y = Y(q[1]); if (i) c.lineTo(x, y); else c.moveTo(x, y); }); c.stroke();
-      if (marked !== null) { c.strokeStyle = "#3dbb6a"; c.beginPath(); c.moveTo(X(marked), 10); c.lineTo(X(marked), 210); c.stroke(); }
+      const wet = flow();
+      box.innerHTML = mask.map((row, y) => row.map((m, x) => `<button class="pp ${wet.has(x + "," + y) ? "wet" : ""}" data-x="${x}" data-y="${y}">${svg(m, wet.has(x + "," + y))}</button>`).join("")).join("");
+      box.querySelectorAll<HTMLButtonElement>(".pp").forEach((b) => b.onclick = () => { if (!this.alive) return; const x = Number(b.dataset.x), y = Number(b.dataset.y); mask[y][x] = rot(mask[y][x]); moves++; this.g.sfx.click(); document.getElementById("ppm")!.textContent = String(moves); draw(); });
+      if (wet.has((C - 1) + "," + (R - 1)) && (mask[R - 1][C - 1] & E)) this.end(done, { score: moves <= path.length * 2 + 4 ? 1 : 0.75, skipped: false, value: moves }, "Pressure's through. The lines are lined up.");
     };
-    const mark = () => {
-      if (!this.alive || marked !== null || pts.length < 8) return;
-      marked = w; running = false; draw();
-      const err = Math.abs(marked - wopt), score = clamp(1 - err / 9, 0, 1);
-      this.g.flags.drillOffWopt = Math.round(marked);
-      this.end(done, { score, skipped: false, value: marked, extra: wopt }, err <= 3 ? `Right on the knee: about ${marked.toFixed(0)} klbs.` : err <= 7 ? `Close — call it ${marked.toFixed(0)} klbs.` : `Noisy data. You read ${marked.toFixed(0)} klbs.`, 1800);
-    };
-    p.querySelector<HTMLButtonElement>("#doMark")!.onclick = mark;
-    this.key((e) => { if (e.code === "Space") { e.preventDefault(); mark(); } });
-    (this.g as any).miniTick = (dt: number) => {
-      if (!this.alive || !running) return; t += dt; w = Math.max(2, W0 - rate * t); const r = ropAt(w); pts.push([w, r]);
-      p.querySelector("#dow")!.textContent = w.toFixed(0); p.querySelector("#dor")!.textContent = String(Math.round(r)); draw();
-      if (w <= 3) { running = false; this.end(done, { score: 0.1, skipped: false }, "The string drilled off before you marked anything."); }
+    draw();
+  }
+
+  // ---------------------------------------------------------------- 12. ASSIGN (logic puzzle: put everybody where they belong)
+  assign(o: { eyebrow: string; title: string; intro: string; people: string[]; slots: string[]; clues: string[]; solution: number[] }, done: Done) {
+    let tries = 0;
+    const rows = o.people.map((n, i) => `<div class="asg"><span>${n}</span><select data-i="${i}"><option value="-1">— pick a station —</option>${o.slots.map((s, k) => `<option value="${k}">${s}</option>`).join("")}</select></div>`).join("");
+    const body = `<div class="note"><b>Clues</b><ul style="margin:6px 0 0 18px;padding:0">${o.clues.map((c) => `<li>${c}</li>`).join("")}</ul></div>${rows}<div id="mgResult" class="hint">Everybody gets a different station.</div>`;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body, `<button class="b" id="asGo">ASSIGN THE CREW</button>`));
+    this.skip(done, p);
+    p.querySelector<HTMLButtonElement>("#asGo")!.onclick = () => {
+      if (!this.alive) return;
+      const pick = [...p.querySelectorAll<HTMLSelectElement>("select")].map((s) => Number(s.value));
+      const res = document.getElementById("mgResult")!;
+      if (pick.some((x) => x < 0)) { res.textContent = "Somebody still has no station."; return; }
+      if (new Set(pick).size < pick.length) { res.textContent = "Two people can't hold the same station."; this.g.sfx.bad(); return; }
+      const right = pick.filter((x, i) => x === o.solution[i]).length; tries++;
+      if (right === o.solution.length) { this.end(done, { score: tries === 1 ? 1 : tries === 2 ? 0.8 : 0.6, skipped: false, value: tries }, "That works. Nobody is mad. Yet."); return; }
+      this.g.sfx.bad();
+      if (tries >= 3) { this.end(done, { score: 0.2, skipped: false, value: tries }, "Earl takes the list, sighs, and does it himself."); return; }
+      res.textContent = `${right} of ${o.solution.length} are in the right spot. Reread the clues. (${3 - tries} tries left)`;
     };
   }
+
+  // ---------------------------------------------------------------- 13. ORDER CASING (pack the truck to the number)
+  orderCasing(o: { eyebrow: string; title: string; intro: string; min: number; max: number; maxBundles: number; sizes: number[] }, done: Done) {
+    const qty = o.sizes.map(() => 0);
+    const rows = o.sizes.map((s, i) => `<div class="asg"><span>${s}-joint bundle <small class="hint">(${(s * 40).toLocaleString()} ft)</small></span><span class="qty"><button class="b alt" data-i="${i}" data-d="-1">−</button><b id="q${i}">0</b><button class="b alt" data-i="${i}" data-d="1">+</button></span></div>`).join("");
+    const body = `<div class="note">Target: <b>${o.min}–${o.max} joints</b> (the hole, plus a little spare). The truck takes <b>${o.maxBundles}</b> bundles at most.</div>${rows}
+      <div class="row"><span>Total</span><b id="ot">0 joints · 0 bundles</b></div><div id="mgResult" class="hint">Mix bundle sizes to land in the range.</div>`;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body, `<button class="b green" id="ocGo" disabled>ORDER IT</button>`));
+    this.skip(done, p);
+    const calc = () => {
+      const joints = qty.reduce((a, q, i) => a + q * o.sizes[i], 0), bundles = qty.reduce((a, q) => a + q, 0);
+      const okRange = joints >= o.min && joints <= o.max && bundles <= o.maxBundles && bundles > 0;
+      document.getElementById("ot")!.textContent = `${joints} joints · ${bundles} bundles`; document.getElementById("ot")!.className = okRange ? "ok" : bundles > o.maxBundles ? "bad" : "";
+      (document.getElementById("ocGo") as HTMLButtonElement).disabled = !okRange;
+      document.getElementById("mgResult")!.textContent = bundles > o.maxBundles ? "That's more bundles than the truck can carry." : joints > o.max ? "Too much casing — Houston will notice." : joints < o.min ? "Short. You'd be running to town for joints." : "That's a legitimate order.";
+      return { joints, bundles };
+    };
+    p.querySelectorAll<HTMLButtonElement>("button[data-d]").forEach((b) => b.onclick = () => { const i = Number(b.dataset.i), d = Number(b.dataset.d); qty[i] = Math.max(0, qty[i] + d); document.getElementById("q" + i)!.textContent = String(qty[i]); this.g.sfx.click(); calc(); });
+    p.querySelector<HTMLButtonElement>("#ocGo")!.onclick = () => { const r = calc(); if (r.joints >= o.min) this.end(done, { score: 1, skipped: false, value: r.joints }, `Ordered ${r.joints} joints.`); };
+  }
+
+  // ---------------------------------------------------------------- 14. TRAP THE SNAKE (hex pen puzzle: block it in before it reaches the edge)
+  snakeTrap(o: { eyebrow: string; title: string; intro: string }, done: Done) {
+    const W = 11, H = 9; let sx = 5, sy = 4, over = false;
+    const blocked: boolean[][] = Array.from({ length: H }, () => Array(W).fill(false));
+    for (let k = 0; k < 11; k++) { const x = (Math.random() * W) | 0, y = (Math.random() * H) | 0; if ((x === sx && y === sy) || (Math.abs(x - sx) <= 1 && Math.abs(y - sy) <= 1)) continue; blocked[y][x] = true; }
+    const nb = (x: number, y: number): [number, number][] => (y % 2 === 0
+      ? [[x - 1, y], [x + 1, y], [x - 1, y - 1], [x, y - 1], [x - 1, y + 1], [x, y + 1]]
+      : [[x - 1, y], [x + 1, y], [x, y - 1], [x + 1, y - 1], [x, y + 1], [x + 1, y + 1]]).filter(([a, b]) => a >= 0 && a < W && b >= 0 && b < H) as [number, number][];
+    const edge = (x: number, y: number) => x === 0 || y === 0 || x === W - 1 || y === H - 1;
+    const dists = (): number[][] => {
+      const d: number[][] = Array.from({ length: H }, () => Array(W).fill(Infinity)); const q: [number, number][] = [];
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (edge(x, y) && !blocked[y][x]) { d[y][x] = 0; q.push([x, y]); }
+      for (let i = 0; i < q.length; i++) { const [x, y] = q[i]; for (const [a, b] of nb(x, y)) if (!blocked[b][a] && d[b][a] === Infinity) { d[b][a] = d[y][x] + 1; q.push([a, b]); } }
+      return d;
+    };
+    const body = `<div class="hex" id="hx"></div><div id="mgResult" class="hint">Click a free tile to drop a crate on it. The rattler moves one tile every time you do. Pen it in before it reaches the edge.</div>`;
+    const p = this.open(this.shell(o.eyebrow, o.title, o.intro, body));
+    this.skip(done, p);
+    const box = p.querySelector<HTMLElement>("#hx")!;
+    const draw = () => {
+      box.innerHTML = Array.from({ length: H }, (_, y) => `<div class="hr ${y % 2 ? "odd" : ""}">${Array.from({ length: W }, (_, x) => `<button class="hc ${blocked[y][x] ? "blk" : ""} ${x === sx && y === sy ? "snk" : ""} ${edge(x, y) ? "edg" : ""}" data-x="${x}" data-y="${y}">${x === sx && y === sy ? "🐍" : blocked[y][x] ? "" : ""}</button>`).join("")}</div>`).join("");
+      box.querySelectorAll<HTMLButtonElement>(".hc").forEach((b) => b.onclick = () => click(Number(b.dataset.x), Number(b.dataset.y)));
+    };
+    const click = (x: number, y: number) => {
+      if (!this.alive || over || blocked[y][x] || (x === sx && y === sy)) return;
+      blocked[y][x] = true; this.g.sfx.click();
+      const d = dists();
+      if (d[sy][sx] === Infinity) { over = true; draw(); this.end(done, { score: 1, skipped: false }, "Penned in. It's mad, but it's contained.", 1400); return; }
+      // the snake takes the shortest way out (random tie-break)
+      const opts = nb(sx, sy).filter(([a, b]) => !blocked[b][a]); let best = Infinity; for (const [a, b] of opts) best = Math.min(best, d[b][a]);
+      const pool = opts.filter(([a, b]) => d[b][a] === best); const [nx, ny] = pool[(Math.random() * pool.length) | 0];
+      sx = nx; sy = ny;
+      if (edge(sx, sy)) { over = true; draw(); this.end(done, { score: 0, skipped: false }, "It made it to the edge and slithered off. Into the gear.", 1400); return; }
+      draw();
+    };
+    draw();
+  }
+
 }

@@ -6,12 +6,12 @@ import type { Player } from "./player";
  * Chunky, flat-shaded and a little too bright, like props out of GTA III. Q cycles through them.
  * In first person they ride on the camera (drawn over the world); in third person they sit in the right hand.
  */
-export type HeldKind = "none" | "phone" | "tally" | "gas" | "rod";
-type Item = "phone" | "tally" | "gas" | "rod";
-const ORDER: HeldKind[] = ["none", "phone", "tally", "gas", "rod"];
-const KINDS: Item[] = ["phone", "tally", "gas", "rod"];
-const DUR: Record<Item, number> = { phone: 2.4, tally: 1.6, gas: 1.4, rod: 1.0 };
-const NAMES: Record<HeldKind, string> = { none: "HANDS FREE", phone: "CELL PHONE", tally: "TALLY BOOK", gas: "4-GAS MONITOR", rod: "FISHING POLE" };
+export type HeldKind = "none" | "phone" | "tally" | "gas" | "rod" | "gun";
+type Item = "phone" | "tally" | "gas" | "rod" | "gun";
+const ORDER: HeldKind[] = ["none", "phone", "tally", "gas", "rod", "gun"];
+const KINDS: Item[] = ["phone", "tally", "gas", "rod", "gun"];
+const DUR: Record<Item, number> = { phone: 2.4, tally: 1.6, gas: 1.4, rod: 1.0, gun: 0.6 };
+const NAMES: Record<HeldKind, string> = { none: "HANDS FREE", phone: "CELL PHONE", tally: "TALLY BOOK", gas: "4-GAS MONITOR", rod: "FISHING POLE", gun: "SHOTGUN" };
 
 /** a flat, chunky little icon for the corner of the screen */
 export function drawHeldIcon(cv: HTMLCanvasElement, kind: HeldKind) {
@@ -22,6 +22,7 @@ export function drawHeldIcon(cv: HTMLCanvasElement, kind: HeldKind) {
   if (kind === "phone") { r("#000", 15, 4, 18, 40); r("#1c2430", 17, 6, 14, 36); r("#3fd0ff", 19, 9, 10, 22); r("#d8dde3", 22, 36, 4, 4); }
   else if (kind === "tally") { r("#000", 10, 6, 28, 36); r("#e8a21c", 12, 8, 24, 32); r("#f4efe1", 15, 11, 19, 26); for (let y = 15; y < 36; y += 5) r("#7aa6d6", 17, y, 15, 1); r("#1a1a1a", 12, 8, 3, 32); r("#2a3e8c", 38, 10, 3, 26); }
   else if (kind === "gas") { r("#000", 12, 4, 24, 40); r("#f1c40f", 14, 6, 20, 36); r("#1b1b1b", 14, 33, 20, 9); r("#1b1b1b", 14, 6, 20, 5); r("#101a10", 17, 13, 14, 15); r("#7dff7d", 19, 15, 10, 2); r("#7dff7d", 19, 20, 7, 2); r("#d63a2c", 28, 7, 4, 3); }
+  else if (kind === "gun") { c.restore(); c.save(); c.strokeStyle = "#000"; c.lineWidth = 8; c.beginPath(); c.moveTo(6, 30); c.lineTo(42, 18); c.stroke(); c.strokeStyle = "#8d9299"; c.lineWidth = 4; c.beginPath(); c.moveTo(8, 29); c.lineTo(42, 18); c.stroke(); r("#000", 4, 28, 14, 10); r("#7a4a2a", 5, 29, 12, 8); r("#2a2a2a", 20, 26, 8, 4); }
   else if (kind === "rod") { c.restore(); c.save(); r("#000", 8, 39, 8, 6); r("#2a2a2a", 9, 40, 6, 4); c.strokeStyle = "#000"; c.lineWidth = 6; c.beginPath(); c.moveTo(10, 40); c.lineTo(40, 6); c.stroke(); c.strokeStyle = "#c9a15a"; c.lineWidth = 3; c.beginPath(); c.moveTo(10, 40); c.lineTo(40, 6); c.stroke(); r("#d63a2c", 36, 20, 5, 5); r("#f4f4f4", 36, 25, 5, 4); c.strokeStyle = "#cfd6dc"; c.lineWidth = 1; c.beginPath(); c.moveTo(40, 6); c.lineTo(38, 20); c.stroke(); }
   else { r("#000", 11, 15, 26, 22); r("#f0c8a0", 13, 17, 22, 18); r("#000", 11, 15, 26, 3); for (const x of [14, 19, 24, 29]) r("#000", x, 17, 1, 8); r("#f0c8a0", 11, 33, 26, 6); r("#000", 9, 27, 5, 10); r("#f0c8a0", 10, 28, 3, 8); }
   c.restore();
@@ -70,7 +71,7 @@ export class Held {
         ? ["4-GAS", "O2 19.1 · LEL 12 · H2S 11 · CO 27 — GET OUT OF THERE", true]
         : ["4-GAS", "O2 20.9 · LEL 0 · H2S 0 · CO 0 — all clear.", false];
     }
-    if (this.kind === "rod") return ["", "", false];
+    if (this.kind === "rod" || this.kind === "gun") return ["", "", false];
     return ["HANDS FREE", "You flex. Nothing happens. Q or the scroll wheel to pick something up.", false];
   }
 
@@ -125,6 +126,12 @@ export class Held {
       this.box(root, "#1a1a1a", 0.014, 0.15, 0.026, -0.052, 0, 0, f, 0.1);       // spine
       this.screen(root, this.tex.tally, 0.095, 0.125, 0.005, 0, -0.0095, f);
       this.box(root, "#2a3e8c", 0.007, 0.12, 0.007, 0.062, 0.01, -0.012, f, 0.4); // a pen clipped on
+    } else if (kind === "gun") {
+      this.box(root, "#7a4a2a", 0.05, 0.13, 0.3, 0, -0.02, -0.12, f, 0.2);        // wooden stock
+      this.box(root, "#2a2a2a", 0.05, 0.06, 0.22, 0, 0.03, 0.12, f, 0.2);         // receiver
+      this.box(root, "#8d9299", 0.045, 0.045, 0.62, 0, 0.04, 0.5, f, 0.3);        // barrel
+      this.box(root, "#8d9299", 0.045, 0.045, 0.62, 0, -0.01, 0.5, f, 0.3);       // second barrel
+      this.box(root, "#5a3a22", 0.05, 0.05, 0.22, 0, -0.04, 0.3, f, 0.2);         // fore-end
     } else if (kind === "rod") {
       this.box(root, "#3b2a1c", 0.034, 0.034, 0.3, 0, 0, 0.02, f, 0.2);          // cork grip
       this.box(root, "#2a2a2a", 0.05, 0.07, 0.07, 0, -0.05, 0.1, f, 0.2);        // reel
@@ -166,7 +173,7 @@ export class Held {
     for (const k of KINDS) {
       const f = this.fp[k]!, bump = Math.sin((this.kick / 0.18) * Math.PI) * 0.05, pw = k === this.kind ? this.poseW : 0;
       // first person: the phone goes up to the ear (off the right edge), the tally book comes up to write in, the gas monitor is held out
-      const to = k === "phone" ? { x: 0.3, y: 0.0, z: 0.2, rz: 1.2, rx: -0.2 } : k === "tally" ? { x: 0.0, y: -0.1, z: 0.36, rz: 0, rx: -1.0 } : k === "rod" ? { x: 0.17, y: -0.12, z: 0.36, rz: 0, rx: -0.8 } : { x: 0.05, y: -0.1, z: 0.34, rz: 0, rx: -0.9 };
+      const to = k === "phone" ? { x: 0.3, y: 0.0, z: 0.2, rz: 1.2, rx: -0.2 } : k === "tally" ? { x: 0.0, y: -0.1, z: 0.36, rz: 0, rx: -1.0 } : k === "gun" ? { x: 0.12, y: -0.1, z: 0.3, rz: 0, rx: -0.15 } : k === "rod" ? { x: 0.17, y: -0.12, z: 0.36, rz: 0, rx: -0.8 } : { x: 0.05, y: -0.1, z: 0.34, rz: 0, rx: -0.9 };
       f.position.x = 0.17 + (to.x - 0.17) * pw; f.position.z = 0.4 + (to.z - 0.4) * pw + bump; f.position.y = -0.15 + (to.y + 0.15) * pw + bump * 0.6;
       f.rotation.z = 0.05 + (to.rz - 0.05) * pw; f.rotation.x = -0.45 + (to.rx + 0.45) * pw;
     }

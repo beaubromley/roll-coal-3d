@@ -605,6 +605,7 @@ export class Game {
       const st = this.active ? this.active.m.steps[this.active.i] : null;
       if (st?.act) { this.sfx.click(); this.held.use(); st.act(() => this.stepDone()); return; }
     }
+    if (this.held.kind === "gun") { this.held.use(); this.outskirts.fireGun(); return; }
     if (this.held.kind === "rod") { this.held.use(); const r = this.outskirts.fishClick(); if (r) { this.sfx.click(); this.ui.toast(r[0], r[1]); } return; }
     const [title, text, alarm] = this.held.use();
     if (alarm) this.sfx.horn(); else this.sfx.click();
@@ -850,7 +851,7 @@ export class Game {
       this.active = null; this.stack = []; this.ui.setMission("", "", "");   // jobs are re-evaluated from the restored state
       this.sim.hold = d.hold ?? null; this.sim.accumDead = !!d.accumDead;
       this.approval = d.approval; this.morale = d.morale; this.incidents = d.incidents; this.flags = d.flags ?? {}; this.realT = d.realT ?? 0;
-      this.outskirts.fishLoad(d.fishing);
+      this.outskirts.fishLoad(d.fishing); this.outskirts.afterLoad();
       this.doneIds = new Set<string>(d.done ?? []); this.depthLog = d.depthLog ?? [];
       this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));
       this.missionNo = this.doneIds.size;

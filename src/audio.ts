@@ -53,6 +53,8 @@ export class Sfx {
   radio() { this.tone(1800, 0.05, "square", 0.04); this.tone(1300, 0.07, "square", 0.04, undefined, 0.07); }
   step() { this.tone(70 + Math.random() * 20, 0.07, "triangle", 0.08); }
   thud() { this.tone(90, 0.3, "sine", 0.3, 40); }
+  /** a shotgun: a short crack and a low boom */
+  gun() { this.tone(180, 0.18, "sawtooth", 0.35, 40); this.tone(900, 0.05, "square", 0.25, 120); this.tone(60, 0.45, "sine", 0.4, 30); }
   thunder() {
     const c = this.ctx; if (!c || this.muted) return;
     this.tone(70, 1.4, "sawtooth", 0.14, 28); this.tone(46, 1.8, "sine", 0.22, 22, 0.05);

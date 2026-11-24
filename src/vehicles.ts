@@ -40,7 +40,7 @@ interface Veh {
   wheelbase: number; maxFwd: number; maxRev: number; accel: number; radius: number; pts: number[];
   eye: { x: number; y: number; z: number }; camDist: number; camHeight: number;
   steerNodes: TransformNode[]; steerSign: number[]; spinNodes: TransformNode[]; wheelR: number[];
-  boxes: AABB[]; boxH: number; solid: boolean; prevTop?: number; vyG?: number; gate?: TransformNode; gateA?: number; gateOpen?: boolean; gy?: number; air?: boolean; airT?: number; vyEst?: number; slope?: number; base?: { m: Mesh; s: Vector3; r: Vector3 }[]; px?: number; pz?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
+  boxes: AABB[]; boxH: number; solid: boolean; prevTop?: number; vyG?: number; lockedBy?: string; gate?: TransformNode; gateA?: number; gateOpen?: boolean; gy?: number; air?: boolean; airT?: number; vyEst?: number; slope?: number; base?: { m: Mesh; s: Vector3; r: Vector3 }[]; px?: number; pz?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
   /** backhoe: either driving with the stabilizers up, or dug in with them down (no driving) and the hoe arm working */
   bh?: { tip: TransformNode; dirt: Mesh; load: number; swing: TransformNode; boom: TransformNode; stick: TransformNode; bucket: TransformNode; stabs: TransformNode[]; dig: boolean; stab: number; boomA: number; stickA: number; bucketA: number; swingA: number };
   lift: number;                       // 0..1 boom angle / basket height
@@ -140,12 +140,43 @@ export class Vehicles {
     this.buildPallet(-46.5, -9, -Math.PI / 2);
     for (let i = 0; i < 8; i++) this.buildPallet(11.9 + i * 2.3, -61.4, i % 2 ? 0.04 : -0.03, true);   // mud products in the yard
     this.list.push(this.buildBackhoe(-42, -61, 0));   // parked by the cuttings pit under the shakers
+    this.list.push(this.buildBeater(-48.5, 229, Math.PI / 2 + 0.25));   // Hank's old pickup, beside the farmhouse
     this.list.push(this.buildDrone(-20.5, 36.4, Math.PI / 2 + RYAW));
     for (const v of this.list) {
       v.home = { x: v.x, z: v.z, yaw: v.yaw };
       for (let i = 0; i < v.pts.length; i++) { const b: AABB = { x0: 0, x1: 0, y0: 0, y1: v.boxH, z0: 0, z1: 0 }; v.boxes.push(b); this.colliders.push(b); }
       this.place(v);
     }
+  }
+
+  /** Hank's old pickup: a faded, rust-spotted stock-height beater, with a mismatched door, a cracked windshield and a crooked bumper. It runs. Mostly. */
+  private buildBeater(x: number, z: number, yaw: number): Veh {
+    const v = this.blank("hank", "Hank's old pickup", "car", x, z, yaw), r = v.root;
+    Object.assign(v, { wheelbase: 3.3, maxFwd: 21, maxRev: 6, accel: 5, radius: 1.0, pts: [1.5, 0, -1.8], camDist: 11, camHeight: 3.4, eye: { x: -0.42, y: 2.05, z: 0.05 }, boxH: 2.2, lockedBy: "hankFriend",
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  SPACE handbrake  ·  V camera  ·  E get out" });
+    const PAINT = "#7c4a2e", RUST = "#5a3320", DOOR = "#56705a", GLASS = "#9fb4b8";
+    this.box(v, r, "#1c1d20", 1.45, 0.25, 4.6, 0, 0.62, -0.1);                              // frame
+    this.box(v, r, PAINT, 1.95, 0.55, 4.7, 0, 0.98, -0.1);                                  // lower body
+    const hood = this.box(v, r, "#6e432a", 1.85, 0.3, 1.5, 0, 1.38, 1.45); hood.rotation.x = 0.03;
+    this.box(v, r, "#15161a", 1.4, 0.4, 0.1, 0, 1.12, 2.22);                                // grille
+    this.box(v, r, "#8a8378", 1.9, 0.18, 0.2, 0, 0.72, 2.4).rotation.z = 0.05;               // crooked front bumper
+    this.box(v, r, "#8a8378", 1.9, 0.16, 0.2, 0, 0.74, -2.5);                               // rear bumper
+    for (const s of [-1, 1]) this.cyl(v, r, "#d8d4c0", 0.3, 0.1, s * 0.62, 1.22, 2.25, "z", 12);   // round headlights, a little yellow
+    this.box(v, r, PAINT, 1.8, 0.9, 1.5, 0, 1.78, -0.35);                                   // cab
+    this.box(v, r, "#2a2d31", 1.84, 0.07, 1.55, 0, 2.28, -0.35);                            // roof
+    this.box(v, r, GLASS, 1.7, 0.55, 0.06, 0, 1.85, 0.42, { alpha: 0.5 });                  // windshield
+    this.box(v, r, "#15161a", 0.04, 0.4, 0.05, 0.3, 1.86, 0.44).rotation.z = 0.7;            // a crack
+    this.box(v, r, GLASS, 1.84, 0.5, 1.1, 0, 1.85, -0.4, { alpha: 0.45 });                  // side windows
+    this.box(v, r, DOOR, 0.06, 0.8, 0.9, 0.93, 1.35, -0.05);                                // the right door came off another truck
+    this.box(v, r, RUST, 0.06, 0.3, 0.5, -0.93, 1.15, 0.1); this.box(v, r, RUST, 0.7, 0.05, 0.6, 0.3, 1.66, 1.55);   // rust patches
+    for (const s of [-1, 1]) { this.box(v, r, PAINT, 0.12, 0.5, 2.0, s * 0.94, 1.25, -2.0); this.box(v, r, "#4a4c52", 0.1, 0.4, 0.5, s * 0.96, 0.95, 1.15); }   // bed sides, front fenders
+    this.box(v, r, "#2a2d31", 1.7, 0.08, 2.1, 0, 1.0, -2.0);                                // bed floor
+    this.box(v, r, PAINT, 1.9, 0.5, 0.1, 0, 1.25, -0.99);                                   // headboard
+    this.box(v, r, RUST, 0.4, 0.4, 0.12, -0.5, 1.15, -3.1).rotation.z = 0.2;                 // half a tailgate
+    this.cyl(v, r, "#555a60", 0.1, 1.2, 0.55, 1.65, -1.0, "y", 8, { spec: 0.4 });            // one exhaust stack
+    const W = 0.84;
+    for (const s of [-1, 1]) { this.wheel(v, r, s * 0.95, W / 2, 1.5, W, 0.3, 1, "#6a6e75"); this.wheel(v, r, s * 0.95, W / 2, -1.7, W, 0.3, null, "#6a6e75"); }
+    return v;
   }
 
   private buildF250(x: number, z: number, yaw: number): Veh {
@@ -441,7 +472,8 @@ export class Vehicles {
   // ---------------------------------------------------------------------------------------------- interaction
   interacts() {
     const out: { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean }[] = [];
-    for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning });
+    for (const v of this.list) if (v.lockedBy) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => "Hank's old pickup (ask Hank first)", r: 4.2, ok: () => !this.riding && !this.game.flags[v.lockedBy!], act: () => { this.game.sfx.click(); this.game.ui.toast("HANK'S TRUCK", "It's Hank's. Make friends with Hank and he'll hand you the keys."); } });
+    for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning && (!v.lockedBy || !!this.game.flags[v.lockedBy]) });
     out.push({ pos: () => rv(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair (then click a TV)" : "Sit in the directional driller's seat", r: i === 0 ? 2.6 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
     out.push({ pos: () => rv(-3.62, F + 1.2, 2.4), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });

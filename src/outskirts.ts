@@ -1,5 +1,6 @@
 import { ParticleSystem, Color4, DynamicTexture, Scene, MeshBuilder, StandardMaterial, Color3, Vector3, TransformNode, Mesh, VertexBuffer, VertexData, Quaternion } from "@babylonjs/core";
 import { Builder, type AABB } from "./builder";
+import { Wildlife, SPECIES_NAME, type Species } from "./wildlife";
 import { Human } from "./npcs";
 import type { Game } from "./game";
 
@@ -45,6 +46,9 @@ export class Outskirts {
   private floorBots: { h: Human; x: number; z: number; ph: number; ang: number }[] = [];
   private smoke: { ps: ParticleSystem; t: number; burst: number }[] = [];
   private digH = new Float32Array((DIG.n + 1) * (DIG.n + 1)); private digMesh!: Mesh; private digDirty = false;
+  wild!: Wildlife;
+  private hankSt = { mode: "porch" as "porch" | "chase", shotT: 1.2, yellT: 2, flinchT: 0, y: 0.55 };
+  private fx!: { tracer: Mesh; flash: Mesh; puff: Mesh; tT: number; fT: number; pT: number };
   private hank!: Human; private lupe!: Human; private rusty!: Human;
   private nearCow = 0; private t = 0;
   private seen = new Set<string>();
@@ -89,7 +93,123 @@ export class Outskirts {
     this.cellar();
     this.digZone();
     this.generatorSmoke();
+    this.hankFx();
+    this.wild = new Wildlife(g, this.scene, this.terrain, (k) => this.onHunt(k));
   }
+
+  /** the little things Hank's shotgun and yours leave behind: a flash, a tracer line, a puff of dust */
+  private hankFx() {
+    const sc = this.scene, em = (hex: string, a: number) => { const m = new StandardMaterial("fxm" + hex, sc); m.emissiveColor = Color3.FromHexString(hex); m.disableLighting = true; m.alpha = a; m.backFaceCulling = false; return m; };
+    const tracer = MeshBuilder.CreateCylinder("tracer", { diameter: 0.035, height: 1, tessellation: 4 }, sc); tracer.material = em("#ffe9a0", 0.9);
+    const flash = MeshBuilder.CreateSphere("muzzle", { diameter: 0.5, segments: 6 }, sc); flash.material = em("#ffb040", 0.95);
+    const puff = MeshBuilder.CreateSphere("puff", { diameter: 1, segments: 6 }, sc); const pm = new StandardMaterial("puffm", sc); pm.diffuseColor = Color3.FromHexString("#9a8a6a"); pm.specularColor = Color3.Black(); pm.alpha = 0.7; puff.material = pm;
+    for (const m of [tracer, flash, puff]) { m.isPickable = false; m.setEnabled(false); }
+    this.fx = { tracer, flash, puff, tT: 0, fT: 0, pT: 0 };
+  }
+  /** a shot from o toward the target: flash at the muzzle, a tracer line, and a puff where it lands */
+  private shotFx(o: Vector3, to: Vector3, puffAt: Vector3 | null) {
+    const f = this.fx, d = to.subtract(o), len = d.length(); if (len < 0.1) return;
+    f.tracer.setEnabled(true); f.tracer.position.copyFrom(o.add(to).scale(0.5)); f.tracer.scaling.y = len;
+    if (!f.tracer.rotationQuaternion) f.tracer.rotationQuaternion = new Quaternion(); Quaternion.FromUnitVectorsToRef(Vector3.Up(), d.scale(1 / len), f.tracer.rotationQuaternion); f.tT = 0.1;
+    f.flash.setEnabled(true); f.flash.position.copyFrom(o); f.fT = 0.08;
+    if (puffAt) { f.puff.setEnabled(true); f.puff.position.copyFrom(puffAt); f.puff.scaling.setAll(0.4); f.pT = 0.6; }
+  }
+  private updateFx(dt: number) {
+    const f = this.fx; if (!f) return;
+    if (f.tT > 0) { f.tT -= dt; if (f.tT <= 0) f.tracer.setEnabled(false); }
+    if (f.fT > 0) { f.fT -= dt; if (f.fT <= 0) f.flash.setEnabled(false); }
+    if (f.pT > 0) { f.pT -= dt; const u = 1 - f.pT / 0.6; f.puff.scaling.setAll(0.4 + u * 1.6); (f.puff.material as StandardMaterial).alpha = 0.7 * (1 - u); if (f.pT <= 0) f.puff.setEnabled(false); }
+  }
+
+  // ---------------------------------------------------------------------------------------------- Hank, the shotgun, hunting
+  /** everyone the shotgun must never be pointed at */
+  private people(): Vector3[] {
+    const g = this.g, out: Vector3[] = [], add = (h: Human) => { if (h.root.isEnabled()) out.push(h.root.getAbsolutePosition().add(new Vector3(0, 1.2, 0))); };
+    for (const h of Object.values(g.rig.humans)) add(h); for (const h of g.interns) add(h);
+    add(this.hank); add(this.lupe); add(this.rusty); for (const gd of this.guards) add(gd.h); for (const fb of this.floorBots) add(fb.h);
+    return out;
+  }
+  fireGun() {
+    const g = this.g, cam = g.player.cam;
+    if ((this.cd["gun"] ?? -9) + 0.85 > this.t) return;
+    const o = cam.position.clone(), d = cam.getForwardRay().direction.clone();
+    for (const pp of this.people()) {
+      const v = pp.subtract(o), tt = Vector3.Dot(v, d);
+      if (tt > 0 && tt < 90 && Math.sqrt(Math.max(0, v.lengthSquared() - tt * tt)) < 2.2 + 0.12 * tt) { g.ui.toast("NOT AT PEOPLE", "Hank's rule, and now yours. Point it at the critters."); return; }
+    }
+    this.cd["gun"] = this.t; g.sfx.gun(); g.player.pitch = Math.max(-1.2, g.player.pitch - 0.07);
+    { const fl = document.getElementById("gunflash") ?? (() => { const el = document.createElement("div"); el.id = "gunflash"; el.style.cssText = "position:fixed;inset:0;background:radial-gradient(circle at 60% 70%,rgba(255,200,90,.55),rgba(255,160,40,0) 60%);pointer-events:none;opacity:0;transition:opacity .12s;z-index:6"; document.body.appendChild(el); return el; })(); fl.style.transition = "none"; fl.style.opacity = "1"; requestAnimationFrame(() => { fl.style.transition = "opacity .15s"; fl.style.opacity = "0"; }); }
+    const muz = o.add(d.scale(1.4)).add(new Vector3(0, -0.2, 0));
+    this.shotFx(muz, o.add(d.scale(80)), null);
+    this.wild.shoot(o, d);
+  }
+  private onHunt(k: Species) {
+    const g = this.g, h = ((g.flags.hunted as Record<string, number> | undefined) ?? {}); h[k] = (h[k] ?? 0) + 1; g.flags.hunted = h;
+    g.sfx.good(); g.gain(0, k === "bear" ? 6 : 2);
+    const total = Object.values(h).reduce((a, c) => a + c, 0);
+    this.showCatch(SPECIES_NAME[k], `${h[k]} ${k}${h[k] > 1 ? "s" : ""} so far, ${total} in all. ${{ deer: "A clean shot. The venison is not yours to keep: Hank says it is a pond-adjacent deer.", bear: "A bear. A whole bear. You will tell this story at the next safety meeting.", snake: "It was going to rattle at someone eventually.", bird: "It circled a lot. Now it doesn't." }[k]}`, k, false, "HUNTED");
+  }
+  afterLoad() { if (this.g.flags.shotgun) this.g.held.owned.add("gun"); }
+  private hankUpdate(dt: number, px: number, pz: number) {
+    const g = this.g, h = this.hank, S = this.hankSt, f = g.flags;
+    const hostile = !f.hankFriend && ((px - POND.x) / (POND.rx * 1.2)) ** 2 + ((pz - POND.z) / (POND.rz * 1.2)) ** 2 < 1;
+    const hx = h.root.position.x, hz = h.root.position.z, porchX = FARM.x + 7.4, porchZ = FARM.z - 0.8;
+    let tx = porchX, tz = porchZ, sp = 2.8, shooting = false;
+    if (hostile) {
+      S.mode = "chase"; const dd = Math.hypot(px - hx, pz - hz); shooting = true;
+      if (dd > 9) { tx = px; tz = pz; sp = 4.4; } else { tx = hx; tz = hz; sp = 0; }
+      S.shotT -= dt; S.yellT -= dt; S.flinchT -= dt;
+      if (dd < 80 && S.shotT <= 0) {
+        S.shotT = rnd(1.5, 2.3);
+        const muz = h.root.position.add(new Vector3(0, 1.35, 0)).add(new Vector3(Math.sin(h.root.rotation.y) * 0.9, 0, Math.cos(h.root.rotation.y) * 0.9));
+        // his aim is bad: it goes wide of you by several metres, every time
+        const a = rnd(0, 6.283), off = rnd(3.2, 8.5), ix = px + Math.cos(a) * off, iz = pz + Math.sin(a) * off, iy = this.terrain(ix, iz);
+        this.shotFx(muz, new Vector3(ix, iy + rnd(0, 1.0), iz), new Vector3(ix, iy + 0.3, iz)); g.sfx.gun();
+        if (off < 4.8 && S.flinchT <= 0) { S.flinchT = 4; g.gain(0, -1); g.ui.toast("BANG!", "That one was close. Hank's aim is terrible. Hank is still trying to kill you."); }
+      }
+      if (S.yellT <= 0) { S.yellT = 7; g.radio("hank" as any, pick(["GET OFF MY POND!", "THAT'S MY POND, COMPANY MAN!", "I'LL TEACH YOU TO FISH!", "STAND STILL!", "BACK OFF MY WATER!"]), 4500); }
+    } else if (S.mode === "chase" && Math.hypot(hx - porchX, hz - porchZ) < 1.0) S.mode = "porch";
+    const dx = tx - hx, dz = tz - hz, dd2 = Math.hypot(dx, dz);
+    if (dd2 > 0.3 && sp > 0) {
+      const k = Math.min(1, (sp * dt) / dd2); h.root.position.x += dx * k; h.root.position.z += dz * k;
+      let da = Math.atan2(dx, dz) - h.root.rotation.y; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2; h.root.rotation.y += da * Math.min(1, dt * 8); h.animate(dt, sp);
+    } else {
+      h.animate(dt, 0);
+      const face = hostile ? Math.atan2(px - hx, pz - hz) : Math.PI / 2; let da = face - h.root.rotation.y; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2; h.root.rotation.y += da * Math.min(1, dt * 5);
+    }
+    const onPorch = Math.abs(h.root.position.x - porchX) < 3.2 && Math.abs(h.root.position.z - FARM.z) < 3.2;
+    S.y += ((onPorch ? 0.55 : this.terrain(h.root.position.x, h.root.position.z)) - S.y) * Math.min(1, dt * 8); h.root.position.y = S.y;
+    h.armR.rotation.x = shooting ? -1.3 : -0.6; h.elbowR!.rotation.x = shooting ? -0.3 : -1.2;
+  }
+  private talkHank() {
+    const g = this.g, f = g.flags;
+    if (f.hankFriend) {
+      const L = ["Catch anything? Don't lie. I can see your hands.", "Take care of that shotgun. Critters only. I MEAN IT.", "The truck's got a gas gauge that's a suggestion. Fill up before you go far.", "There's a big old fish in that pond. I call him Gerald. Don't tell Gerald I told you."];
+      g.say("hank" as any, L[(this.cd["hanktalk"] = ((this.cd["hanktalk"] ?? -1) + 1)) % L.length], [{ label: "Will do, Hank.", cls: "green", run: () => {} }] as any, "Hank, your friend"); return;
+    }
+    const fr = (f.hankFr as number | undefined) ?? 0;
+    const bump = (n: number, line: string) => { f.hankFr = Math.max(0, fr + n); g.radio("hank" as any, line, 5000); if ((f.hankFr as number) >= 3) setTimeout(() => this.befriend(), 900); else g.ui.toast("HANK", ["Still hostile.", "Thawing, a little.", "Almost there…"][Math.min(2, f.hankFr as number)]); };
+    const stage = ["You're on my land. Again. And you were looking at my pond.", "Still here. Persistent for a Company Man, I'll give you that.", "…I'll hear you out. But that pond is MINE."][Math.min(2, fr)];
+    const choices: { label: string; cls?: string; run: () => void }[] = [
+      { label: "I'm sorry about the noise, sir.", run: () => bump((this.cd["hankpol"] ?? -99) + 20 < this.t ? 1 : 0, (this.cd["hankpol"] = this.t, "Hm. Sorry's a start.")) },
+      { label: "What can I do to make it right?", run: () => bump((this.cd["hankhelp"] ?? -99) + 20 < this.t ? 1 : 0, (this.cd["hankhelp"] = this.t, "Show some respect. And bring somebody to this farm who isn't a Company Man.")) },
+    ];
+    if (((f.taco as number | undefined) ?? 0) > 0) choices.push({ label: "I brought you a taco.", cls: "green", run: () => { f.taco = (f.taco as number) - 1; bump(2, "…Is that al pastor? From the truck by the gate? Well, GOSH. Okay."); } });
+    choices.push({ label: "We're drilling. It's legal.", cls: "alt", run: () => bump(-1, "So is my shotgun, son.") });
+    g.say("hank" as any, stage, choices as any, "Hank — The Landowner");
+  }
+  private befriend() {
+    const g = this.g, f = g.flags; if (f.hankFriend) return;
+    g.say("hank" as any, "Alright. ALRIGHT. You're not like the rest of 'em. Here, take my shotgun. Critters only, never at people, I'll know. And the pond's open to you now. Pole's on the dock.", [
+      { label: "Thanks, Hank.", cls: "green", run: () => {
+        f.hankFriend = true; f.shotgun = true; g.held.owned.add("gun"); g.held.equip("gun"); g.sfx.good(); g.gain(0.3, 6);
+        g.ui.toast("NEW FRIEND: HANK", "You got his shotgun. The old pickup is yours. The pond is open.");
+        g.say("hank" as any, "And take the truck. It's an old beater. Keys are in it. She'll get you where you're going, mostly.", [{ label: "I'll bring her back.", cls: "green", run: () => g.radio("hank" as any, "Bring her back with all four wheels. I mean it.", 5000) }] as any, "Hank, your friend");
+      } },
+    ] as any, "Hank — The Landowner");
+  }
+
+  // ---------------------------------------------------------------------------------------------- the pond
 
   // ---------------------------------------------------------------------------------------------- roll coal
   /** the four generators' exhaust stacks idle with a thin grey wisp, and every so often one of them rolls coal: a thick black plume rolls out and drifts off downwind */
@@ -373,8 +493,7 @@ export class Outskirts {
     b.slab("dwood", x + 12.4, 0, z + 7.9, x + 12.6, 1.9, z + 8.1); b.slab("dwood", x + 12.4, 0, z + 5.9, x + 12.6, 1.9, z + 6.1);
     // mailbox at the road, a rusty pickup, a few fence posts with wire
     b.slab("dwood", 6.9, 0, 233.9, 7.1, 1.1, 234.1); b.slab("steel", 6.7, 1.1, 233.6, 7.3, 1.4, 234.4); b.slab("flag", 7.3, 1.25, 233.5, 7.38, 1.7, 233.6);
-    b.slab("rust", x + 14, 0.5, z - 9, x + 16.2, 1.5, z - 4.6, true); b.slab("rust", x + 14.1, 1.5, z - 8.7, x + 16.1, 2.3, z - 6.9); b.slab("black", x + 14.2, 1.55, z - 8.6, x + 16, 2.2, z - 8.5);
-    for (const wx of [14.3, 15.9]) for (const wz of [-8.3, -5.4]) b.cyl("black", x + wx + (wx > 15 ? 0.15 : -0.15), 0.4, z + wz, 0.8, 0.3, { axis: "x", tess: 12 });
+    // (Hank's old pickup is a real vehicle now, parked beside the house: see vehicles.ts)
     for (let i = 0; i < 9; i++) b.slab("dwood", x + 11 - 0.06, 0, z - 14 + i * 3.2 - 0.06, x + 11 + 0.06, 1.3, z - 14 + i * 3.2 + 0.06);
     b.beam("steel", new Vector3(x + 11, 1.15, z - 14), new Vector3(x + 11, 1.15, z + 11.6), 0.03); b.beam("steel", new Vector3(x + 11, 0.7, z - 14), new Vector3(x + 11, 0.7, z + 11.6), 0.03);
     // a hay barn out back
@@ -530,16 +649,17 @@ export class Outskirts {
       g.sfx.click(); const n = Math.floor(rnd(0, 8)); skips++; g.ui.toast(n === 0 ? "KERPLUNK" : `${n} SKIP${n > 1 ? "S" : ""}`, n === 0 ? "It sinks like a stone. It was a stone." : n >= 6 ? "Personal best. Nobody saw it." : "Not bad for a Company Man.");
       if (n >= 6 && cdOk("skipgain", 20)) g.gain(0, 2); } });
     void fishN;
-    out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Pick up the fishing pole", r: 3.0, ok: () => !this.poleOwned, act: () => {
+    out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Pick up the fishing pole", r: 3.0, ok: () => !this.poleOwned && !!g.flags.hankFriend, act: () => {
       this.givePole(); g.held.equip("rod"); g.sfx.good(); g.save();
       g.ui.toast("FISHING POLE", "Face the pond and click to cast. When the bobber dips, click again to set the hook. Scroll or Q to put it away."); } });
+    out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Hank's fishing pole", r: 3.0, ok: () => !this.poleOwned && !g.flags.hankFriend, act: () => { g.sfx.click(); g.ui.toast("HANK'S POLE", "Hank's pond, Hank's pole. Go and make friends with Hank first. (Not near the pond.)"); } });
     out.push({ pos: () => v(POND.x + POND.rx - 14, 1.7, POND.z), label: () => "Fishing spot", r: 3.4, act: () => {
       g.sfx.click(); g.ui.toast("FISHING", this.poleOwned ? "Hold the pole (scroll or Q), face the water and click to cast." : "You need a pole. There's one leaning by the chair on the dock."); } });
     // taco truck
     out.push({ pos: () => v(TACO.x + 3.2, 1.3, TACO.z), label: () => "Order tacos", r: 3.4, act: () => this.orderTacos() });
     // the landowner
     let hankN = 0;
-    out.push({ pos: () => this.hank.root.position.add(v(0, 1.2, 0)), label: () => "Talk to Hank", r: 3.2, act: () => this.talkHank(hankN++) });
+    out.push({ pos: () => this.hank.root.position.add(v(0, 1.2, 0)), label: () => "Talk to Hank", r: 3.2, act: () => { void hankN; this.talkHank(); } });
     out.push({ pos: () => v(FARM.x + 6.6, 1.3, FARM.z), label: () => "Knock on the farmhouse door", r: 2.6, act: () => { g.sfx.click(); g.ui.toast("KNOCK KNOCK", "Hank is already standing behind you."); if (cdOk("hankbehind", 10)) setTimeout(() => g.radio("hank" as any, "I'M RIGHT HERE.", 3500), 800); } });
     let mailN = 0;
     out.push({ pos: () => v(7, 1.2, 234), label: () => "Check the mailbox", r: 2.4, act: () => {
@@ -606,7 +726,7 @@ export class Outskirts {
   }
   private catchEl: HTMLDivElement | null = null; private catchT = 0;
   /** a card with a picture of what you caught */
-  private showCatch(name: string, sub: string, id: string, deep: boolean) {
+  private showCatch(name: string, sub: string, id: string, deep: boolean, head?: string) {
     if (!this.catchEl) {
       const d = document.createElement("div"); d.id = "catchcard";
       d.style.cssText = "position:fixed;left:50%;top:88px;transform:translateX(-50%);z-index:30;width:300px;padding:10px;border:3px solid #000;border-radius:10px;background:rgba(10,16,24,.92);box-shadow:0 0 0 2px rgba(244,192,74,.9),4px 6px 0 2px rgba(0,0,0,.6);color:#fff;text-align:center;font-family:inherit;pointer-events:none;transition:opacity .3s;opacity:0";
@@ -614,7 +734,7 @@ export class Outskirts {
       document.body.appendChild(d); this.catchEl = d;
     }
     const d = this.catchEl!;
-    (d.querySelector(".cc-k") as HTMLElement).textContent = deep ? "FROM THE DEEP HOLE" : "CAUGHT";
+    (d.querySelector(".cc-k") as HTMLElement).textContent = head ?? (deep ? "FROM THE DEEP HOLE" : "CAUGHT");
     (d.querySelector(".cc-n") as HTMLElement).textContent = name; (d.querySelector(".cc-s") as HTMLElement).textContent = sub;
     drawCatch(d.querySelector("canvas") as HTMLCanvasElement, id, deep);
     d.style.opacity = "1"; this.catchT = 5.5;
@@ -646,14 +766,14 @@ export class Outskirts {
   private orderTacos() {
     const g = this.g;
     g.say("taco" as any, "Buenos días, jefe. Best tacos east of the Pecos. What'll it be?", [
-      { label: "Al pastor ($4)", cls: "green", run: () => { g.sim.addCost(4); g.gain(0, 5); g.radio("taco" as any, "Good choice. Don't tell Houston where you got them.", 6000); g.ui.toast("+5 MORALE", "Worth every peso."); } },
-      { label: "Fish taco ($5)", run: () => { g.sim.addCost(5); g.gain(0, 2); g.radio("taco" as any, "It's Tuesday. It's… fine.", 5000); g.ui.toast("+2 MORALE", "Questionable, but warm."); } },
-      { label: "The Suicide Taco ($6)", cls: "alt", run: () => { g.sim.addCost(6); g.gain(0, 8); g.radio("taco" as any, "No refunds.", 4000); g.ui.toast("+8 MORALE", "You can see through time."); setTimeout(() => g.radio("earl", "Boss, what is that smell? And why are you sweating?", 7000), 12000); } },
+      { label: "Al pastor ($4)", cls: "green", run: () => { g.sim.addCost(4); g.flags.taco = ((g.flags.taco as number | undefined) ?? 0) + 1; g.gain(0, 5); g.radio("taco" as any, "Good choice. Don't tell Houston where you got them.", 6000); g.ui.toast("+5 MORALE", "Worth every peso."); } },
+      { label: "Fish taco ($5)", run: () => { g.sim.addCost(5); g.flags.taco = ((g.flags.taco as number | undefined) ?? 0) + 1; g.gain(0, 2); g.radio("taco" as any, "It's Tuesday. It's… fine.", 5000); g.ui.toast("+2 MORALE", "Questionable, but warm."); } },
+      { label: "The Suicide Taco ($6)", cls: "alt", run: () => { g.sim.addCost(6); g.flags.taco = ((g.flags.taco as number | undefined) ?? 0) + 1; g.gain(0, 8); g.radio("taco" as any, "No refunds.", 4000); g.ui.toast("+8 MORALE", "You can see through time."); setTimeout(() => g.radio("earl", "Boss, what is that smell? And why are you sweating?", 7000), 12000); } },
       { label: "Nothing, thanks", cls: "alt", run: () => { g.radio("taco" as any, "The offer stands. Always.", 4000); } },
     ] as any, "El Fuego Tacos");
   }
 
-  private talkHank(n: number) {
+  private talkHankOld(n: number) {
     const g = this.g;
     const L = ["You're on my land.", "I said, you're on my land.", "Your rig vibrates my windows. My wife's china is on the floor. I don't have a wife. I had one. The china was nice.", "Eleven times your people have driven across my pasture. ELEVEN.", "…You drilling for oil or just making noise?", "Fine. You seem all right. For a Company Man. Take a beer. It's warm."];
     const i = Math.min(n, L.length - 1);
@@ -706,8 +826,9 @@ export class Outskirts {
       }
     });
     void speed;
-    // Hank yells when you wander up to the porch
-    if (near(FARM.x + 8, FARM.z, 26) && !riding && (this.cd["hankyell"] ?? -99) + 28 < this.t) {
+    this.hankUpdate(dt, px, pz); this.updateFx(dt); this.wild.update(dt);
+    // Hank yells when you wander up to the porch (he is hostile only by the pond, until you are friends)
+    if (!g.flags.hankFriend && near(FARM.x + 8, FARM.z, 26) && !riding && (this.cd["hankyell"] ?? -99) + 28 < this.t) {
       this.cd["hankyell"] = this.t; g.radio("hank" as any, pick(["GET OFF MY PORCH!", "I SEE YOU, COMPANY MAN!", "That's private property! The sign's right there!", "Don't make me go inside for my other shotgun!"]), 6000);
     }
     // the competitor: taunts as you approach, guards come out, and a shove if they reach you
@@ -761,8 +882,7 @@ export class Outskirts {
     }
     { const uw = document.getElementById("underwater"); if (uw) { const inPond = ((p.cam.position.x - POND.x) / POND.rx) ** 2 + ((p.cam.position.z - POND.z) / POND.rz) ** 2 < 1; uw.style.display = inPond && p.cam.position.y < WATER_Y ? "block" : "none"; } }
     // the people who stand still still breathe
-    this.hank.animate(dt, 0); this.lupe.animate(dt, 0); this.rusty.animate(dt, 0);
-    this.hank.armR.rotation.x = -0.6; this.hank.elbowR!.rotation.x = -1.2;
+    this.lupe.animate(dt, 0); this.rusty.animate(dt, 0);
   }
 
   private vehSpeed() { const p = this.g.player; const now = performance.now(); const last = (this as any)._lp ?? { x: p.pos.x, z: p.pos.z, t: now }; const dt = Math.max(0.001, (now - last.t) / 1000); const s = Math.hypot(p.pos.x - last.x, p.pos.z - last.z) / dt; (this as any)._lp = { x: p.pos.x, z: p.pos.z, t: now }; return Math.min(60, s); }
@@ -774,6 +894,15 @@ function drawCatch(cv: HTMLCanvasElement, id: string, deep: boolean) {
   const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, deep ? "#0a2a3a" : "#2a6f8a"); g.addColorStop(1, deep ? "#04141c" : "#123d4f"); c.fillStyle = g; c.fillRect(0, 0, W, H);
   for (let i = 0; i < 14; i++) { c.fillStyle = "rgba(255,255,255,.06)"; c.beginPath(); c.arc((i * 53) % W, (i * 31) % H, 3 + (i % 4), 0, 6.3); c.fill(); }
   c.save(); c.translate(W / 2, H / 2);
+  if (id === "deer" || id === "bear" || id === "snake" || id === "bird") {
+    const g2 = c.createLinearGradient(0, 0, 0, H); g2.addColorStop(0, "#9ab8c8"); g2.addColorStop(1, "#6a7a54"); c.fillStyle = g2; c.fillRect(-W / 2, -H / 2, W, H);
+    const bx = (col: string, x: number, y: number, w: number, h: number) => { c.fillStyle = "#000"; c.fillRect(x - 2, y - 2, w + 4, h + 4); c.fillStyle = col; c.fillRect(x, y, w, h); };
+    if (id === "deer") { bx("#8a6a45", -60, -10, 100, 46); bx("#cdb48a", -50, 24, 80, 14); bx("#8a6a45", 28, -48, 22, 50); bx("#8a6a45", 40, -62, 34, 22); for (const x of [-52, -36, 18, 30]) bx("#6a4e32", x, 34, 9, 44); bx("#e0d2b0", 44, -86, 5, 26); bx("#e0d2b0", 56, -84, 5, 24); bx("#e0d2b0", 36, -96, 24, 5); bx("#f2f2f2", -66, -6, 10, 14); }
+    else if (id === "bear") { bx("#2e231b", -70, -26, 120, 70); bx("#2e231b", -46, -52, 56, 34); bx("#3a2c22", 44, -34, 44, 40); bx("#7a6a5a", 74, -18, 22, 16); for (const x of [-60, -30, 20, 44]) bx("#241b14", x, 40, 20, 38); bx("#2e231b", 50, -48, 9, 10); bx("#2e231b", 70, -48, 9, 10); }
+    else if (id === "snake") { c.strokeStyle = "#000"; c.lineWidth = 22; c.lineCap = "round"; c.beginPath(); c.moveTo(-80, 20); c.bezierCurveTo(-40, -50, 0, 60, 40, -10); c.bezierCurveTo(60, -40, 80, 0, 90, -24); c.stroke(); c.strokeStyle = "#8a7648"; c.lineWidth = 16; c.stroke(); c.fillStyle = "#6a5a38"; for (let i = 0; i < 6; i++) { c.fillRect(-70 + i * 28, -4 + (i % 2) * 14, 10, 8); } c.fillStyle = "#d63a2c"; c.fillRect(84, -32, 12, 4); }
+    else { c.fillStyle = "#000"; c.beginPath(); c.moveTo(-100, 10); c.lineTo(0, -34); c.lineTo(100, 10); c.lineTo(0, -4); c.closePath(); c.fill(); c.fillStyle = "#2a2420"; c.beginPath(); c.moveTo(-94, 8); c.lineTo(0, -28); c.lineTo(94, 8); c.lineTo(0, -8); c.closePath(); c.fill(); bx("#2a2420", -12, -12, 24, 36); bx("#b04a40", -7, 22, 14, 14); }
+    c.restore(); return;
+  }
   const fish = (body: string, belly: string, fin: string, len: number, tall: number, extra?: () => void) => {
     c.fillStyle = fin; c.beginPath(); c.moveTo(-len * 0.45, 0); c.lineTo(-len * 0.75, -tall * 0.7); c.lineTo(-len * 0.72, tall * 0.7); c.closePath(); c.fill();           // tail
     c.beginPath(); c.moveTo(-len * 0.1, -tall * 0.5); c.lineTo(len * 0.05, -tall * 0.95); c.lineTo(len * 0.2, -tall * 0.5); c.closePath(); c.fill();                    // dorsal

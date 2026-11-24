@@ -29,6 +29,29 @@ export interface HumanOpts {
 }
 
 
+/** Full-brim hard hat (MSA V-Gard style): one smooth lathed shell with a tall dome, a wide brim that droops a little toward the edge, and a raised ridge
+ *  running front to back over the crown. Parts are positioned relative to the brim line (y = 0) at the centre of the head. */
+function hardHatParts(sc: Scene): { mesh: Mesh; x: number; y: number; z: number }[] {
+  const prof: [number, number][] = [[0.205, -0.016], [0.205, -0.007], [0.17, 0.0], [0.145, 0.006], [0.139, 0.016], [0.137, 0.04], [0.133, 0.066], [0.124, 0.09], [0.108, 0.109], [0.085, 0.123], [0.055, 0.132], [0.025, 0.136], [0.0, 0.1365]];
+  const shell = MeshBuilder.CreateLathe("hardhat", { shape: prof.map(([r, y]) => new Vector3(r, y, 0)), tessellation: 32, sideOrientation: 2 }, sc);
+  shell.scaling.z = 1.12;
+  const out: { mesh: Mesh; x: number; y: number; z: number }[] = [{ mesh: shell, x: 0, y: 0, z: -0.006 }];
+  // the crown ridge: short raised segments that follow the curve of the dome from the front to the back
+  const crown = (r: number) => { for (let i = 0; i < prof.length - 1; i++) { const [r0, y0] = prof[i], [r1, y1] = prof[i + 1]; if (r <= r0 && r >= r1) return y1 + ((y0 - y1) * (r - r1)) / (r0 - r1); } return 0.1365; };
+  for (const zz of [-0.125, -0.085, -0.045, -0.005, 0.035, 0.075, 0.115]) {
+    const r = Math.abs(zz) / 1.12, h = crown(Math.min(0.139, r)), h2 = crown(Math.min(0.139, r + 0.02));
+    const seg = MeshBuilder.CreateBox("hhridge", { width: 0.034, height: 0.013, depth: 0.05 }, sc);
+    seg.rotation.x = Math.atan2(h2 - h, 0.02) * (zz > 0 ? 1 : -1) * -1;
+    out.push({ mesh: seg, x: 0, y: h + 0.004, z: zz - 0.006 });
+  }
+  // a slim, lighter band around the base of the dome where it meets the brim, and a small green maker mark on the right side
+  const band = MeshBuilder.CreateCylinder("hhband", { diameter: 0.29, height: 0.012, tessellation: 28 }, sc); band.scaling.z = 1.12;
+  out.push({ mesh: band, x: 0, y: 0.012, z: -0.006 });
+  const mark = MeshBuilder.CreateBox("hhmark", { width: 0.004, height: 0.016, depth: 0.04 }, sc);
+  out.push({ mesh: mark, x: 0.142, y: 0.03, z: -0.03 });
+  return out;
+}
+
 export class Human {
   root: TransformNode;
   legL!: TransformNode; legR!: TransformNode; armL!: TransformNode; armR!: TransformNode;
@@ -83,14 +106,10 @@ export class Human {
     const buckle = MeshBuilder.CreateBox("bk", { width: 0.07, height: 0.05, depth: 0.02 }, scene);
     buckle.position.set(0, 0.82, 0.155); mk(buckle, "#b8b8b8", this.root);
     if (o.hat) {
-      const hat = MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 18, slice: 0.58 }, scene);
-      hat.position.set(0, 1.688, -0.006); hat.scaling.set(1.0, 0.86, 1.14); this.ppe.push(mk(hat, o.hat, this.root));
-      const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.335, height: 0.014, tessellation: 26 }, scene);
-      brim.position.set(0, 1.672, 0.004); brim.scaling.z = 1.12; this.ppe.push(mk(brim, o.hat, this.root));
-      const bill = MeshBuilder.CreateBox("bill", { width: 0.19, height: 0.012, depth: 0.07 }, scene);
-      bill.position.set(0, 1.672, 0.19); bill.rotation.x = 0.16; this.ppe.push(mk(bill, o.hat, this.root));
-      const ridge = MeshBuilder.CreateBox("rdg", { width: 0.028, height: 0.016, depth: 0.27 }, scene);
-      ridge.position.set(0, 1.828, -0.004); this.ppe.push(mk(ridge, o.hat, this.root));
+      for (const p of hardHatParts(scene)) {
+        p.mesh.position.set(p.x, 1.672 + p.y, p.z);
+        mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root); this.ppe.push(p.mesh);
+      }
     }
     const limb = (name: string, w: number, h: number, d: number, x: number, y: number, hex: string) => {
       const pivot = new TransformNode(name, scene);
@@ -195,14 +214,8 @@ export class Human {
     const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
     const hatCol = o.hat ?? "#f4f4f4";
     if (o.hat) {
-      // a full-brim industrial hard hat (ANSI Type I style): an oval, slightly low dome that follows the head, a narrow brim all the way round with a short
-      // visor at the front, one centre ridge plus a pair of side ribs, and a thin band where the shell meets the brim
-      const dome = add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 18, slice: 0.58 }, sc), hatCol, "Head", 0, -0.113, -0.006); dome.scaling.set(1.0, 0.86, 1.14);
-      const brim = add(MeshBuilder.CreateCylinder("brim", { diameter: 0.335, height: 0.014, tessellation: 26 }, sc), hatCol, "Head", 0, -0.13, 0.004); brim.scaling.set(1, 1, 1.12);
-      const visor = add(MeshBuilder.CreateBox("bill", { width: 0.19, height: 0.012, depth: 0.07 }, sc), hatCol, "Head", 0, -0.13, 0.19); visor.rotation.x = 0.16;
-      add(MeshBuilder.CreateBox("rdg", { width: 0.028, height: 0.016, depth: 0.27 }, sc), hatCol, "Head", 0, 0.012, -0.004);
-      for (const sx of [-1, 1]) { const rib = add(MeshBuilder.CreateBox("rib", { width: 0.014, height: 0.012, depth: 0.22 }, sc), hatCol, "Head", sx * 0.07, 0.0, -0.004); rib.rotation.z = -sx * 0.5; }
-      const lip = add(MeshBuilder.CreateCylinder("hlip", { diameter: 0.318, height: 0.012, tessellation: 26 }, sc), "#d6dadf", "Head", 0, -0.123, -0.002); lip.scaling.set(1, 1, 1.12);
+      const BRIM_Y = -0.13;
+      for (const p of hardHatParts(sc)) add(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : hatCol, "Head", p.x, BRIM_Y + p.y, p.z);
     }
     if (o.vest) {
       add(MeshBuilder.CreateBox("v", { width: 0.4, height: 0.5, depth: 0.25 }, sc), "#e8f542", "Spine2", 0, -0.04, 0.02);

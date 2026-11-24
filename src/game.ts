@@ -442,14 +442,15 @@ export class Game {
     const s = this.sim.s;
     const xfer = (n: number) => {
       const room = 900 - s.pit, amt = Math.max(0, Math.min(n, s.fracBbl, room));
-      if (amt <= 0) { this.ui.toast(s.fracBbl <= 0 ? "FRAC TANKS EMPTY" : "PITS FULL", s.fracBbl <= 0 ? "Order more water" : "Nothing more fits"); return; }
+      if (amt <= 0) { this.ui.toast(s.fracBbl <= 0 ? "FRAC TANKS EMPTY" : "PITS FULL", s.fracBbl <= 0 ? "Order more water at the frac tanks" : "Nothing more fits"); return; }
       s.fracBbl -= amt; s.pit += amt; s.cost += amt * 8; this.sfx.good();
       this.ui.toast("+" + Math.round(amt) + " BBL", "Transferred to the active pits");
       this.openFrac();
     };
     this.inspect("Frac Tanks", [["Frac tank volume", fmt(s.fracBbl) + " bbl", s.fracBbl < 150 ? "bad" : "ok"], ["Active pits", fmt(s.pit) + " bbl", s.pit < 150 ? "bad" : "ok"], ["Pits can hold", "about 900 bbl"]],
       `<p class="hint">Losses, trips and kills draw the pits down and nothing refills them by itself. Below about 120 bbl the pumps lose suction and drilling stops.</p>`,
-      [{ label: "Transfer 100 bbl", cls: "green", run: () => xfer(100) }, { label: "Transfer 300 bbl", run: () => xfer(300) }]);
+      [{ label: "Transfer 100 bbl", cls: "green", run: () => xfer(100) }, { label: "Transfer 300 bbl", run: () => xfer(300) },
+       { label: "Order 500 bbl of water ($4k)", cls: "alt", run: () => { s.fracBbl += 500; this.sim.addCost(4000); this.sfx.good(); this.ui.toast("WATER ORDERED", "A truck tops up the frac tanks: +500 bbl"); this.radio("brent", "Water hauler says he will fill the frac tanks. For a price. It is on the AFE.", 7000); this.openFrac(); } }]);
   }
   /** a pallet of mud product (from the yard) was set down: near the hopper it counts as delivered */
   mudPalletSet(x: number, z: number) {

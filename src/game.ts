@@ -10,6 +10,7 @@ import { pushOutXZ } from "./builder";
 import { Mini } from "./minigames";
 import { Vehicles } from "./vehicles";
 import { Held, drawHeldIcon } from "./held";
+import { Outskirts } from "./outskirts";
 import { defineMissions } from "./tasks";
 
 export interface Step {
@@ -269,10 +270,17 @@ export class Game {
   }
 
   // ---------- ambient interactables ----------
+  outskirts!: Outskirts;
   buildAmbient() {
     const S = this.rig.spots, H = this.rig.humans;
+    // everything past the fence: its colliders join the world before the vehicles take their snapshot of it
+    this.outskirts = new Outskirts(this);
+    for (const c of this.outskirts.colliders) this.rig.colliders.push(c);
+    this.player.terrain = this.outskirts.terrain;
     this.veh = new Vehicles(this.scene, this.rig.colliders, this.player, this);
+    this.veh.terrain = this.outskirts.terrain;
     for (const it of this.veh.interacts()) this.interacts.push(it);
+    for (const it of this.outskirts.interacts()) this.interacts.push(it);
     const add = (pos: () => Vector3, label: string | (() => string), r: number, act: () => void, ok?: () => boolean) =>
       this.interacts.push({ pos, label: typeof label === "string" ? () => label : label, r, act, ok });
     add(() => S.board, "Work the board — rack a stand", 3.2, () => this.workBoard(), () => this.player.pos.y > 20);
@@ -1354,6 +1362,7 @@ export class Game {
       const ck = clockString(this.sim.s.t).hhmm; if (ck !== this.hudClock) { this.hudClock = ck; $("clock").textContent = ck; }
       if (this.held.kind !== this.hudItem) { this.hudItem = this.held.kind; drawHeldIcon($("itemcv") as HTMLCanvasElement, this.held.kind); }
     }
+    if (this.started && !this.paused && !this.astMode) this.outskirts.update(Math.min(dt, 0.1));
     this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen);
   }
 

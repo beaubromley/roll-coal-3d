@@ -40,7 +40,7 @@ interface Veh {
   wheelbase: number; maxFwd: number; maxRev: number; accel: number; radius: number; pts: number[];
   eye: { x: number; y: number; z: number }; camDist: number; camHeight: number;
   steerNodes: TransformNode[]; steerSign: number[]; spinNodes: TransformNode[]; wheelR: number[];
-  boxes: AABB[]; boxH: number; solid: boolean; gy?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
+  boxes: AABB[]; boxH: number; solid: boolean; gy?: number; slope?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
   /** backhoe: either driving with the stabilizers up, or dug in with them down (no driving) and the hoe arm working */
   bh?: { swing: TransformNode; boom: TransformNode; stick: TransformNode; bucket: TransformNode; stabs: TransformNode[]; dig: boolean; stab: number; boomA: number; stickA: number; bucketA: number; swingA: number };
   lift: number;                       // 0..1 boom angle / basket height
@@ -56,6 +56,8 @@ export class Vehicles {
   list: Veh[] = [];
   active: Veh | null = null;
   private world: AABB[]; private ramps: AABB[] = [];
+  /** ground height over the hills; vehicles ride up and down them and pitch with the slope */
+  terrain: ((x: number, z: number) => number) | null = null;
   private hud: HTMLElement;
   private wasThird = true;
   private chair = { on: false, hidden: false, idx: 0 };
@@ -772,7 +774,7 @@ export class Vehicles {
     }
     // drive-over ramps: ride up whatever drivable surface is underfoot
     if (v.kind !== "lift") {
-      let top = 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
+      let top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
       v.gy = (v.gy ?? 0) + (top - (v.gy ?? 0)) * Math.min(1, dt * 14);
     }
     // collisions
@@ -804,7 +806,12 @@ export class Vehicles {
     v.spinNodes.forEach((n, i) => { n.rotation.x += (v.speed / v.wheelR[i]) * dt; });
     v.steerNodes.forEach((n, i) => { n.rotation.y = -v.steer * v.steerSign[i] * 0.8; });
     // chassis roll / pitch for the big truck
-    if (v.kind === "car") { v.root.rotation.z = -v.steer * v.speed * 0.006; v.root.rotation.x = -thr * 0.012 * Math.min(1, Math.abs(v.speed) / 8); }
+    if (v.kind === "car") {
+      let slope = 0;
+      if (this.terrain) { const L = v.wheelbase * 0.5, fx = Math.sin(v.yaw), fz = Math.cos(v.yaw); slope = Math.atan2(this.terrain(v.x + fx * L, v.z + fz * L) - this.terrain(v.x - fx * L, v.z - fz * L), 2 * L); }
+      v.slope = (v.slope ?? 0) + (slope - (v.slope ?? 0)) * Math.min(1, dt * 8);
+      v.root.rotation.z = -v.steer * v.speed * 0.006; v.root.rotation.x = -thr * 0.012 * Math.min(1, Math.abs(v.speed) / 8) - v.slope;
+    }
 
     }
     // the player rides along (everything else in the game keys off player.pos)

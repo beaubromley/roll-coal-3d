@@ -14,6 +14,8 @@ export class Player {
   cam: FreeCamera;
   body: Human;
   keys = new Set<string>();
+  /** ground height over the hills (flat everywhere else) */
+  terrain: ((x: number, z: number) => number) | null = null;
   locked = false;
   touch = false;                       // touch device: no pointer lock, on-screen controls
   touchMove = { x: 0, y: 0 };          // analog joystick, x = strafe right, y = forward
@@ -110,6 +112,7 @@ export class Player {
 
   support(x: number, z: number, feet: number): number {
     let best = 0;
+    if (this.terrain) { const t = this.terrain(x, z); if (t <= feet + STEP + 0.001) best = t; }
     for (const c of this.colliders) {
       if (c.y1 > feet + STEP + 0.001 || c.y1 <= best) continue;
       if (x > c.x0 - R * 0.55 && x < c.x1 + R * 0.55 && z > c.z0 - R * 0.55 && z < c.z1 + R * 0.55) best = c.y1;
@@ -245,7 +248,7 @@ export class Player {
       // march the camera back until it hits something
       for (let d = 0.4; d <= 3.6; d += 0.2) {
         const p = anchor.add(back.scale(d));
-        let hit = p.y < 0.25;
+        let hit = p.y < 0.25 + (this.terrain ? this.terrain(p.x, p.z) : 0);
         if (!hit) for (const c of this.colliders) {
           if (p.x > c.x0 - 0.15 && p.x < c.x1 + 0.15 && p.y > c.y0 - 0.1 && p.y < c.y1 + 0.15 && p.z > c.z0 - 0.15 && p.z < c.z1 + 0.15) { hit = true; break; }
         }

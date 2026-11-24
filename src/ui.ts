@@ -182,8 +182,7 @@ export class UI {
   }
 
   drawMap(px: number, pz: number, yaw: number, targets: MapTarget[]) {
-    // px per metre: close up near the rig, zooming out the farther you get from it (down to ~1.2 km across)
-    const c = this.mctx, S = 300, scale = Math.max(0.25, 1.57 / (1 + Math.max(0, Math.hypot(px, pz) - 40) / 60));
+    const c = this.mctx, S = 300, scale = 1.57; // px per metre
     c.save(); c.clearRect(0, 0, S, S);
     c.fillStyle = "#cdb98f"; c.fillRect(0, 0, S, S);
     c.translate(S / 2, S / 2); c.rotate(-yaw); // heading-up
@@ -216,23 +215,11 @@ export class UI {
       c.save(); c.translate(S / 2 + tx * k, S / 2 + tz * k); c.rotate(Math.PI / 4);
       c.fillStyle = t.color; c.strokeStyle = "#fff"; c.lineWidth = 2; c.fillRect(-5, -5, 10, 10); c.strokeRect(-5, -5, 10, 10); c.restore();
     }
-    // compass rose round the rim: N / E / S / W and the diagonals turn with the map (north is toward the gate and the lease road, +z; east is to its right)
+    // a plain square map: just a small N tab on the edge, in the direction of north (the map turns with you)
     {
-      const cs = Math.cos(-yaw), sn = Math.sin(-yaw), R = S / 2 - 15;
-      const at = (dx: number, dz: number, r: number): [number, number] => [S / 2 + (dx * cs - dz * sn) * r, S / 2 + (dx * sn + dz * cs) * r];
-      c.save();
-      c.strokeStyle = "rgba(10,14,20,.75)"; c.lineWidth = 2; c.beginPath(); c.arc(S / 2, S / 2, R + 11, 0, Math.PI * 2); c.stroke();
-      for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2, dx = Math.sin(a), dz = -Math.cos(a), len = k % 4 === 0 ? 0 : k % 2 === 0 ? 9 : 5; if (!len) continue; const [x0, y0] = at(dx, dz, R + 11), [x1, y1] = at(dx, dz, R + 11 - len); c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); }
-      c.font = "bold 17px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
-      for (const [lbl, dx, dz, col] of [["N", 0, -1, "#ff5a3d"], ["E", 1, 0, "#ffffff"], ["S", 0, 1, "#ffffff"], ["W", -1, 0, "#ffffff"]] as [string, number, number, string][]) {
-        const [x, y] = at(dx, dz, R);
-        c.fillStyle = "rgba(10,14,20,.72)"; c.beginPath(); c.arc(x, y, 12, 0, Math.PI * 2); c.fill();
-        c.fillStyle = col; c.fillText(lbl, x, y + 1);
-      }
-      // a little north pointer on the ring
-      const [nx, ny] = at(0, -1, R + 11), [bx, by] = at(0.18, -1, R + 3), [cx2, cy2] = at(-0.18, -1, R + 3);
-      c.fillStyle = "#ff5a3d"; c.beginPath(); c.moveTo(nx, ny); c.lineTo(bx, by); c.lineTo(cx2, cy2); c.closePath(); c.fill();
-      c.restore();
+      const cs = Math.cos(-yaw), sn = Math.sin(-yaw), dx = 0, dz = -1, vx = dx * cs - dz * sn, vy = dx * sn + dz * cs, m = S / 2 - 14, k = m / Math.max(Math.abs(vx), Math.abs(vy));
+      c.save(); c.fillStyle = "rgba(10,14,20,.8)"; c.fillRect(S / 2 + vx * k - 11, S / 2 + vy * k - 11, 22, 22);
+      c.fillStyle = "#ff7a3d"; c.font = "bold 15px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("N", S / 2 + vx * k, S / 2 + vy * k + 1); c.restore();
     }
     // player arrow (always up)
     c.save(); c.translate(S / 2, S / 2); c.fillStyle = "#fff"; c.strokeStyle = "#111"; c.lineWidth = 2;

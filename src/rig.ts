@@ -1061,9 +1061,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     else { b.slab("trailer", 30, 0.7, 24, 33.6, 3.6, 36, true); b.slab("steel", 29.9, 0, 24, 33.7, 0.7, 36, true); }
     b.label("TOOLPUSHER", 29.85, 3.9, 30, 3.4, 0.6, -Math.PI / 2, "#233a52", "#ffd24a", 56);
   });
-  // mudlogger unit: round the corner from the toolpusher, turned a quarter turn, door facing back toward the porta johns
+  // mudlogger unit: out on the east edge, just south of the north-east corner of the location, turned a quarter turn, door facing west
   const rotSave = b.rot; b.rot = 0;
-  b.at(-28, 25, () => {
+  b.at(2, 27, () => {
   // (raw coords; world = +12, +10) a sealed fifth-wheel trailer: gooseneck up front on landing legs, tandem axles at the back, a locked door
   b.slab("trailer2", 38.7, 1.1, 7.0, 41.3, 3.5, 17.0, true);                          // body
   b.slab("dsteel", 38.6, 3.5, 6.9, 41.4, 3.6, 17.1);                                  // roof
@@ -1079,7 +1079,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("steel", 38.58, 2.0, 12.55, 38.66, 2.12, 12.75); b.slab("red", 38.55, 2.2, 12.5, 38.6, 2.3, 12.6); // handle and deadbolt
   b.slab("black", 38.62, 2.1, 9.2, 38.7, 2.8, 10.6); b.slab("black", 38.62, 2.1, 14.0, 38.7, 2.8, 15.0);    // dark windows
   b.slab("deck", 38.0, 0.0, 11.7, 38.6, 0.55, 12.7, true);                              // a stoop, for the knocking
-  spots.mudlog = v(21.4, 1.5, 47.2);   // just outside the door (world coordinates: the trailer is no longer in the camp's turned frame)
+  spots.mudlog = v(51.6, 1.5, 49.2);   // just outside the door (world coordinates: the trailer is no longer in the camp's turned frame)
   b.label("MUD LOGGING\nLOCKED • KNOCK", 38.55, 3.1, 8.6, 2.0, 0.7, -Math.PI / 2, "#233a52", "#ffd24a", 40);
   b.label("NO ADMITTANCE\nSAMPLES IN PROGRESS", 38.55, 3.1, 14.6, 1.6, 0.6, -Math.PI / 2, "#7a1a14", "#ffffff", 34);
   });

@@ -57,8 +57,13 @@ export class UI {
     this.toastT = window.setTimeout(() => t.classList.remove("show"), 3200);
   }
 
+  /** everything anyone has said, oldest first, for the LOG panel */
+  log: { name: string; text: string; time: string }[] = [];
+  logClock: () => string = () => "";
+  private record(name: string, text: string) { this.log.push({ name, text, time: this.logClock() }); if (this.log.length > 400) this.log.shift(); }
   radio(who: Who, text: string, ms = 7000) {
     const c = CAST[who];
+    this.record(c.name, text);
     const el = document.createElement("div");
     el.className = "rmsg";
     el.innerHTML = `<img src="${import.meta.env.BASE_URL}portraits/${c.img}.jpg" alt=""/><div><div class="who">${c.name}</div><div class="txt">${text}</div></div>`;
@@ -90,6 +95,7 @@ export class UI {
   /** Character dialog with choices. */
   say(who: Who, text: string, choices: Choice[] = [{ label: "OK" }], eyebrow = "", o: { closable?: boolean } = {}) {
     const c = CAST[who];
+    this.record(c.name, text);
     const p = this.panel(`
       ${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ""}
       <div class="who"><img src="${import.meta.env.BASE_URL}portraits/${c.img}.jpg" alt=""/><div><h2 style="font-size:26px">${c.name}</h2><p>${text}</p></div></div>

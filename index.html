@@ -46,6 +46,9 @@
   #alert { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); padding: 8px 22px; font-family: var(--display); font-size: 26px; letter-spacing: 2px; text-transform: uppercase; background: var(--red); color: #fff; display: none; animation: blink .7s infinite; }
   @keyframes blink { 50% { opacity: .55; } }
 
+  #logbtn { position: absolute; left: 22px; top: 128px; padding: 6px 12px; background: rgba(10,16,24,.78); color: #fff; border: 2px solid var(--gold); font-family: var(--display); letter-spacing: 1px; font-size: 14px; cursor: pointer; pointer-events: auto; z-index: 12; }
+  #logbtn:hover { background: var(--gold); color: #111; }
+  body.touch #logbtn { top: 150px; left: max(12px, env(safe-area-inset-left)); }
   #radio { position: absolute; left: 22px; bottom: 340px; width: 380px; display: flex; flex-direction: column; gap: 6px; }
   .rmsg { display: flex; gap: 10px; background: rgba(8,13,20,.82); border-left: 3px solid var(--gold); padding: 8px 10px; animation: slidein .25s ease-out; }
   .rmsg img { width: 40px; height: 40px; object-fit: cover; border: 1px solid #3a4a5c; }
@@ -350,6 +353,7 @@
     <div class="bar"><span class="lbl">Incidents</span><div class="track"><div class="fill" id="incFill" style="background:var(--red)"></div></div><span class="val shadowtext" id="incVal">0</span></div>
   </div>
   <div id="radio"></div>
+  <button id="logbtn" title="Message log (L)">LOG · L</button>
   <div id="mapwrap"><canvas id="map" width="300" height="300"></canvas></div>
   <div id="district" class="shadowtext"></div>
   <div id="prompt"><div class="key">E</div><div class="lab shadowtext" id="plabel"></div></div>

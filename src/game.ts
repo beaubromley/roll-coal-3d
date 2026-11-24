@@ -62,6 +62,7 @@ export class Game {
     this.env = env;
     this.ui.onPanelOpen = () => { this.player.enabled = false; this.player.unlock(); };
     this.player.canLock = () => !this.ui.panelOpen && !this.paused;
+    this.ui.logClock = () => { const c = clockString(this.sim.s.t); return "Day " + c.day + " " + c.hhmm; };
     this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
     this.player.onRampFall = (h) => {
@@ -437,6 +438,14 @@ export class Game {
     if (s.kill.stage === "weightup" && s.kill.kmw > 0) return Math.max(0, s.kill.kmw - s.mwTarget + 0.05);
     if (s.depth >= 4500 && s.depth < 6200) return Math.max(0, 10.9 - s.mwTarget + 0.05);
     return 0;
+  }
+  /** every line anyone has said, newest at the bottom, in case you missed one */
+  openLog() {
+    if (!this.started || this.ui.panelOpen) return;
+    const rows = this.ui.log.map((l) => `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><div style="font-size:11px;color:#9fb4c8;letter-spacing:.6px">${l.time} · <b style="color:var(--gold)">${l.name}</b></div><div>${l.text}</div></div>`).join("");
+    const p = this.open(`<div class="eyebrow">Radio &amp; Chat</div><h2>Message Log</h2><div id="logbox" style="max-height:58vh;overflow-y:auto;margin:10px 0;padding-right:8px">${rows || '<p class="hint">Nobody has said anything yet.</p>'}</div><div class="btns"><button class="b alt" data-close>Close</button></div>`);
+    this.closeBtn(p);
+    const box = p.querySelector<HTMLElement>("#logbox"); if (box) box.scrollTop = box.scrollHeight;
   }
   openFrac() {
     const s = this.sim.s;
@@ -1020,7 +1029,7 @@ export class Game {
       if (st.watch && st.watch()) this.stepDone();
     }
     // release the hold chain: once all scripted jobs before the finale are done
-    if (this.holdPending && !this.queue.some((m) => !m.priority && m.id !== "armageddon") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
+    if ((this.holdPending || this.sim.hold === 8300) && !this.flags.chainDone && !this.queue.some((m) => !m.priority && m.id !== "armageddon") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
     // hold the bit off bottom while the cast of characters is still queued
     if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.sim.hold) { this.sim.hold = 8300; this.holdPending = true; this.radio("dale", "We're 200 feet off TD. Holding here till you've handled whatever's on your plate, boss. Check the arrows: every open job has to be done before we drill the last 200.", 12000); }
     // random scripted hazards
@@ -1227,6 +1236,8 @@ export class Game {
     const target = markers[0]?.pos ?? null; void target;
 
     if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(this.sim.hold === 8300 && !this.flags.chainDone ? `Held at 8,300 ft: finish the open jobs (${this.queue.filter((m) => !m.priority && m.id !== "armageddon").length} left)` : `Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
+    // roofs vanish while you are inside the room under them
+    { const pp = p.pos; for (const r of this.rig.roofs) { const inside = pp.x > r.x0 && pp.x < r.x1 && pp.z > r.z0 && pp.z < r.z1 && pp.y > r.y0 && pp.y < r.y1; if (inside === r.mesh.isEnabled()) r.mesh.setEnabled(!inside); } }
     // district banner
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }

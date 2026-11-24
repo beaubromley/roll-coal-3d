@@ -13,6 +13,8 @@ export interface MatOpts { emissive?: string; alpha?: number; spec?: number; tex
  */
 export class Builder {
   colliders: AABB[] = [];
+  /** room roofs, kept as separate meshes so the game can hide a roof while the player is inside that room */
+  roofs: { mesh: Mesh; x0: number; x1: number; z0: number; z1: number; y0: number; y1: number }[] = [];
   merged: Mesh[] = [];
   private groups = new Map<string, Mesh[]>();
   private tiles = new Map<string, number>();
@@ -193,7 +195,7 @@ export class Builder {
     const { x0, z0, x1, z1, y0, h, wall, roof, floor, door } = opts;
     const T = 0.12;
     this.slab(floor, x0, y0 - 0.1, z0, x1, y0, z1, true);
-    this.slab(roof, x0 - 0.15, y0 + h, z0 - 0.15, x1 + 0.15, y0 + h + 0.12, z1 + 0.15);
+    this.roofSlab(roof, x0 - 0.15, y0 + h, z0 - 0.15, x1 + 0.15, y0 + h + 0.12, z1 + 0.15, [x0, z0, x1, z1], y0);
     const seg = (ax0: number, az0: number, ax1: number, az1: number) => {
       // wall segment between two points on an axis-aligned line
       const lowH = opts.glass ? 0.95 : h;
@@ -225,6 +227,16 @@ export class Builder {
       }
     };
     (["+x", "-x", "+z", "-z"] as const).forEach(wallLine);
+  }
+
+  /** a roof slab as its own (unmerged) mesh, registered with the footprint of the room under it */
+  private roofSlab(m: string, ax0: number, ay0: number, az0: number, ax1: number, ay1: number, az1: number, foot: number[], floorY: number) {
+    const [wx, wz] = this.tx((ax0 + ax1) / 2 + this.ox, (az0 + az1) / 2 + this.oz);
+    const w = ax1 - ax0, d = az1 - az0;
+    const mesh = MeshBuilder.CreateBox("roof", { width: this.rot ? d : w, height: ay1 - ay0, depth: this.rot ? w : d }, this.scene);
+    mesh.position.set(wx, (ay0 + ay1) / 2, wz); mesh.material = this.getMat(m); mesh.receiveShadows = true; mesh.isPickable = false;
+    const [p1x, p1z] = this.tx(foot[0] + this.ox, foot[1] + this.oz), [p2x, p2z] = this.tx(foot[2] + this.ox, foot[3] + this.oz);
+    this.roofs.push({ mesh, x0: Math.min(p1x, p2x), x1: Math.max(p1x, p2x), z0: Math.min(p1z, p2z), z1: Math.max(p1z, p2z), y0: floorY - 0.3, y1: ay1 + 0.6 });
   }
 
   label(text: string, x: number, y: number, z: number, w: number, h: number, rotY: number,

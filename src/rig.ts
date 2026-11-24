@@ -22,6 +22,7 @@ export interface RigFrame {
 export interface Rig {
   spots: Record<string, Vector3>;
   colliders: AABB[];
+  roofs: { mesh: import("@babylonjs/core").Mesh; x0: number; x1: number; z0: number; z1: number; y0: number; y1: number }[];
   merged: Mesh[];
   humans: Record<string, Human>;
   update(dt: number, f: RigFrame): void;
@@ -271,11 +272,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.slab("dsteel", cx - 0.03, cy - h / 2 - 0.2, cz - 0.04, cx + 0.03, cy - h / 2 - 0.03, cz + 0.04);   // stand
   };
   // ---- driller's desk on the west glass: four live monitors low enough to see the rotary over, plus overhead displays ----
-  b.slab("dsteel", 2.8, F, -5.0, 3.6, F + 0.95, -1.4, true);
-  b.slab("steel", 2.8, F + 0.95, -5.0, 3.6, F + 0.99, -1.4);
-  (["params", "trends", "pits", "alarms"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, -4.5 + i * 0.95, 0.85, 0.54, k));
+  // the four desk monitors are split two and two to the ends of the desk, so the middle (where the driller sits) is open glass onto the rotary and the floor
+  const deskZ = [-5.45, -4.55, -1.85, -0.95];
+  b.slab("dsteel", 2.8, F, -5.9, 3.6, F + 0.95, -0.5, true);
+  b.slab("steel", 2.8, F + 0.95, -5.9, 3.6, F + 0.99, -0.5);
+  (["params", "trends", "pits", "alarms"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k));
   (["pumps", "hookload", "steer"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.0, F + 2.35, -4.3 + i * 1.3, 0.85, 0.52, k));
-  for (let i = 0; i < 4; i++) { b.slab("black", 3.55, F + 0.99, -4.7 + i * 0.95, 3.85, F + 1.03, -4.2 + i * 0.95); }   // keyboards / panels
+  for (const mz of deskZ) b.slab("black", 3.55, F + 0.99, mz - 0.25, 3.85, F + 1.03, mz + 0.25);   // keyboards / panels under each monitor
   // driller's chair at (4.5, -3.2) facing west: joystick arms, throttle and brake
   b.cyl("black", 4.5, F + 0.25, -3.2, 0.14, 0.5, { tess: 8 }); b.slab("black", 4.1, F, -3.6, 4.9, F + 0.07, -2.8);
   b.slab("black", 4.2, F + 0.5, -3.5, 4.8, F + 0.6, -2.9); b.slab("black", 4.75, F + 0.6, -3.5, 4.85, F + 1.4, -2.9);
@@ -1249,7 +1252,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   };
 
   return {
-    spots, colliders: b.colliders, merged, humans, update,
+    spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update,
     setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); }, setWindmill: (on) => { wmTarget = on ? 2.1 : 0; },
     heliState, deerNode, windsock,
   };

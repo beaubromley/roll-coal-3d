@@ -133,6 +133,7 @@ $("startBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("intr
 $("contBtn").addEventListener("click", () => { if (!($("contBtn") as HTMLButtonElement).disabled) begin(true); });
 player.onLockFailed = () => ui.toast("MOUSE CAPTURE UNAVAILABLE", "Click and drag to look around");
 canvas.addEventListener("click", () => { if (game.started && !ui.panelOpen && !game.paused) player.lock(); });
+document.getElementById("logbtn")?.addEventListener("click", () => game.openLog());
 
 // ---- pause: Esc / P, lost mouse capture, or the tab going to the background ----
 player.onLockLost = () => { if (game.started && !ui.panelOpen && !game.flags.finish) game.togglePause(true); };
@@ -141,6 +142,7 @@ window.addEventListener("keydown", (e) => {
   if ((e.code === "AltLeft" || e.code === "AltRight") && game.started) { e.preventDefault(); if (!e.repeat && !game.paused) player.unlock(); return; }
   if (e.repeat) return;
   if (e.code === "KeyE") game.interact();
+  if (e.code === "KeyL" && game.started && !game.paused && !ui.panelOpen && !e.repeat) game.openLog();
   if (e.code === "KeyM") { sfx.setMuted(!sfx.muted); if (game.paused) $("pSound").textContent = sfx.muted ? "SOUND: OFF" : "SOUND: ON"; }
   if ((e.code === "Escape" || e.code === "KeyP") && game.started && !game.flags.finish) {
     if (game.paused) game.togglePause(false);

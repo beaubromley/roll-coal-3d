@@ -943,7 +943,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("steel", 38.58, 2.0, 12.55, 38.66, 2.12, 12.75); b.slab("red", 38.55, 2.2, 12.5, 38.6, 2.3, 12.6); // handle and deadbolt
   b.slab("black", 38.62, 2.1, 9.2, 38.7, 2.8, 10.6); b.slab("black", 38.62, 2.1, 14.0, 38.7, 2.8, 15.0);    // dark windows
   b.slab("deck", 38.0, 0.0, 11.7, 38.6, 0.55, 12.7, true);                              // a stoop, for the knocking
-  spots.mudlog = rv(49.6 - 12, 1.5, 22.2 - 10);
+  spots.mudlog = rv(37.6 + CDX, 1.5, 12.2 + CDZ);   // just outside the door, in the same shifted camp frame as the trailer itself
   b.label("MUD LOGGING\nLOCKED • KNOCK", 38.55, 3.1, 8.6, 2.0, 0.7, -Math.PI / 2, "#233a52", "#ffd24a", 40);
   b.label("NO ADMITTANCE\nSAMPLES IN PROGRESS", 38.55, 3.1, 14.6, 1.6, 0.6, -Math.PI / 2, "#7a1a14", "#ffffff", 34);
   // safety/change room + water frac tanks

@@ -15,6 +15,8 @@ const pick = <T,>(l: T[]) => l[Math.floor(Math.random() * l.length)];
 const HILLS: [number, number, number, number][] = [[150, -30, 8, 24], [198, -72, 11, 28], [160, -118, 7, 20], [235, -18, 9, 22], [118, -70, 6, 18]];   // x, z, height, spread
 const POND = { x: -175, z: 165, rx: 68, rz: 52 };
 const POND_DEPTH = 6, WATER_Y = -0.3;
+/** the BOP cellar at the wellhead: 10 ft across, 6 ft deep */
+const CELL_R = 1.525, CELL_D = 1.83, CELL_H = 6;
 /** the deep hole, out toward the middle of the pond: the rare catches live here */
 const DEEP = { x: POND.x - 18, z: POND.z - 6, r: 17, extra: 6.5 };
 const FARM = { x: -64, z: 236 };                      // the house; its porch faces +x, toward the lease road
@@ -41,6 +43,7 @@ export class Outskirts {
 
   /** the ground height at (x, z): flat, except across the hills */
   terrain = (x: number, z: number): number => {
+    if (x * x + z * z < CELL_R * CELL_R) return -CELL_D;   // the cellar
     {   // the pond is a real basin, with a deep hole near the middle
       const pu = ((x - POND.x) / POND.rx) ** 2 + ((z - POND.z) / POND.rz) ** 2;
       if (pu < 1) { let d = POND_DEPTH * (1 - pu); const dd = ((x - DEEP.x) ** 2 + (z - DEEP.z) ** 2) / (DEEP.r * DEEP.r); if (dd < 1) d += DEEP.extra * Math.pow(1 - dd, 1.4); return -d; }
@@ -70,6 +73,48 @@ export class Outskirts {
     this.colliders = b.colliders;
     this.cattle();
     this.skyline();
+    this.cellar();
+  }
+
+  /** a flat ring of ground between a circular hole (CELL_R) and a square outline (CELL_H), so a round hole can be cut in a flat plane */
+  private holeRing(y: number, mat: import("@babylonjs/core").Material, uv: (x: number, z: number) => [number, number]) {
+    const N = 48, pos: number[] = [], idx: number[] = [], uvs: number[] = [], nrm: number[] = [];
+    for (let i = 0; i <= N; i++) {
+      const th = (i / N) * Math.PI * 2, c = Math.cos(th), s = Math.sin(th), k = CELL_H / Math.max(Math.abs(c), Math.abs(s));
+      for (const [px, pz] of [[CELL_R * c, CELL_R * s], [k * c, k * s]]) { pos.push(px, y, pz); nrm.push(0, 1, 0); uvs.push(...uv(px, pz)); }
+    }
+    for (let i = 0; i < N; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, c, b, d, c); }
+    const m = new Mesh("holering", this.scene); const vd = new VertexData(); vd.positions = pos; vd.indices = idx; vd.normals = nrm; vd.uvs = uvs; vd.applyToMesh(m);
+    m.material = mat; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
+  }
+
+  // ---------------------------------------------------------------------------------------------- the cellar
+  /** a 10 ft diameter, 6 ft deep cellar at the wellhead: the pad and the ground are cut open, with a steel liner, a concrete floor, a collar, a ladder and a sump */
+  private cellar() {
+    const sc = this.scene, H = CELL_H;
+    sc.getMeshByName("padmesh")?.setEnabled(false);
+    const pmat = sc.getMaterialByName("pad");
+    const piece = (x0: number, z0: number, x1: number, z1: number) => {
+      const m = MeshBuilder.CreateGround("padpiece", { width: x1 - x0, height: z1 - z0, subdivisions: 1, updatable: true }, sc); m.position.set((x0 + x1) / 2, 0.04, (z0 + z1) / 2);
+      const pos = m.getVerticesData(VertexBuffer.PositionKind)!, uv = new Float32Array((pos.length / 3) * 2);
+      for (let i = 0; i < pos.length / 3; i++) { uv[i * 2] = (pos[i * 3] + m.position.x + 60) / 120; uv[i * 2 + 1] = (pos[i * 3 + 2] + m.position.z + 65) / 130; }
+      m.setVerticesData(VertexBuffer.UVKind, uv); if (pmat) m.material = pmat; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
+    };
+    piece(-60, -65, -H, 65); piece(H, -65, 60, 65); piece(-H, H, H, 65); piece(-H, -65, H, -H);
+    if (pmat) { const rm = pmat.clone("padring")!; rm.backFaceCulling = false; this.holeRing(0.04, rm, (px, pz) => [(px + 60) / 120, (pz + 65) / 130]); }
+    const mat = (hex: string, em = 0) => { const m = new StandardMaterial("cell" + hex, sc); m.diffuseColor = Color3.FromHexString(hex); m.specularColor = Color3.Black(); if (em) m.emissiveColor = Color3.FromHexString(hex).scale(em); return m; };
+    // the liner: a corrugated steel ring from the floor to just above the pad
+    const wall = MeshBuilder.CreateCylinder("cellarwall", { diameter: CELL_R * 2, height: CELL_D + 0.12, tessellation: 40, cap: Mesh.NO_CAP, sideOrientation: Mesh.DOUBLESIDE }, sc);
+    wall.material = mat("#7d8184", 0.15); wall.position.set(0, (-CELL_D + 0.12) / 2, 0); wall.isPickable = false;
+    for (let k = 0; k < 7; k++) { const rib = MeshBuilder.CreateTorus("cellarrib", { diameter: CELL_R * 2 - 0.02, thickness: 0.06, tessellation: 40 }, sc); rib.material = mat("#686c70", 0.1); rib.position.y = -CELL_D + 0.2 + k * 0.27; rib.isPickable = false; }
+    const collar = MeshBuilder.CreateTorus("cellarcollar", { diameter: CELL_R * 2 + 0.12, thickness: 0.24, tessellation: 40 }, sc); collar.material = mat("#9a9a92", 0.1); collar.position.y = 0.1; collar.isPickable = false;
+    const floor = MeshBuilder.CreateDisc("cellarfloor", { radius: CELL_R, tessellation: 40 }, sc); floor.rotation.x = Math.PI / 2; floor.position.y = -CELL_D + 0.01; floor.material = mat("#6a6760"); floor.isPickable = false;
+    const mud = MeshBuilder.CreateDisc("cellarmud", { radius: 0.9, tessellation: 24 }, sc); mud.rotation.x = Math.PI / 2; mud.position.set(0.5, -CELL_D + 0.02, 0.6); mud.material = mat("#2e2820"); mud.isPickable = false;
+    const sump = MeshBuilder.CreateCylinder("cellarsump", { diameter: 0.55, height: 0.05, tessellation: 16 }, sc); sump.position.set(-1.0, -CELL_D + 0.03, -0.9); sump.material = mat("#16181a"); sump.isPickable = false;
+    // a ladder bolted to the wall on the +x side
+    const rail = (z: number) => { const r = MeshBuilder.CreateBox("cellarrail", { width: 0.05, height: CELL_D + 0.9, depth: 0.05 }, sc); r.material = mat("#e8b923", 0.3); r.position.set(CELL_R - 0.1, (-CELL_D + 0.9) / 2, z); r.isPickable = false; };
+    rail(-0.25); rail(0.25);
+    for (let y = -CELL_D + 0.25; y < 0.8; y += 0.3) { const r = MeshBuilder.CreateBox("cellarrung", { width: 0.05, height: 0.04, depth: 0.5 }, sc); r.material = mat("#e8b923", 0.3); r.position.set(CELL_R - 0.1, y, 0); r.isPickable = false; }
   }
 
   // ---------------------------------------------------------------------------------------------- the skyline
@@ -140,7 +185,10 @@ export class Outskirts {
       for (let i = 0; i < pos.length / 3; i++) { uv[i * 2] = (pos[i * 3] + m.position.x + 3000) / 6000; uv[i * 2 + 1] = (pos[i * 3 + 2] + m.position.z + 3000) / 6000; }
       m.setVerticesData(VertexBuffer.UVKind, uv); if (gmat) m.material = gmat; m.receiveShadows = true; m.isPickable = false; m.freezeWorldMatrix();
     };
-    piece(-3000, -3000, bx0, 3000); piece(bx1, -3000, 3000, 3000); piece(bx0, bz1, bx1, 3000); piece(bx0, -3000, bx1, bz0);
+    piece(-3000, -3000, bx0, 3000); piece(bx0, bz1, bx1, 3000); piece(bx0, -3000, bx1, bz0);
+    // the strip that holds the rig has a round hole cut in it for the cellar: four pieces round a square, and a ring that squares up the circle
+    piece(bx1, -3000, -CELL_H, 3000); piece(CELL_H, -3000, 3000, 3000); piece(-CELL_H, CELL_H, CELL_H, 3000); piece(-CELL_H, -3000, CELL_H, -CELL_H);
+    if (gmat) { const rm = gmat.clone("groundring")!; rm.backFaceCulling = false; this.holeRing(0, rm, (px, pz) => [(px + 3000) / 6000, (pz + 3000) / 6000]); }
     const N = 110, bed = MeshBuilder.CreateGround("pondbed", { width: bx1 - bx0, height: bz1 - bz0, subdivisions: N, updatable: true }, sc);
     bed.position.set((bx0 + bx1) / 2, 0, (bz0 + bz1) / 2);
     const bp = bed.getVerticesData(VertexBuffer.PositionKind)!, col = new Float32Array((bp.length / 3) * 4);
@@ -329,7 +377,7 @@ export class Outskirts {
     for (let i = 0; i < 9; i++) b.slab("bulb", x + 3.05, 2.8, z - 1.9 + i * 0.475, x + 3.17, 2.88, z - 1.8 + i * 0.475);    // string lights
     b.slab("wood", x + 1.3, 1.5, z - 1.6, x + 1.9, 1.58, z + 1.6);                                       // counter
     b.slab("wood", x + 2.6, 0, z - 1.7, x + 3.0, 0.95, z + 1.7, true);                                   // front table
-    b.slab("dwood", x + 1.22, 3.4, z - 0.1, x + 1.3, 4.9, z + 0.1); b.label("TACOS", x + 1.25, 4.5, z, 3.4, 1.1, Math.PI / 2, "#c8331f", "#ffe9a8", 70);
+    b.slab("dwood", x + 1.2, 3.4, z - 0.1, x + 1.26, 4.9, z + 0.1); b.label("TACOS", x + 1.32, 4.5, z, 3.4, 1.1, Math.PI / 2, "#c8331f", "#ffe9a8", 70);
     b.label("EL FUEGO TACOS\nCASH ONLY · NO REFUNDS ON SPICE", x + 1.23, 3.15, z, 3.3, 0.5, Math.PI / 2, "#233a52", "#ffd24a", 24);
     for (const [sx, sz] of [[5.2, -3], [5.2, 3.6]]) { b.cyl("tacored", x + sx, 0.4, z + sz, 0.7, 0.1, { tess: 10 }); b.cyl("steel", x + sx, 0.2, z + sz, 0.12, 0.4, { tess: 6 }); }   // two stools
     this.lupe = new Human(this.scene, { shirt: "#ece8de", pants: "#2a2a2a", hat: null, skin: "#c99870", vest: false, scale: 1.0, hair: "#1a1a1a" });

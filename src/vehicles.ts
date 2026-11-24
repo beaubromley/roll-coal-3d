@@ -135,9 +135,9 @@ export class Vehicles {
 
   private build() {
     this.list.push(this.buildF250(-14.0, 40.0, Math.PI * 1.5 + RYAW));
-    this.list.push(this.buildForklift(14, 44, -0.6));
+    this.list.push(this.buildForklift(-45, 10, -Math.PI / 2));
     this.list.push(this.buildManlift(-7, 13, 0.4));
-    this.buildPallet(9.2, 51.5, -0.6);
+    this.buildPallet(-46.5, -9, -Math.PI / 2);
     for (let i = 0; i < 8; i++) this.buildPallet(11.9 + i * 2.3, -61.4, i % 2 ? 0.04 : -0.03, true);   // mud products in the yard
     this.list.push(this.buildBackhoe(-42, -61, 0));   // parked by the cuttings pit under the shakers
     this.list.push(this.buildDrone(-20.5, 36.4, Math.PI / 2 + RYAW));

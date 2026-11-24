@@ -168,21 +168,24 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("steel", -6.5, 0, -6, -5.7, 0.3, 6); b.slab("steel", 5.7, 0, -6, 6.5, 0.3, 6);
 
   // ---- BOP stack in the cellar zone below the rotary ----
+  // The stack stands on the wellhead in a 10 ft diameter, 6 ft deep cellar, so its bottom half is below ground; a longer bell nipple still reaches the floor.
+  const CELL = 1.83;
   if (kit) {
-    kit.place("bop", 0, 0, 0, RYAW);                                      // Blender BOP stack: flanges, bonnets, hydraulics, valves
-    b.blocker(-0.9, 1.35, -0.75, 0.9, 2.65, 0.75);
+    kit.place("bop", 0, -CELL, 0, RYAW);                                  // Blender BOP stack: flanges, bonnets, hydraulics, valves
+    b.blocker(-0.9, 1.35 - CELL, -0.75, 0.9, 2.65 - CELL, 0.75);
+    b.cyl("steel", 0, 6.1, 0, 0.9, 2.0, { tess: 12 });                    // bell nipple extension up to the floor
   } else {
-    b.cyl("steel", 0, 0.5, 0, 1.0, 1.0, { tess: 14 });              // wellhead / casing head
-    b.cyl("black", 0, 1.15, 0, 1.3, 0.3, { tess: 14 });             // flange
-    b.box("bopblue", 0, 2.0, 0, 1.8, 1.3, 1.5, true);               // double ram body
-    b.box("bopred", 0, 2.0, 1.05, 1.0, 0.7, 0.6); b.box("bopred", 0, 2.0, -1.05, 1.0, 0.7, 0.6);
-    b.box("bopred", 1.2, 2.0, 0, 0.6, 0.7, 1.0); b.box("bopred", -1.2, 2.0, 0, 0.6, 0.7, 1.0);
-    b.cyl("black", 0, 2.95, 0, 1.3, 0.3, { tess: 14 });
-    b.box("bopblue", 0, 3.6, 0, 1.6, 0.9, 1.4);
-    b.box("bopred", 1.0, 3.6, 0, 0.5, 0.6, 0.9); b.box("bopred", -1.0, 3.6, 0, 0.5, 0.6, 0.9);
-    b.cyl("black", 0, 4.2, 0, 1.3, 0.3, { tess: 14 });
-    b.cyl("bopred", 0, 5.1, 0, 1.5, 1.4, { tess: 16, dia2: 1.2 });  // annular
-    b.cyl("steel", 0, 6.35, 0, 0.9, 1.4, { tess: 12 });             // bell nipple
+    b.cyl("steel", 0, 0.5 - CELL, 0, 1.0, 1.0, { tess: 14 });       // wellhead / casing head
+    b.cyl("black", 0, 1.15 - CELL, 0, 1.3, 0.3, { tess: 14 });      // flange
+    b.box("bopblue", 0, 2.0 - CELL, 0, 1.8, 1.3, 1.5, true);        // double ram body
+    b.box("bopred", 0, 2.0 - CELL, 1.05, 1.0, 0.7, 0.6); b.box("bopred", 0, 2.0 - CELL, -1.05, 1.0, 0.7, 0.6);
+    b.box("bopred", 1.2, 2.0 - CELL, 0, 0.6, 0.7, 1.0); b.box("bopred", -1.2, 2.0 - CELL, 0, 0.6, 0.7, 1.0);
+    b.cyl("black", 0, 2.95 - CELL, 0, 1.3, 0.3, { tess: 14 });
+    b.box("bopblue", 0, 3.6 - CELL, 0, 1.6, 0.9, 1.4);
+    b.box("bopred", 1.0, 3.6 - CELL, 0, 0.5, 0.6, 0.9); b.box("bopred", -1.0, 3.6 - CELL, 0, 0.5, 0.6, 0.9);
+    b.cyl("black", 0, 4.2 - CELL, 0, 1.3, 0.3, { tess: 14 });
+    b.cyl("bopred", 0, 5.1 - CELL, 0, 1.5, 1.4, { tess: 16, dia2: 1.2 });  // annular
+    b.cyl("steel", 0, 5.51, 0, 0.9, 3.08, { tess: 12 });            // bell nipple, long enough to reach the floor
   }
   // flowline to shakers
   b.beam("steel", v(0, 6.0, 0), v(0, 6.0, -8), 0.5); b.beam("steel", v(0, 6.0, -8), v(0, 3.4, -19), 0.5);
@@ -556,6 +559,14 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     if (!full) {
       // empty racks: low rails along the lip toward the catwalk, so a joint rolls in from the rack when the kick arms push it
       b.blocker(rx - 3.35, 0, 18.3, rx + 3.35, 0.6, 33.7);
+      if (sx > 0) {
+        // a few joints of drill pipe waiting on this rack, stacked toward the outer side so the kick arm has a clear lane to the trough
+        const D = 0.27, PITCH = 0.285;
+        for (let layer = 0; layer < 3; layer++) for (let i = 0; i < 5 - layer; i++) {
+          const px = rx - 2.1 + i * PITCH + layer * (PITCH / 2) + 1.2, py = 0.56 + D / 2 + layer * PITCH * 0.866;
+          b.cyl("pipe", px, py, 26, D, 12.4, { axis: "z", tess: 6 }); b.cyl("pipeband", px, py, 20.1, D + 0.02, 0.4, { axis: "z", tess: 6 }); b.cyl("pipeband", px, py, 31.9, D + 0.02, 0.4, { axis: "z", tess: 6 });
+        }
+      }
       return;
     }
     // drill pipe, hex-packed (pitch ~ diameter) and parallel to the catwalk
@@ -575,8 +586,31 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     // solid so nobody walks through the stack
     b.blocker(rx - 3.35, 0, 18.3 + dz, rx + 3.35, 2.0, 33.7 + dz);
   };
-  for (const sx of [-1, 1]) { rackStack(sx, 26, false); rackStack(sx, 52, true); }
-  kit?.instances(["pipe_pipe", "band_band"], pipePos, false, RYAW);
+  // the full stacks out at the pad edge lie with their pipe running across the line of the catwalk (parallel to the fence), two stacks side by side
+  const fullStack = (xc: number, zc: number, full = true) => {
+    const D = 0.27, PITCH = 0.285;
+    for (const sxp of [-7.0, 0, 7.0]) b.slab("rust", xc + sxp - 0.2, 0, zc - 3.3, xc + sxp + 0.2, 0.5, zc + 3.3);
+    for (const ez of [-3.3, 3.3]) for (const sxp of [-7.0, 0, 7.0]) b.slab("rust", xc + sxp - 0.1, 0, zc + ez - 0.06, xc + sxp + 0.1, 2.0, zc + ez + 0.06);
+    if (!full) { b.blocker(xc - 7.65, 0, zc - 3.35, xc + 7.65, 0.6, zc + 3.35); return; }
+    for (let layer = 0; layer < 6; layer++) {
+      const n = 22 - layer;
+      for (let i = 0; i < n; i++) {
+        const z = zc - ((22 - 1) * PITCH) / 2 + i * PITCH + layer * (PITCH / 2), y = 0.5 + D / 2 + layer * PITCH * 0.866;
+        if (kit) pipePos.push(rpos(v(xc, y, z)));
+        else {
+          b.cyl("pipe", xc, y, z, D, 15.2, { axis: "x", tess: 6 });
+          b.cyl("pipeband", xc - 7.3, y, z, D + 0.02, 0.4, { axis: "x", tess: 6 });
+          b.cyl("pipeband", xc + 7.3, y, z, D + 0.02, 0.4, { axis: "x", tess: 6 });
+        }
+      }
+    }
+    b.blocker(xc - 7.65, 0, zc - 3.35, xc + 7.65, 2.0, zc + 3.35);
+  };
+  for (const sx of [-1, 1]) rackStack(sx, 26, false);
+  // out near the pad edge, end to end in one line: two full stacks, then (to the right, looking out from the rig) two empty racks
+  fullStack(-8.2, 56); fullStack(8.2, 56);
+  fullStack(23.8, 56, false); fullStack(39.4, 56, false);
+  kit?.instances(["pipe_pipe", "band_band"], pipePos, false, RYAW + Math.PI / 2);   // (the stacks lie across the line of the catwalk)
   // the catwalk skid: a long steel base with a rear trough fixed to it, a hydraulic power unit, and the ground control station
   b.slab("dsteel", -1.1, 0, 18, 1.1, 0.45, 34, true);
   b.slab("steel", -0.6, 0.45, 24, 0.6, 0.55, 34);                                        // trough floor (rear half; the front half lifts)
@@ -585,13 +619,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.blocker(-1.1, 0, 18, 1.1, 1.05, 34);
   b.slab("blue", 1.4, 0, 31.6, 2.6, 1.0, 33.8, true); b.slab("black", 1.5, 1.0, 31.8, 2.5, 1.2, 33.6);   // hydraulic power unit: tank on top
   b.cyl("steel", 2.0, 1.45, 32.7, 0.22, 0.5, { tess: 8 }); b.cyl("red", 1.7, 0.5, 31.4, 0.3, 0.3, { axis: "z", tess: 8 });
-  b.slab("dsteel", 1.5, 0, 21.8, 1.6, 1.25, 22.2); b.slab("black", 1.3, 1.25, 21.4, 1.9, 1.75, 22.6);   // ground control station: post and panel
-  b.slab("green", 1.32, 1.5, 21.5, 1.38, 1.62, 21.7); b.slab("yellow", 1.32, 1.5, 21.85, 1.38, 1.62, 22.05); b.slab("red", 1.32, 1.5, 22.2, 1.38, 1.62, 22.4);
-  b.label("HYDRAULIC CATWALK\nCLEAR THE TROUGH BEFORE YOU PUSH", 1.15, 2.3, 22, 2.4, 0.8, -Math.PI / 2, "#233a52", "#ffd24a", 28);
-  spots.tally = v(0, 1.8, 50);
-  spots.catwalk = v(1.9, 1.5, 22);
+  b.slab("dsteel", -0.1, 0, 35.2, 0.1, 1.25, 35.4); b.slab("black", -0.6, 1.25, 35.0, 0.6, 1.75, 35.6);   // ground control station at the tail end: post and panel facing the catwalk
+  b.slab("green", -0.45, 1.45, 34.94, -0.25, 1.6, 35.0); b.slab("yellow", -0.1, 1.45, 34.94, 0.1, 1.6, 35.0); b.slab("red", 0.25, 1.45, 34.94, 0.45, 1.6, 35.0);
+  b.label("HYDRAULIC CATWALK\nCLEAR THE TROUGH BEFORE YOU PUSH", 0, 2.3, 35.7, 2.4, 0.8, 0, "#233a52", "#ffd24a", 28);
+  spots.tally = v(0, 1.8, 50.8);
+  spots.catwalk = v(0, 1.5, 36.3);
   spots.catremote = v(2.1, F + 1.25, 3.9);
-  b.label("PIPE RACKS", 0, 3.2, 44, 3.2, 0.8, 0, "#233a52", "#ffd24a", 80);
+  b.label("PIPE RACKS", 0, 3.2, 51.5, 3.2, 0.8, 0, "#233a52", "#ffd24a", 80);
   b.rot = 0;
   for (const k of ["cabin", "doghouse", "coffee", "board", "geronimo", "floorSetback", "drawworks", "tally", "catwalk", "catremote"]) spots[k] = rpos(spots[k]);
 
@@ -620,7 +654,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const jt = MeshBuilder.CreateCylinder("cwjoint", { diameter: 0.24, height: 9.6, tessellation: 10 }, scene); jt.material = cwPipe; jt.parent = cw; jt.rotation.x = Math.PI / 2; jt.isPickable = false;
   for (const dy of [-4.4, 4.4]) { const r = MeshBuilder.CreateCylinder("cwjb", { diameter: 0.27, height: 0.4, tessellation: 10 }, scene); r.material = b.getMat("pipeband"); r.parent = jt; r.position.y = dy; r.isPickable = false; }
   jt.setEnabled(false);
-  const catwalk = { phase: "idle" as "idle" | "kicking" | "loaded" | "pushing", lowered: false, tilt: 0, kick: 0, side: 1, roll: 0, jz: 29.5, push: 0, delivered: 0, event: "" };
+  const catwalk = { phase: "idle" as "idle" | "kicking" | "loaded" | "pushing", lowered: true, tilt: 1, kick: 0, side: 1, roll: 0, jz: 29.5, push: 0, delivered: 0, event: "" };
   const RAMP_ANG = Math.atan2(F, 12);
   const catUpdate = (dt: number) => {
     // trough tilt: 0 level, 1 lowered onto the ramp (the far end drops about half a metre)
@@ -633,27 +667,31 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     if (catwalk.phase === "kicking") {
       catwalk.kick = Math.min(1, catwalk.kick + dt * 2.2); catwalk.roll = Math.min(1, catwalk.roll + dt * 0.7);
       const k = catwalk.roll;
-      jt.setEnabled(true); jt.position.set(catwalk.side * (3.0 * (1 - k)), 0.75 - 0.08 * k + (1 - k) * 0.1, catwalk.jz); jt.rotation.set(Math.PI / 2, 0, 0);
+      jt.setEnabled(true); jt.position.set(catwalk.side * (3.6 * (1 - k)), 0.75 - 0.08 * k + (1 - k) * 0.1, catwalk.jz); jt.rotation.set(Math.PI / 2, 0, 0);
       if (catwalk.roll >= 1) { catwalk.phase = "loaded"; catwalk.event = "loaded"; }
     } else catwalk.kick = Math.max(0, catwalk.kick - dt * 2.2);
     for (const a of arms) a.n.rotation.z = a.sx * catwalk.kick * 0.85 * (a.sx === catwalk.side ? 1 : 0);
     if (catwalk.phase === "pushing") {
-      // the joint rides the pusher: up the trough, then up the ramp to the rig floor
-      catwalk.push += dt * 2.6; const zc = catwalk.jz - catwalk.push;
-      let y = 0.67, pitch = 0;
-      if (zc < 18) { const u = Math.min(1, (18 - zc) / 12); y = 0.67 + (F - 0.4) * u; pitch = RAMP_ANG * Math.min(1, (18 - zc) / 4); }
-      jt.position.set(0, y + 0.12 * pitch, zc); jt.rotation.set(Math.PI / 2 + pitch, 0, 0);
-      const pz = zc + 5.0; pusher.position.z = Math.max(pz, 18.5); pusher.setEnabled(pz >= 18.5);
-      if (zc <= 6.4) { jt.setEnabled(false); catwalk.phase = "idle"; catwalk.delivered++; catwalk.event = "delivered"; catwalk.push = 0; pusher.setEnabled(true); }
+      // the joint is a rigid 9.6 m pipe: its tail is pushed along the trough and its front end rides the surface (trough, then the slick ramp), so it never cuts through
+      catwalk.push += dt * (catwalk.push > 17 ? 2.0 : 2.8);
+      const L = 9.6, S = (z: number) => z >= 24 ? 0.67 : z >= 18 ? 0.18 + ((z - 18) / 6) * 0.49 : 0.18 + (18 - z) * (F / 12);
+      const zt = catwalk.jz + 4.8 - catwalk.push, yt = S(zt);
+      let lo = zt - L, hi = zt - 0.01;
+      for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (Math.hypot(zt - mid, yt - S(mid)) > L) lo = mid; else hi = mid; }
+      const zf = (lo + hi) / 2, yf = S(zf);
+      jt.position.set(0, (yt + yf) / 2, (zt + zf) / 2); jt.rotation.set(Math.PI / 2 + Math.atan2(yf - yt, zt - zf), 0, 0);
+      const pz = zt + 0.3, py = S(Math.max(pz, 18.5)) + 0.03; pusher.position.set(0, py, Math.max(pz, 18.5)); pusher.setEnabled(pz >= 18.5);
+      if (zt <= 6.6) { jt.setEnabled(false); catwalk.phase = "idle"; catwalk.delivered++; catwalk.event = "delivered"; catwalk.push = 0; pusher.setEnabled(true); pusher.position.y = 0.72; }
     } else { pusher.setEnabled(true); pusher.position.z += (33.5 - pusher.position.z) * Math.min(1, dt * 3); }
-    pushRod.scaling.y = Math.max(0.1, 34.1 - (pusher.position.z + 0.17)); pushRod.position.set(0, 0.72, (34.1 + pusher.position.z + 0.17) / 2);
+    { const pz = pusher.position.z + 0.17, py = pusher.position.y, dz = 34.1 - pz, dy = 0.72 - py, len = Math.max(0.1, Math.hypot(dz, dy));
+      pushRod.scaling.y = len; pushRod.position.set(0, (0.72 + py) / 2, (34.1 + pz) / 2); pushRod.rotation.x = Math.PI / 2 + Math.atan2(py - 0.72, dz); }
   };
   const catCtl = {
     get phase() { return catwalk.phase; }, get lowered() { return catwalk.lowered; }, get delivered() { return catwalk.delivered; },
     takeEvent() { const e = catwalk.event; catwalk.event = ""; return e; },
-    kick(): string | null { if (catwalk.phase !== "idle") return "There's already a joint on the trough."; catwalk.phase = "kicking"; catwalk.side = Math.random() < 0.5 ? -1 : 1; catwalk.roll = 0; catwalk.kick = 0; catwalk.jz = 29.5; return null; },
+    kick(): string | null { if (catwalk.phase !== "idle") return "There's already a joint on the trough."; catwalk.phase = "kicking"; catwalk.side = 1; catwalk.roll = 0; catwalk.kick = 0; catwalk.jz = 29.5; return null; },
     toggleLift(): void { catwalk.lowered = !catwalk.lowered; },
-    push(): string | null { if (catwalk.phase === "idle") return "Nothing on the trough. Kick a joint over first."; if (catwalk.phase === "kicking") return "Wait for the joint to settle in the trough."; if (catwalk.phase === "pushing") return "It's already moving."; if (!catwalk.lowered) return "Lower the trough onto the ramp first, or the joint won't make the V-door."; catwalk.phase = "pushing"; catwalk.push = 0; return null; },
+    push(): string | null { if (catwalk.phase === "idle") return "Nothing on the trough. Kick a joint over first."; if (catwalk.phase === "kicking") return "Wait for the joint to settle in the trough."; if (catwalk.phase === "pushing") return "It's already moving."; catwalk.phase = "pushing"; catwalk.push = 0; return null; },
   };
 
   // ================= PUMP ROOM (3 triplex mud pumps) =================
@@ -910,11 +948,11 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   spots.choke = v(14.8 - 19.5, 1.5, 9.6 - 20.9);
   // choke line from the BOP side outlet: HCR (hydraulic, from the accumulator) + manual gate valve, then pipe to the manifold inlet
   {
-    const CP = 0.22, pts = [v(-1.5, 2.0, 0), v(-4.2, 2.0, 0), v(-4.2, 1.0, 0), v(-4.2, 1.0, -8.6), v(-8.0, 1.0, -8.6), v(-8.0, 1.0, -9.4)];
+    const CP = 0.22, pts = [v(-1.5, 2.0 - CELL, 0), v(-4.2, 2.0 - CELL, 0), v(-4.2, 1.0, 0), v(-4.2, 1.0, -8.6), v(-8.0, 1.0, -8.6), v(-8.0, 1.0, -9.4)];
     for (let i = 0; i < pts.length - 1; i++) b.beam("steel", pts[i], pts[i + 1], CP);
     for (const p of pts.slice(1, -1)) b.sphere("steel", p.x, p.y, p.z, 0.3);
-    b.box("bopred", -2.0, 2.0, 0, 0.55, 0.5, 0.5); b.cyl("bopblue", -2.0, 2.5, 0, 0.3, 0.6, { tess: 10 }); b.label("HCR", -2.0, 3.0, 0, 0.5, 0.22, Math.PI, "#7a1a14", "#ffffff", 40);   // HCR valve + hydraulic actuator
-    b.box("steel", -3.1, 2.0, 0, 0.4, 0.4, 0.4); b.cyl("red", -3.1, 2.35, 0, 0.4, 0.05, { tess: 14 });                                              // manual gate valve
+    b.box("bopred", -2.0, 2.0 - CELL, 0, 0.55, 0.5, 0.5); b.cyl("bopblue", -2.0, 2.5 - CELL, 0, 0.3, 0.6, { tess: 10 }); b.label("HCR", -2.0, 3.0 - CELL, 0, 0.5, 0.22, Math.PI, "#7a1a14", "#ffffff", 40);   // HCR valve + hydraulic actuator
+    b.box("steel", -3.1, 2.0 - CELL, 0, 0.4, 0.4, 0.4); b.cyl("red", -3.1, 2.35 - CELL, 0, 0.4, 0.05, { tess: 14 });                                              // manual gate valve
     for (let z = -1.5; z > -8.5; z -= 2.8) b.slab("dsteel", -4.35, 0, z - 0.1, -4.05, 0.9, z + 0.1);                                                      // supports
     // flowline from the manifold outlet east to the mud-gas separator (the tall green tank), on supports
     const fl = [v(-10.9, 0.6, -16.4), v(24, 0.6, -16.4), v(24, 0.6, -13.6)];
@@ -955,6 +993,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // ================= CAMP: trailers =================
   // company man trailer (enterable)
   const CDX = 12, CDZ = 10;   // trailers sit toward the corner of the pad
+  const SAFE_DX = 3, SAFE_DZ = -46;   // the safety trailer sits out on the east side, beside the toolpusher's (where the skytrak used to park)
+  const TP_DZ = -52;                  // the toolpusher's trailer moved there too
   b.rot = RYAW;   // the camp turns a quarter turn about the rig, same direction as the rig
   b.at(CDX, CDZ, () => {
   b.room({ x0: 30, z0: 8, x1: 33.6, z1: 20, y0: 0.8, h: 2.7, wall: "trailer", roof: "dsteel", floor: "dsteel",
@@ -1012,8 +1052,18 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // toolpusher trailer (solid)
   if (kit) { kit.place("trailer", -(30 + CDZ), 0, 31.8 + CDX, RYAW); b.blocker(29.9, 0, 24, 33.7, 3.6, 36); }
   else { b.slab("trailer", 30, 0.7, 24, 33.6, 3.6, 36, true); b.slab("steel", 29.9, 0, 24, 33.7, 0.7, 36, true); }
-  b.label("TOOLPUSHER", 29.85, 3.9, 30, 3.4, 0.6, -Math.PI / 2, "#233a52", "#ffd24a", 56);
-  // mudlogger unit (enterable)
+  b.label("DIRECTIONAL", 29.85, 3.9, 30, 3.4, 0.6, -Math.PI / 2, "#233a52", "#ffd24a", 52);
+  b.label("NO ENTRY\nDIRECTIONAL DRILLERS AT WORK", 29.85, 2.5, 30, 3.0, 1.0, -Math.PI / 2, "#7a1a14", "#ffffff", 30);
+  b.slab("red", 28.4, 0, 28.6, 28.5, 1.0, 28.7); b.slab("red", 28.4, 0, 31.3, 28.5, 1.0, 31.4); b.slab("yellow", 28.38, 0.8, 28.6, 28.52, 0.9, 31.4);   // a barrier rail across the front
+  // the toolpusher's trailer, moved out east to where the skytrak used to park
+  b.at(0, TP_DZ, () => {
+    if (kit) { kit.place("trailer", 12, 0, 43.8, RYAW); b.blocker(29.9, 0, 24, 33.7, 3.6, 36); }
+    else { b.slab("trailer", 30, 0.7, 24, 33.6, 3.6, 36, true); b.slab("steel", 29.9, 0, 24, 33.7, 0.7, 36, true); }
+    b.label("TOOLPUSHER", 29.85, 3.9, 30, 3.4, 0.6, -Math.PI / 2, "#233a52", "#ffd24a", 56);
+  });
+  // mudlogger unit: round the corner from the toolpusher, turned a quarter turn, door facing back toward the porta johns
+  const rotSave = b.rot; b.rot = 0;
+  b.at(-28, 25, () => {
   // (raw coords; world = +12, +10) a sealed fifth-wheel trailer: gooseneck up front on landing legs, tandem axles at the back, a locked door
   b.slab("trailer2", 38.7, 1.1, 7.0, 41.3, 3.5, 17.0, true);                          // body
   b.slab("dsteel", 38.6, 3.5, 6.9, 41.4, 3.6, 17.1);                                  // roof
@@ -1029,11 +1079,14 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("steel", 38.58, 2.0, 12.55, 38.66, 2.12, 12.75); b.slab("red", 38.55, 2.2, 12.5, 38.6, 2.3, 12.6); // handle and deadbolt
   b.slab("black", 38.62, 2.1, 9.2, 38.7, 2.8, 10.6); b.slab("black", 38.62, 2.1, 14.0, 38.7, 2.8, 15.0);    // dark windows
   b.slab("deck", 38.0, 0.0, 11.7, 38.6, 0.55, 12.7, true);                              // a stoop, for the knocking
-  spots.mudlog = rv(37.6 + CDX, 1.5, 12.2 + CDZ);   // just outside the door, in the same shifted camp frame as the trailer itself
+  spots.mudlog = v(21.4, 1.5, 47.2);   // just outside the door (world coordinates: the trailer is no longer in the camp's turned frame)
   b.label("MUD LOGGING\nLOCKED • KNOCK", 38.55, 3.1, 8.6, 2.0, 0.7, -Math.PI / 2, "#233a52", "#ffd24a", 40);
   b.label("NO ADMITTANCE\nSAMPLES IN PROGRESS", 38.55, 3.1, 14.6, 1.6, 0.6, -Math.PI / 2, "#7a1a14", "#ffffff", 34);
+  });
+  b.rot = rotSave;
   // safety/change room + water frac tanks
   // the safety trailer: you can walk in (the stand-down huddle happens in here), with benches, a whiteboard and a steps-and-door on the camp side
+  b.at(SAFE_DX, SAFE_DZ, () => {
   b.room({ x0: 37, z0: 20, x1: 43, z1: 28, y0: 0.7, h: 2.7, wall: "trailer", roof: "dsteel", floor: "dsteel", door: { side: "-x", c: 24, w: 1.1 } });
   b.slab("steel", 36.9, 0, 20, 43.1, 0.6, 28);
   b.slab("steel", 35.5, 0, 23.1, 36.2, 0.35, 24.9, true); b.slab("steel", 36.2, 0, 23.1, 36.95, 0.7, 24.9, true);
@@ -1043,10 +1096,11 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.label("SAFETY MEETING\nDON'T DIE.", 42.88, 2.3, 24, 4.2, 1.5, Math.PI / 2, "#e8e4d4", "#1d3a5a", 38);   // whiteboard on the back wall
   b.label("STOP WORK AUTHORITY", 37.12, 2.4, 21.6, 1.2, 0.5, -Math.PI / 2, "#1d5a30", "#ffffff", 22);
   });
+  });
   b.rot = 0;
   for (let i = 0; i < 2; i++) b.slab("tank", 38 + i * 4.2, 0.5, -34, 41.7 + i * 4.2, 3.2, -26, true);
   // porta johns
-  const PJX = 36.8, PJZ = -14;   // porta johns sit next to the trailers
+  const PJX = 28.2, PJZ = -48.8;   // porta johns sit right beside the toolpusher's trailer (at its east end)
   b.rot = RYAW;
   b.at(PJX, PJZ, () => { for (let i = 0; i < 2; i++) { const z = 28 + i * 1.4;
     b.slab(i === 0 ? "poly" : "tankgreen", 14.2, 0, z, 15.4, 2.4, z + 1.2, true); } });
@@ -1448,7 +1502,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const dsTex = new DynamicTexture("daysSign", { width: 512, height: 160 }, scene, true);
   const dsMat = new StandardMaterial("daysSignM", scene); dsMat.diffuseTexture = dsTex; dsMat.emissiveTexture = dsTex; dsMat.specularColor = Color3.Black(); dsMat.disableLighting = true;
   const dsPlane = MeshBuilder.CreatePlane("daysSign", { width: 5.0, height: 1.56 }, scene); dsPlane.material = dsMat; dsPlane.isPickable = false;
-  { const sp = rv(48.8, 3.15, 34); dsPlane.position.copyFrom(sp); dsPlane.rotation.y = 0; }
+  { const sp = rv(48.8 + SAFE_DX, 3.15, 34 + SAFE_DZ); dsPlane.position.copyFrom(sp); dsPlane.rotation.y = 0; }
   const setDaysSince = (n: number) => {
     const c = dsTex.getContext() as CanvasRenderingContext2D;
     c.fillStyle = "#101418"; c.fillRect(0, 0, 512, 160); c.strokeStyle = "#ffffff"; c.lineWidth = 8; c.strokeRect(6, 6, 500, 148);
@@ -1457,7 +1511,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     dsTex.update();
   };
   setDaysSince(142);
-  const huddle = { ...(() => { const p = rv(40 + CDX, 0.75, 24 + CDZ); return { x: p.x, y: 0.75, z: p.z }; })(), exit: (() => { const p = rv(33.5 + CDX, 0, 24 + CDZ); return { x: p.x, z: p.z }; })() };
+  const huddle = { ...(() => { const p = rv(40 + CDX + SAFE_DX, 0.75, 24 + CDZ + SAFE_DZ); return { x: p.x, y: 0.75, z: p.z }; })(), exit: (() => { const p = rv(33.5 + CDX + SAFE_DX, 0, 24 + CDZ + SAFE_DZ); return { x: p.x, z: p.z }; })() };
 
   return {
     spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update, setDaysSince, huddle, huddleHold, catwalk: catCtl,

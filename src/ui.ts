@@ -215,6 +215,24 @@ export class UI {
       c.save(); c.translate(S / 2 + tx * k, S / 2 + tz * k); c.rotate(Math.PI / 4);
       c.fillStyle = t.color; c.strokeStyle = "#fff"; c.lineWidth = 2; c.fillRect(-5, -5, 10, 10); c.strokeRect(-5, -5, 10, 10); c.restore();
     }
+    // compass rose round the rim: N / E / S / W and the diagonals turn with the map (north is toward the gate and the lease road, +z; east is to its right)
+    {
+      const cs = Math.cos(-yaw), sn = Math.sin(-yaw), R = S / 2 - 15;
+      const at = (dx: number, dz: number, r: number): [number, number] => [S / 2 + (dx * cs - dz * sn) * r, S / 2 + (dx * sn + dz * cs) * r];
+      c.save();
+      c.strokeStyle = "rgba(10,14,20,.75)"; c.lineWidth = 2; c.beginPath(); c.arc(S / 2, S / 2, R + 11, 0, Math.PI * 2); c.stroke();
+      for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2, dx = Math.sin(a), dz = -Math.cos(a), len = k % 4 === 0 ? 0 : k % 2 === 0 ? 9 : 5; if (!len) continue; const [x0, y0] = at(dx, dz, R + 11), [x1, y1] = at(dx, dz, R + 11 - len); c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); }
+      c.font = "bold 17px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+      for (const [lbl, dx, dz, col] of [["N", 0, -1, "#ff5a3d"], ["E", 1, 0, "#ffffff"], ["S", 0, 1, "#ffffff"], ["W", -1, 0, "#ffffff"]] as [string, number, number, string][]) {
+        const [x, y] = at(dx, dz, R);
+        c.fillStyle = "rgba(10,14,20,.72)"; c.beginPath(); c.arc(x, y, 12, 0, Math.PI * 2); c.fill();
+        c.fillStyle = col; c.fillText(lbl, x, y + 1);
+      }
+      // a little north pointer on the ring
+      const [nx, ny] = at(0, -1, R + 11), [bx, by] = at(0.18, -1, R + 3), [cx2, cy2] = at(-0.18, -1, R + 3);
+      c.fillStyle = "#ff5a3d"; c.beginPath(); c.moveTo(nx, ny); c.lineTo(bx, by); c.lineTo(cx2, cy2); c.closePath(); c.fill();
+      c.restore();
+    }
     // player arrow (always up)
     c.save(); c.translate(S / 2, S / 2); c.fillStyle = "#fff"; c.strokeStyle = "#111"; c.lineWidth = 2;
     c.beginPath(); c.moveTo(0, -9); c.lineTo(6, 7); c.lineTo(0, 3); c.lineTo(-6, 7); c.closePath(); c.fill(); c.stroke(); c.restore();

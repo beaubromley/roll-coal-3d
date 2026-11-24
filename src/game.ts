@@ -606,18 +606,18 @@ export class Game {
   /** the hydraulic catwalk: the ground station and the rig-floor remote are the same controls */
   openCatwalk(remote: boolean) {
     const c = this.rig.catwalk;
-    const status = () => `Trough: <b>${c.lowered ? "LOWERED onto the V-door ramp" : "RAISED, level"}</b> · Joint: <b>${{ idle: "none on the trough", kicking: "rolling in…", loaded: "loaded, ready to push", pushing: "riding up the ramp…" }[c.phase]}</b> · Delivered to the floor: <b>${c.delivered}</b>`;
+    const status = () => `Joint: <b>${{ idle: "none on the trough", kicking: "rolling in…", loaded: "loaded, ready to push", pushing: "riding up the ramp…" }[c.phase]}</b> · Delivered to the floor: <b>${c.delivered}</b>`;
     const p = this.open(`<div class="eyebrow">${remote ? "Rig floor remote" : "Catwalk · ground station"}</div><h2>HYDRAULIC CATWALK</h2>
-      <p>Kick arms roll a joint from the rack onto the trough. Lower the trough onto the V-door ramp. Then the pusher drives it up to the floor. ${remote ? "You're on the floor with the remote, so you can run it without a hand on the ground." : "You're on the ground at the station; the remote on the rig floor does the same thing."}</p>
+      <p>The kick arm rolls a joint from the rack onto the trough. The pusher drives it up the ramp to the V-door. ${remote ? "You're on the floor with the remote, so you can run it without a hand on the ground." : "You're on the ground at the station; the remote on the rig floor does the same thing."}</p>
       <p id="cwStatus" class="hint">${status()}</p>
-      <div class="btns"><button class="b" data-a="kick">1 · KICK A JOINT ONTO THE TROUGH</button><button class="b alt" data-a="lift">2 · RAISE / LOWER THE TROUGH</button><button class="b green" data-a="push">3 · PUSH TO THE V-DOOR</button></div>
+      <div class="btns"><button class="b" data-a="kick">1 · ROLL A JOINT ONTO THE TROUGH</button><button class="b green" data-a="push">2 · PUSH TO THE V-DOOR</button></div>
       <div class="btns"><button class="b alt" data-close>Close</button></div>`, { live: true });
     this.closeBtn(p);
     const say = (m: string | null) => { if (m) this.ui.toast("CATWALK", m); };
     p.querySelectorAll<HTMLButtonElement>("[data-a]").forEach((b) => b.onclick = () => {
       this.sfx.click();
       const a = b.dataset.a;
-      if (a === "kick") say(c.kick()); else if (a === "lift") { c.toggleLift(); this.ui.toast("CATWALK", c.lowered ? "Lowering the trough onto the ramp." : "Raising the trough."); } else if (a === "push") say(c.push());
+      if (a === "kick") say(c.kick()); else if (a === "push") say(c.push());
     });
     (this.ui as any).panelTick = () => { const e = p.querySelector<HTMLElement>("#cwStatus"); if (e) e.innerHTML = status(); };
   }
@@ -1393,7 +1393,7 @@ export class Game {
     }
     if (this.started && !this.paused && !this.astMode) this.outskirts.update(Math.min(dt, 0.1));
     { const ev = this.rig.catwalk.takeEvent(); if (ev === "loaded") this.ui.toast("CATWALK", "Joint on the trough."); else if (ev === "delivered") { this.sfx.good(); this.ui.toast("JOINT ON THE FLOOR", "Right at the V-door. The floor hands thank you."); } }
-    this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen);
+    this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen && this.finale.mode !== "launch" && this.finale.mode !== "drive");
   }
 
   private beams: Mesh[] = [];

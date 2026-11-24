@@ -302,14 +302,14 @@ export class Sim {
   // ---- driller's-method circulation with a manual choke ----
   private stepKill(dt: number) {
     const s = this.s, k = s.kill;
-    const total = 71; // sim minutes to circulate bottoms-up: 71 s at 1x, exactly a third of the original ~214 s
+    const total = 35.5; // bottoms-up circulation takes about 36 s at 1x (half of what it was)
     k.progress = Math.min(1, k.progress + dt / total);
     const p = k.progress;
     const icp = s.kick.sidpp + k.scr, fcp = k.scr * (s.mw > 0 ? (k.kmw / Math.max(1, s.mw)) : 1);
     k.dppTarget = p < 0.5 ? icp + (fcp - icp) * (p / 0.5) : fcp;
     k.cpIdeal = s.kick.sicp * (1 + 0.28 * Math.sin(Math.PI * p)) - s.kick.sidpp * Math.min(1, p / 0.5) * 0.85;
     // disturbance: gas expansion makes casing pressure wander
-    this.dist += (Math.random() - 0.5) * 0.9 * dt;
+    this.dist += (Math.random() - 0.5) * 1.8 * dt;   // twice as erratic
     this.dist *= 1 - 0.02 * dt;
     const d = this.dist * 65;
     // the choke setting that holds the right bottom-hole pressure moves as the gas comes up and the kill mud goes down: leaving the choke alone drifts out of the band

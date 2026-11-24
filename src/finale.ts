@@ -262,7 +262,8 @@ export class Finale {
     const g2 = this.groundY(d.z);
     if (g2 > -50 && d.y <= g2 && d.vy <= 0) {
       if (prevY >= g2 - 0.15) { if (d.vy < -13) { g.ui.toast("HARD LANDING", "The Armadillo takes a beating"); this.shakeAmt = 0.4; } d.y = g2; d.vy = 0; }
-      else { d.y = -47; this.shakeAmt = 0.6; }                                   // came in below the lip: that is the canyon wall
+      else if (d.z >= this.GAP1 - 0.5 && d.z < this.GAP1 + 8) { d.y = -47; this.shakeAmt = 0.6; }   // came in below the far lip: that is the canyon wall
+      else { d.y = g2; d.vy = 0; }                                               // anywhere else (the kickers) you just touch down on the slope
     }
     if (d.y < -46) {
       g.ui.toast("INTO THE CANYON", "Back to the start of the run-up. Hit it faster and use the thrusters.");

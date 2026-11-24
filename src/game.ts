@@ -1148,6 +1148,8 @@ export class Game {
     else if (s.loss.active) alert = "LOST CIRCULATION";
     else if (s.fuel <= 0) alert = "BLACKOUT — OUT OF DIESEL";
     else if (s.needTrip && s.mode !== "tripping") alert = "BIT DEAD — TRIP REQUIRED";
+    else if (s.pit < 120 && (s.mode === "drilling" || s.mode === "connection")) alert = "PITS RUN DRY — DRILLING STOPPED · TRANSFER FROM THE FRAC TANKS";
+    else if (this.active?.m.id === "armageddon" && this.active.i === 0 && s.mode === "drilling" && s.wobTarget <= 0 && !s.auto.on && s.depth < WELL.td - 1) alert = "NO WEIGHT ON BIT — SET IT AT THE DRILLER'S CONSOLE (OR ENGAGE THE AUTODRILLER)";
     this.ui.setAlert(alert);
     this.sfx.alarmTick(dt, !!(k.active && !k.shut) || s.fuel <= 0);
 

@@ -74,9 +74,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // ---------- materials ----------
   const ground = new StandardMaterial("ground", scene);
-  ground.diffuseTexture = noiseTex(scene, "#b59d78", ["#a58b66", "#c8b28c", "#8f7852", "#d6c4a0"], 5000, 256, 40);
+  ground.diffuseTexture = noiseTex(scene, "#b59d78", ["#a58b66", "#c8b28c", "#8f7852", "#d6c4a0"], 5000, 256, 267);   // same tile size on a ground six times wider
   ground.specularColor = Color3.Black();
-  const groundMesh = MeshBuilder.CreateGround("ground", { width: 900, height: 900 }, scene);
+  const groundMesh = MeshBuilder.CreateGround("ground", { width: 6000, height: 6000 }, scene);   // wide enough that its edge is past the far plane and lost in the fog (no line on the horizon)
   groundMesh.material = ground; groundMesh.receiveShadows = true;
 
   const padMat = new StandardMaterial("pad", scene);

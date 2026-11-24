@@ -1,6 +1,6 @@
 import {
   Scene, Engine, Camera, FreeCamera, Vector3, Color3, Color4, MeshBuilder, Mesh, StandardMaterial, DynamicTexture, Texture,
-  ParticleSystem, PointLight, HemisphericLight, DirectionalLight,
+  ParticleSystem, PointLight, HemisphericLight, DirectionalLight, VertexBuffer,
 } from "@babylonjs/core";
 import type { Rig, RigFrame } from "./rig";
 
@@ -75,8 +75,12 @@ export class TitleScene {
       const mat = new StandardMaterial(name + "M", this.scene);
       mat.diffuseTexture = tex; mat.useAlphaFromDiffuseTexture = true; mat.disableLighting = true; mat.backFaceCulling = false; mat.fogEnabled = false;
       mat.emissiveColor = new Color3(0.1, 0.1, 0.14); mat.diffuseColor = Color3.Black();
-      const mesh = MeshBuilder.CreateDisc(name, { radius, tessellation: 48, sideOrientation: Mesh.DOUBLESIDE }, this.scene);
-      mesh.rotation.x = Math.PI / 2; mesh.position.y = y; mesh.material = mat; mesh.isPickable = false; mesh.alwaysSelectAsActiveMesh = true;
+      // a grid whose vertex alpha fades to nothing toward the rim, so the cloud layer has no visible edge (a hard-edged disc showed up as a line across the sky)
+      const mesh = MeshBuilder.CreateGround(name, { width: radius * 2, height: radius * 2, subdivisions: 56, updatable: true }, this.scene);
+      const gp = mesh.getVerticesData(VertexBuffer.PositionKind)!, cols: number[] = [];
+      for (let i = 0; i < gp.length; i += 3) { const r = Math.hypot(gp[i], gp[i + 2]) / radius, s = Math.max(0, Math.min(1, (r - 0.45) / 0.45)); cols.push(1, 1, 1, 1 - s * s * (3 - 2 * s)); }
+      mesh.setVerticesData(VertexBuffer.ColorKind, cols); mesh.hasVertexAlpha = true;
+      mesh.position.y = y; mesh.material = mat; mesh.isPickable = false; mesh.alwaysSelectAsActiveMesh = true;
       this.clouds.push({ mesh, tex, mat, speed });
     };
     make("cloudLow", 78, 700, 0.006, 420); make("cloudHigh", 120, 900, -0.003, 360);

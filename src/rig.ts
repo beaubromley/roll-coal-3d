@@ -486,7 +486,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.beam("dsteel", v(1.0, F + 0.6, -2.4), v(0.82, MH + 1.6, -0.7), 0.05);                  // dead line
 
   // ---- dynamic: top drive, block, cables, string, hose ----
-  const td = node("topdrive", scene, 0, F + 20, -0.3); td.parent = rigRoot;
+  const td = node("topdrive", scene, 0, F + 20, 0); td.parent = rigRoot;   // centred on the well: the quill sits right over the string
   const tdSpin = node("tdspin", scene, 0, -0.75, 0); tdSpin.parent = td;       // everything below the gearbox that turns with the string
   {
     const put = (m: Mesh, mat: string, x: number, y: number, z: number, parent: TransformNode = td) => { m.material = b.getMat(mat); m.parent = parent; m.position.set(x, y, z); return m; };

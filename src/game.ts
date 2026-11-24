@@ -757,7 +757,7 @@ export class Game {
       const p = this.player, onFoot = !this.veh.riding;
       localStorage.setItem(Game.SAVE_KEY, JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
         approval: this.approval, morale: this.morale, incidents: this.incidents, flags, depthLog: this.depthLog, done: [...this.doneIds], realT: this.realT,
-        ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled() : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null }));
+        ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled(false) : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null }));
     } catch { /* storage full or blocked */ }
   }
   load(): boolean {
@@ -772,7 +772,7 @@ export class Game {
       this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));
       this.missionNo = this.doneIds.size;
       this.rig.setWindmill(!this.doneIds.has("windmill"));
-      this.player.body.setPPE(!!d.ppe);
+      this.player.body.setPPE(!!d.ppe || this.doneIds.has("ppe"));   // finishing the gate sign-in always means you have your PPE
       if (d.pos) this.player.teleport(d.pos[0], d.pos[1], d.pos[2], d.pos[3]);
       return true;
     } catch { return false; }

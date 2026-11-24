@@ -44,6 +44,8 @@ export class Human {
   meshes: Mesh[] = [];
   /** hard hat, vest, safety glasses: toggled together */
   ppe: Mesh[] = [];
+  /** the hair cap: hidden under a hard hat so strands never poke through it */
+  hairCap: Mesh | null = null;
   phase = Math.random() * 6;
   walking = false;
   /** sitting pose (thighs forward, knees bent, hands on the controls) */
@@ -79,7 +81,7 @@ export class Human {
     const buckle = MeshBuilder.CreateBox("bk", { width: 0.07, height: 0.05, depth: 0.02 }, scene);
     buckle.position.set(0, 0.82, 0.155); mk(buckle, "#b8b8b8", this.root);
     if (o.hat) {
-      const hat = MeshBuilder.CreateSphere("hat", { diameter: 0.31, segments: 16, slice: 0.55 }, scene);
+      const hat = MeshBuilder.CreateSphere("hat", { diameter: 0.335, segments: 16, slice: 0.56 }, scene);
       hat.position.y = 1.68; this.ppe.push(mk(hat, o.hat, this.root));
       const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.38, height: 0.025, tessellation: 20 }, scene);
       brim.position.y = 1.68; this.ppe.push(mk(brim, o.hat, this.root));
@@ -310,7 +312,7 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
-  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); }
+  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); if (this.hairCap) this.hairCap.setEnabled(!on); }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {
@@ -330,7 +332,7 @@ export class Human {
     };
     // head: hair, ears, brows, mouth, stubble
     const hair = MeshBuilder.CreateSphere("hair", { diameter: 0.268, segments: 12, slice: 0.58 }, sc);
-    hair.position.set(0, 1.645, -0.012); hair.scaling.set(0.92, 1, 1.02); add(hair, "#3b2a1c");
+    hair.position.set(0, 1.645, -0.012); hair.scaling.set(0.92, 1, 1.02); add(hair, "#3b2a1c"); this.hairCap = hair;
     box(0.24, 0.07, 0.05, 0, 1.6, -0.1, "#3b2a1c");                       // hair down the back of the neck
     for (const sx of [-1, 1]) {
       ball(0.05, sx * 0.118, 1.615, 0.0, skin, 0.5, 1, 0.8);               // ears

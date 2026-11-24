@@ -239,8 +239,8 @@ export class Human {
     ball(0.034, skin, this.root, 0, HY - 0.025, 0.114, 0.85, 1.3, 1.25, 10);                // nose
     { const mo = MeshBuilder.CreateBox("mo", { width: 0.05, height: 0.008, depth: 0.012 }, sc); mo.position.set(0, HY - 0.074, 0.1); mk(mo, "#8a4a3a"); }
     {   // hair: a front cap with a clean hairline above the brows, and the back half of the head covered down to the nape, both a hair's width outside the skull
-      const cap = MeshBuilder.CreateSphere("hair", { diameter: 1, segments: 28, slice: 0.5 }, sc);
-      cap.scaling.set(0.222, 0.27, 0.246); cap.position.set(0, HY + 0.064, 0); this.hairCap = mk(cap, hairCol);
+      const cap = MeshBuilder.CreateSphere("hair", { diameter: 1, segments: 28, slice: 0.256 }, sc);   // concentric with the skull, cut off at the hairline
+      cap.scaling.set(0.216, 0.262, 0.238); cap.position.set(0, HY, 0); this.hairCap = mk(cap, hairCol);
       const back = MeshBuilder.CreateSphere("hairback", { diameter: 1, segments: 28, slice: 0.5 }, sc);
       back.scaling.set(0.216, 0.232, 0.236); back.position.set(0, HY + 0.014, -0.002); back.rotation.x = -Math.PI / 2; mk(back, hairCol);
       this.hairBack = back;
@@ -254,13 +254,12 @@ export class Human {
     if (o.hat) for (const p of hardHatParts(sc)) { p.mesh.position.set(p.x, HY + 0.072 + p.y, p.z); ppeAdd(mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root)); }
     // safety glasses: one clear wraparound lens that follows the curve of the face, with a dark brow bar along the top edge and temple arms back to the ears
     {
-      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.45, 0.72, 0.9); gm.emissiveColor = new Color3(0.1, 0.22, 0.3); gm.alpha = 0.6; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
+      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.1, 0.17, 0.24); gm.emissiveColor = new Color3(0.02, 0.05, 0.08); gm.alpha = 0.82; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
       const arcMesh = (h: number, dy: number, sx: number, sz: number, arc: number) => {
         const c = MeshBuilder.CreateCylinder("lensarc", { diameter: 1, height: h, tessellation: 48, arc, enclose: false, sideOrientation: Mesh.DOUBLESIDE }, sc);
         c.scaling.set(sx, 1, sz); c.position.set(0, HY + dy, 0); c.rotation.y = Math.PI + (Math.PI / 2 - arc * Math.PI); return c;   // centre the arc on the face
       };
       const lens = arcMesh(0.036, 0.008, 0.222, 0.246, 0.3); lens.material = gm; ppeAdd(lens);
-      ppeAdd(mk(arcMesh(0.006, -0.011, 0.224, 0.248, 0.3), "#15171a"));      // thin frame along the bottom edge
       ppeAdd(mk(arcMesh(0.011, 0.0285, 0.224, 0.248, 0.3), "#15171a"));      // brow bar
       for (const s of [-1, 1]) {
         const tp = MeshBuilder.CreateBox("temple", { width: 0.006, height: 0.01, depth: 0.1 }, sc); tp.position.set(s * 0.1, HY + 0.018, -0.012); tp.rotation.y = 0; ppeAdd(mk(tp, "#15171a"));

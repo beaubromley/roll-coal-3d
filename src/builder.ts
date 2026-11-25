@@ -284,7 +284,11 @@ export class Builder {
     tex.anisotropicFilteringLevel = 16;
     const ctx = tex.getContext() as CanvasRenderingContext2D;
     ctx.fillStyle = bg; ctx.fillRect(0, 0, TW, TH);
-    ctx.strokeStyle = fg; ctx.lineWidth = 14; ctx.strokeRect(12, 12, TW - 24, TH - 24);
+    { const gr = ctx.createLinearGradient(0, 0, 0, TH); gr.addColorStop(0, "rgba(255,255,255,0.16)"); gr.addColorStop(0.5, "rgba(255,255,255,0)"); gr.addColorStop(1, "rgba(0,0,0,0.2)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, TW, TH); }
+    ctx.strokeStyle = fg; ctx.lineWidth = 12; ctx.strokeRect(10, 10, TW - 20, TH - 20);
+    ctx.globalAlpha = 0.45; ctx.lineWidth = 3; ctx.strokeRect(26, 26, TW - 52, TH - 52); ctx.globalAlpha = 0.85;
+    ctx.fillStyle = fg; for (const [rx, ry] of [[22, 22], [TW - 22, 22], [22, TH - 22], [TW - 22, TH - 22]]) { ctx.beginPath(); ctx.arc(rx, ry, 6, 0, 6.3); ctx.fill(); }
+    ctx.globalAlpha = 1;
     const px = Math.round(fontPx * k * 1.12);
     ctx.fillStyle = fg; ctx.font = `bold ${px}px Arial, Helvetica, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const lines = text.split("\n");
@@ -305,6 +309,22 @@ export class Builder {
     p.material = mat; p.parent = root; p.position.z = -0.012;
     const back = MeshBuilder.CreatePlane("labelB", { width: w, height: h }, this.scene);
     back.material = mat; back.parent = root; back.position.z = 0.012; back.rotation.y = Math.PI;
+    return p;
+  }
+
+  /** a sign you paint yourself: draw(ctx, w, h) gets a canvas at the sign's aspect */
+  art(draw: (c: CanvasRenderingContext2D, w: number, h: number) => void, x: number, y: number, z: number, w: number, h: number, rotY: number) {
+    x += this.ox; z += this.oz;
+    [x, z] = this.tx(x, z); rotY += this.rot;
+    const TW = 1024, TH = Math.max(64, Math.round(TW * (h / w)));
+    const tex = new DynamicTexture("art", { width: TW, height: TH }, this.scene, true);
+    tex.anisotropicFilteringLevel = 16;
+    draw(tex.getContext() as CanvasRenderingContext2D, TW, TH); tex.update();
+    const mat = new StandardMaterial("artm", this.scene);
+    mat.diffuseTexture = tex; mat.emissiveTexture = tex; mat.specularColor = Color3.Black(); mat.emissiveColor = new Color3(0.8, 0.8, 0.8);
+    const root = new TransformNode("art", this.scene); root.position.set(x, y, z); root.rotation.y = rotY;
+    const p = MeshBuilder.CreatePlane("art", { width: w, height: h }, this.scene); p.material = mat; p.parent = root; p.position.z = -0.012;
+    const back = MeshBuilder.CreatePlane("artB", { width: w, height: h }, this.scene); back.material = mat; back.parent = root; back.position.z = 0.012; back.rotation.y = Math.PI;
     return p;
   }
 

@@ -62,15 +62,15 @@ function slideContract(c: Ctx, t?: number) {
   R(c, "#000000", 30, 8, 134, 96); R(c, "#f4efe1", 27, 5, 134, 96); R(c, "#e4dcc6", 27, 99, 134, 2);   // the paper
   R(c, "#222", 36, 14, 70, 3);
   for (let y = 22; y < 40; y += 4) R(c, "#8a8a8a", 36, y, y % 8 ? 96 : 112, 1);
-  c.save(); c.textBaseline = "alphabetic"; c.font = "bold 15px Arial, Helvetica, sans-serif"; c.fillStyle = "#14161c";
-  const wA = c.measureText("A").width, wl = c.measureText("l").width, x0 = 36, y0 = 62;
-  if (t === undefined) c.fillText("Al Drilling, LLC", x0, y0);
+  c.save(); c.textBaseline = "alphabetic"; c.font = "bold 11.5px Arial, Helvetica, sans-serif"; c.fillStyle = "#14161c";   // small enough for the whole name to sit on the paper
+  const wBig = c.measureText("Big ").width, wA = c.measureText("A").width, wl = c.measureText("l").width, x0 = 36, y0 = 62;
+  if (t === undefined) c.fillText("Big Al Drilling, LLC", x0, y0);
   else {
-    c.fillText("A", x0, y0); c.fillText(" Drilling, LLC", x0 + wA + wl, y0);
-    const gx = x0 + wA, k = Math.max(0, Math.min(1, (t - 0.45) / 0.35));        // 0 = lowercase l, 1 = capital I
+    c.fillText("Big A", x0, y0); c.fillText(" Drilling, LLC", x0 + wBig + wA + wl, y0);
+    const gx = x0 + wBig + wA, k = Math.max(0, Math.min(1, (t - 0.45) / 0.35));        // 0 = lowercase l, 1 = capital I
     const col = k > 0 ? "#b3231c" : "#14161c";
-    R(c, col, gx + wl / 2 - 1.3, y0 - 11, 2.6, 11);                              // the stem
-    const sw = 6.4 * k; if (sw > 0.4) { R(c, col, gx + wl / 2 - sw / 2, y0 - 11, sw, 1.5); R(c, col, gx + wl / 2 - sw / 2, y0 - 1.5, sw, 1.5); }   // serifs grow in
+    R(c, col, gx + wl / 2 - 1, y0 - 8.5, 2, 8.5);                              // the stem
+    const sw = 5 * k; if (sw > 0.4) { R(c, col, gx + wl / 2 - sw / 2, y0 - 8.5, sw, 1.3); R(c, col, gx + wl / 2 - sw / 2, y0 - 1.3, sw, 1.3); }   // serifs grow in
   }
   c.restore();
   R(c, "#222", 36, 66, 112, 1);
@@ -81,7 +81,7 @@ function slideContract(c: Ctx, t?: number) {
     if (t < 0.5) { R(c, "rgba(79,214,255,0.55)", sx, 44, 2, 24); R(c, "rgba(79,214,255,0.12)", 36, 44, sx - 36, 24); }
     c.strokeStyle = "#4fd6ff"; c.lineWidth = 1; c.strokeRect(36.5, 44.5, 112, 24);
     R(c, "#0b0e14", 96, 20, 62, 20); R(c, "#4fd6ff", 96, 20, 62, 1);
-    c.save(); c.font = "bold 6px monospace"; c.fillStyle = "#4fd6ff"; c.fillText("AI IMAGE READER", 99, 27); c.font = "bold 9px Arial, Helvetica, sans-serif"; c.fillStyle = t > 0.7 ? "#ff5a4a" : "#8fa7b8"; c.fillText(t > 0.7 ? "\"AI Drilling\"" : "reading…", 99, 37); c.restore();
+    c.save(); c.font = "bold 6px monospace"; c.fillStyle = "#4fd6ff"; c.fillText("AI IMAGE READER", 99, 27); c.font = "bold 7.5px Arial, Helvetica, sans-serif"; c.fillStyle = t > 0.7 ? "#ff5a4a" : "#8fa7b8"; c.fillText(t > 0.7 ? "\"Big AI Drilling\"" : "reading…", 99, 37); c.restore();
   }
   // signature and approval stamp
   R(c, "#222", 40, 90, 50, 1); R(c, "#101c4a", 42, 85, 3, 4); R(c, "#101c4a", 45, 83, 5, 2); R(c, "#101c4a", 50, 85, 4, 4); R(c, "#101c4a", 54, 84, 6, 2);
@@ -136,8 +136,8 @@ function slideYou(c: Ctx) {
 
 const SLIDES: { draw: (c: Ctx, t?: number) => void; text: string; anim?: number }[] = [
   { draw: slideBoardroom, text: "Houston. A brand-new oil and gas operator. Every executive is an AI agent." },
-  { draw: (c) => slideContract(c), text: "They wanted AI for everything, so they had their AI scan the contract to pick a drilling contractor…" },
-  { draw: (c, t) => slideContract(c, t ?? 0), anim: 2600, text: "…but the AI image reader can't tell a lowercase l from a capital I. It read \"AI Drilling,\" and they signed. The real name is Al Drilling. Nobody checked." },
+  { draw: (c) => slideContract(c), text: "They wanted AI for everything, so they had their AI scan the contract bids to pick a drilling contractor…" },
+  { draw: (c, t) => slideContract(c, t ?? 0), anim: 2600, text: "…but the AI image reader can't tell a lowercase l from a capital I. It read \"Big AI Drilling,\" and they signed. The real name is Big Al Drilling. Nobody checked." },
   { draw: slideRig, text: "Rig 107, west Texas. A real crew, a real well, and executives who answer every problem with \"Great insight!\"" },
   { draw: slideYou, text: "You're the Company Man. Keep it all together." },
 ];

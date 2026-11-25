@@ -1165,7 +1165,7 @@ export class Game {
     $("endstats").innerHTML = rows.map((r) => `<div class="row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
     $("endtitle").innerHTML = over <= 0 ? `Under <em>AFE</em>` : `Planet <em>Saved</em>`;
     $("end").style.display = "grid"; this.player.unlock(); this.started = false;
-    void setupBoard({ score, grade, depth: s.stats.feetDrilled, hours: Math.floor(hours), cost: s.cost, approval: this.approval, incidents: this.incidents });
+    void setupBoard({ score, grade, depth: s.stats.feetDrilled, hours: Math.floor(hours), cost: s.cost, approval: this.approval, incidents: this.incidents, signature: this.flags.sig });
   }
 
   // ---------- mission engine ----------

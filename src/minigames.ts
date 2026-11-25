@@ -87,7 +87,7 @@ export class Mini {
       ctx.fillStyle = "#222"; ctx.font = "bold 17px Georgia, serif"; ctx.textAlign = "left";
       ctx.fillText("SITE VISITOR / CONTRACTOR SIGN-IN SHEET", 24, 32);
       ctx.font = "13px Georgia, serif"; ctx.fillStyle = "#444";
-      ctx.fillText("Al Drilling · Rig 107 · I have read the site safety rules and agree to follow them.", 24, 56);
+      ctx.fillText("Big Al Drilling · Rig 107 · I have read the site safety rules and agree to follow them.", 24, 56);
       ctx.fillText("Name: ____COMPANY MAN____      Date: ________      Badge #: 0001", 24, 90);
       ctx.fillStyle = "rgba(180,40,30,.85)"; ctx.font = "bold 22px Georgia, serif"; ctx.fillText("X", 20, SIG.y + SIG.h - 14);
       ctx.strokeStyle = "#222"; ctx.lineWidth = 1.5;
@@ -115,10 +115,20 @@ export class Mini {
     const pt = (e: PointerEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }; };
     cv.onpointerdown = (e) => { cv.setPointerCapture(e.pointerId); cur = [pt(e)]; strokes.push(cur); refresh(); e.preventDefault(); };
     cv.onpointermove = (e) => { if (!cur) return; cur.push(pt(e)); paper(); };
+    /** keep the signature (not the initials) from the first sheet of the run, as a small transparent PNG: it goes on the high-score board */
+    const saveSig = () => {
+      if (this.g.flags.sig) return;
+      try {
+        const off = document.createElement("canvas"); off.width = 360; off.height = 90; const o = off.getContext("2d")!;
+        o.strokeStyle = "#101c4a"; o.lineWidth = 2.6; o.lineCap = "round"; o.lineJoin = "round"; o.translate(-(SIG.x - 10), -(SIG.y - 20));
+        for (const s of strokes) { if (s[0].x >= INI.x - 10) continue; o.beginPath(); s.forEach((q, i) => (i ? o.lineTo(q.x, q.y) : o.moveTo(q.x, q.y))); if (s.length === 1) o.lineTo(s[0].x + 0.1, s[0].y); o.stroke(); }
+        this.g.flags.sig = off.toDataURL("image/png");
+      } catch { /* a missing signature is not the end of the world */ }
+    };
     let finishing = false;
     const finish = () => {
       if (finishing) return; const st = stats(); if (!(st.sigLen > 70 && st.iniLen > 18)) return;
-      finishing = true;                                         // signed and initialled: hand it back automatically
+      finishing = true; saveSig();                              // signed and initialled: hand it back automatically
       const score = clamp(0.15 + 0.85 * ((st.sigIn + st.iniIn) / 2) ** 1.5, 0, 1);
       this.later(() => this.end(done, { score, skipped: false }, score >= 0.75 ? "Neat. Roy actually nods." : score >= 0.4 ? "Legible enough." : "That's… all over the page.", 900), 450);
     };
@@ -127,6 +137,7 @@ export class Mini {
     p.querySelector<HTMLButtonElement>("#sgClear")!.onclick = () => { strokes = []; cur = null; refresh(); };
     p.querySelector<HTMLButtonElement>("#sgDone")!.onclick = () => {
       const st = stats(); if (!(st.sigLen > 70 && st.iniLen > 18)) return;
+      saveSig();
       // neat = stayed on the line / in the box
       const score = clamp(0.15 + 0.85 * ((st.sigIn + st.iniIn) / 2) ** 1.5, 0, 1);
       this.end(done, { score, skipped: false }, score >= 0.75 ? "Neat. Roy actually nods." : score >= 0.4 ? "Legible enough." : "That's… all over the page.");

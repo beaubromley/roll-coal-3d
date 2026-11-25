@@ -4,6 +4,7 @@ import {
 } from "@babylonjs/core";
 import { Builder, AABB, node, pushOutXZ } from "./builder";
 import { RYAW, rpos, rv } from "./rigxf";
+import { drawBigAlLogo, drawBigAlBand } from "./logo";
 import { Human } from "./npcs";
 import type { Kit } from "./models";
 import { corrugated, woodGrain, DetailTex } from "./textures";
@@ -334,9 +335,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.label("DRILLER", 4.8, F + 2.6, 1.58, 1.6, 0.4, Math.PI, "#233a52", "#ffd24a", 60);
   // company wrap on the outside walls: a dark band with the rig name
   const wrapBg = "#14253a", wrapFg = "#f4c04a";
-  b.label("AL DRILLING RIG 107", 4.8, F + 0.52, -5.98, 4.0, 0.78, 0, wrapBg, wrapFg, 62);
-  b.label("AL DRILLING RIG 107", 6.98, F + 0.52, -2.2, 7.0, 0.78, Math.PI / 2, wrapBg, wrapFg, 62);
-  b.label("AL DRILLING\nRIG 107", 3.6, F + 0.52, 1.58, 1.9, 0.78, Math.PI, wrapBg, wrapFg, 42);
+  void wrapBg; void wrapFg;
+  b.art((c, w, h) => drawBigAlBand(c, w, h), 4.8, F + 0.52, -5.98, 4.0, 0.78, 0);
+  b.art((c, w, h) => drawBigAlBand(c, w, h), 6.98, F + 0.52, -2.2, 7.0, 0.78, Math.PI / 2);
+  b.art((c, w, h) => drawBigAlLogo(c, w, h, { rig: true, motto: false }), 3.6, F + 0.52, 1.58, 1.9, 0.78, Math.PI);
 
   // ---- doghouse (enterable) ----
   b.room({ x0: -6.0, z0: -5.8, x1: -2.6, z1: -2.4, y0: F + 0.025, h: 2.575, wall: "tan", roof: "dsteel", floor: "dsteel",
@@ -1170,7 +1172,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.label("PPE REQUIRED\nHARD HAT • FRC\nGLASSES • GLOVES", 2.4, 2.25, 95.5, 2.2, 1.5, Math.PI, "#7a1a14", "#ffffff", 40);
   for (const x of [1.45, 3.35]) b.cyl("dsteel", x, 1.5, 95.42, 0.12, 3.0, { tess: 6 });
   b.beam("dsteel", v(1.3, 3.0, 95.42), v(3.5, 3.0, 95.42), 0.08);
-  b.label("AL DRILLING • RIG 107\nAUTHORIZED PERSONNEL", -5.0, 3.0, 95.5, 3.2, 1.0, Math.PI, "#233a52", "#ffd24a", 40);
+  b.art((c, w, h) => drawBigAlLogo(c, w, h, { rig: true }), -5.0, 3.1, 95.5, 3.4, 1.7, Math.PI);
+  b.label("AUTHORIZED PERSONNEL ONLY", -5.0, 1.95, 95.5, 3.4, 0.4, Math.PI, "#233a52", "#ffd24a", 34);
   for (const x of [-6.45, -3.55]) b.cyl("dsteel", x, 1.8, 95.42, 0.14, 3.6, { tess: 6 });
   b.beam("dsteel", v(-6.6, 3.55, 95.42), v(-3.4, 3.55, 95.42), 0.08);
   b.beam("dsteel", v(-6.6, 2.45, 95.42), v(-3.4, 2.45, 95.42), 0.08);

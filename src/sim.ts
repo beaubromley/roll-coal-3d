@@ -103,6 +103,7 @@ export class Sim {
   private dist = 0;
   /** ROP multiplier from the directional driller: sliding and oscillating cost penetration rate */
   ropMul = 1;
+  private ropN = 0;   // a slow random wobble on the penetration rate
   /** bit bounce (0..1): too much weight for the rock sets the string and the motor hammering; shows on the recorder and in the diff pressure and torque */
   bounce = 0; private bph = 0;
   /** autodriller: one PI loop per limit (ROP, diff, torque). Each holds the WOB that parameter would allow; the weight applied is the lowest of those and the WOB set point. */
@@ -290,6 +291,9 @@ export class Sim {
         if (s.motor <= 0 && !s.needTrip) { s.needTrip = true; this.events.push({ type: "motorDead" }); }
         let rop = eff > 0 ? (eff * 6) / f.hardness : 0;
         rop = Math.min(600, rop * fac * this.ropMul);
+        this.ropN = this.ropN * 0.93 + (Math.random() - 0.5) * 0.11;
+        if (s.auto.on && s.auto.limit === "ROP") rop = Math.min(rop, s.auto.rop);   // held at the limit: dead flat
+        else rop *= 1 + this.ropN * (1 + this.bounce);                                 // otherwise it wanders around with the rock and the bit
         if (s.needTrip || s.fuel <= 0) rop = 0;
         s.rop = rop;
         const dd = (rop / 60) * dt;

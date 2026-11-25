@@ -1,12 +1,13 @@
 import { Scene, DynamicTexture } from "@babylonjs/core";
-import { drawRecorder, drawAutoBars, type AutoView } from "./recorder";
+import { drawAutoBars, type AutoView } from "./recorder";
+import { formationAt } from "./sim";
 import { drawDd } from "./ddscreens";
 import type { Dd } from "./dd";
 
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
   depth: number; wob: number; rop: number; spp: number; flow: number; pit: number; mw: number; mode: string;
-  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number;
+  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number;
 }
 
 export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac";
@@ -24,7 +25,7 @@ export class Screens {
   constructor(private scene: Scene) {}
 
   make(kind: ScreenKind, mirror = false): DynamicTexture {
-    const w = kind === "edr" ? 640 : W, h = kind === "edr" ? 364 : H;   // the EDR wall TV is big enough to deserve real resolution
+    const w = kind === "edr" || kind === "trends" ? 640 : W, h = kind === "edr" || kind === "trends" ? 364 : H;   // the EDR wall TV is big enough to deserve real resolution
     const tex = new DynamicTexture("scr_" + kind + this.list.length, { width: w, height: h }, this.scene, true);
     tex.anisotropicFilteringLevel = 8;
     const ctx = tex.getContext() as CanvasRenderingContext2D;
@@ -33,14 +34,14 @@ export class Screens {
   }
 
   update(d: ScreenData) {
-    if (d.t - lastHist > 0.5) {
+    if (d.t - lastHist > 0.25) {
       lastHist = d.t;
       push(hist.rop, d.rop); push(hist.wob, d.wob); push(hist.spp, d.spp);
       push(hist.gr, 70 + 35 * Math.sin(d.depth / 90) + 14 * Math.sin(d.depth / 17) + (Math.random() - 0.5) * 12);
       push(hist.res, 8 + 5 * Math.sin(d.depth / 130 + 1) + (Math.random() - 0.5) * 2);
       pushEdr(d);
     }
-    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(s.w, 0); c.scale(-1, 1); } if (s.kind === "edr") drawEdr(c, d, s.w, s.h); else draw(s.kind, c, d); c.restore(); s.tex.update(); }
+    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(s.w, 0); c.scale(-1, 1); } if (s.kind === "edr" || s.kind === "trends") drawEdr(c, d, s.w, s.h); else draw(s.kind, c, d); c.restore(); s.tex.update(); }
   }
 }
 
@@ -76,7 +77,7 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
       bar(c, 8, 140, 112, 8, d.flow, 1000, CY, "FLOW", "gpm"); bar(c, 136, 140, 112, 8, d.rotating ? 9 : 0, 20, GR, "TORQ", "kft-lb");
       break;
     }
-    case "trends": { drawRecorder(c, W, H); break; }
+    case "trends": break;   // the vertical EDR (drawEdr)
     case "pits": {
       frame(c, "PIT VOLUMES");
       for (let i = 0; i < 4; i++) { const x = 16 + i * 60, lv = Math.max(0.1, Math.min(0.95, (d.pit + [0, -40, -90, -140][i]) / 760));
@@ -178,19 +179,21 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
 }
 
 // ---------------------------------------------------------------------------------------------------- the EDR: seven tracks of strip charts, time running down the screen, newest at the bottom
-const EDR_N = 150;
+const EDR_N = 240;
 interface Chan { name: string; unit: string; col: string; max: number; get: (d: ScreenData, s: { rop2: number; wob2: number }) => number; }
 const EDR: [Chan, Chan][] = [
   [{ name: "Hookload", unit: "klb", col: "#6cb4ff", max: 750, get: (d) => 250 - d.wob * 1.2 + (d.rotating ? 0 : 40) },
    { name: "Block Height", unit: "ft", col: "#d8dde3", max: 150, get: (d) => 20 + ((d.depth % 93) / 93) * 100 }],
   [{ name: "Avg ROP", unit: "ft/hr", col: "#22c06a", max: 500, get: (_d, s) => s.rop2 },
    { name: "Inst ROP", unit: "ft/hr", col: "#ff6a7a", max: 500, get: (d) => d.rop }],
-  [{ name: "WOB", unit: "klb", col: "#ff6a7a", max: 100, get: (d) => d.wob },
+  [{ name: "WOB", unit: "klb", col: "#ffeb3b", max: 100, get: (d) => d.wob },
    { name: "WOB Set Pt", unit: "klb", col: "#2fd0d0", max: 100, get: (d) => d.wobSet ?? d.wob }],
-  [{ name: "Diff Press", unit: "psi", col: "#e8d34a", max: 1500, get: (d) => (d.rotating ? 150 + d.wob * 11 : 0) },
-   { name: "Diff Limit", unit: "psi", col: "#2fd0d0", max: 1500, get: (d) => d.auto?.sp.dp ?? 0 }],
-  [{ name: "TD Torque", unit: "ft-lbs", col: "#6cb4ff", max: 75000, get: (d) => (d.rotating ? 12000 + d.wob * 380 : 0) },
-   { name: "TD Speed", unit: "rpm", col: "#f0922b", max: 120, get: (d) => (d.rotating ? 82 : 0) }],
+  [{ name: "Diff Press", unit: "psi", col: "#ff4dff", max: 2400, get: (d) => d.dp ?? 0 },
+   { name: "Diff Limit", unit: "psi", col: "#2fd0d0", max: 2400, get: (d) => d.auto?.sp.dp ?? 0 }],
+  [{ name: "Torque", unit: "ft-lb", col: "#6cb4ff", max: 20000, get: (d) => d.torque ?? 0 },
+   { name: "Torque Limit", unit: "ft-lb", col: "#f0922b", max: 20000, get: (d) => d.auto?.sp.tq ?? 0 }],
+  [{ name: "Rock Strength", unit: "psi", col: "#d8b96a", max: 15000, get: (d) => formationAt(d.depth).hardness * 11000 },
+   { name: "Motor Life", unit: "%", col: "#22c06a", max: 100, get: (d) => d.motor ?? 100 }],
   [{ name: "Flow In", unit: "gpm", col: "#2fd0d0", max: 1000, get: (d) => d.flow },
    { name: "Pump Pressure", unit: "psi", col: "#22c06a", max: 8000, get: (d) => d.spp }],
   [{ name: "Total Volume", unit: "bbl", col: "#ff6a7a", max: 1000, get: (d) => d.pit },
@@ -201,13 +204,13 @@ const edrState = { rop2: 0, wob2: 0 };
 function pushEdr(d: ScreenData) {
   edrState.rop2 += (d.rop - edrState.rop2) * 0.12; edrState.wob2 += (d.wob * 0.95 - edrState.wob2) * 0.2;
   const first = edrHist.length === 0;
-  if (first) for (let i = 0; i < 14; i++) edrHist.push([]);
+  if (first) for (let i = 0; i < EDR.length * 2; i++) edrHist.push([]);
   EDR.forEach((pair, ti) => pair.forEach((ch, ci) => {
     const a = edrHist[ti * 2 + ci], v = Math.max(0, ch.get(d, edrState) + (Math.random() - 0.5) * ch.max * 0.012);
     if (first) for (let i = 0; i < EDR_N; i++) a.push(v); else { a.push(v); if (a.length > EDR_N) a.shift(); }
   }));
 }
-function drawEdr(c: CanvasRenderingContext2D, d: ScreenData, w: number, h: number) {
+export function drawEdr(c: CanvasRenderingContext2D, d: ScreenData, w: number, h: number) {
   c.fillStyle = "#0b0e12"; c.fillRect(0, 0, w, h);
   c.textBaseline = "middle"; c.lineWidth = 1;
   // header
@@ -219,7 +222,7 @@ function drawEdr(c: CanvasRenderingContext2D, d: ScreenData, w: number, h: numbe
   c.fillStyle = "#8d98a5"; c.font = "11px monospace"; c.fillText("STATE", 490, 15); c.fillStyle = d.rotating ? "#3ddc84" : "#ffb02a"; c.font = "bold 13px monospace"; c.fillText(d.mode, 532, 15);
   const live = Math.floor(d.t * 1.5) % 2 === 0; c.fillStyle = "#3ddc84"; c.font = "bold 10px monospace"; c.textAlign = "right"; c.fillText("LIVE", w - 8, 15); c.fillStyle = live ? "#3ddc84" : "#1b5a38"; c.beginPath(); c.arc(w - 40, 15, 3, 0, 6.3); c.fill();
   // layout
-  const top = 34, tl = 36, bottom = 52, gap = 3, tw = (w - tl - gap * 8) / 7, ph = h - top - bottom;
+  const top = 34, tl = 36, bottom = 52, gap = 3, tw = (w - tl - gap * (EDR.length + 1)) / EDR.length, ph = h - top - bottom;
   c.fillStyle = "#8d98a5"; c.font = "9px monospace"; c.textAlign = "left";
   const mins0 = 11 * 60 + 5 + d.t / 60;
   for (let k = 0; k < 5; k++) { const y = top + 8 + (k / 4) * (ph - 16), m = mins0 - (4 - k) * 12, hh = Math.floor(m / 60) % 24, mm = Math.floor(m % 60); c.fillText(String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0"), 3, y); }

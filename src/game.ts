@@ -2,7 +2,8 @@ import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, Di
 import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
-import { drawRecorder, drawAutoBars } from "./recorder";
+import { drawAutoBars } from "./recorder";
+import { drawEdr, type ScreenData } from "./screens";
 import { Dd, OFFSETS } from "./dd";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
@@ -349,6 +350,7 @@ export class Game {
   // ---------- panels ----------
   statRow(k: string, v: string, cls = "") { return `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`; }
 
+  scrData?: ScreenData;
   private cabGrid: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
   /** the directional drillers' screens and controls, from either of their seats: mode, toolface, check shots, the plan, surveys and anti-collision */
   openDdScreens() {
@@ -408,7 +410,7 @@ export class Game {
       return `<div class="eyebrow">Driller's Cabin</div><h2>${{ all: "Driller's Console", params: "Drilling screen", trends: "Trends screen", pits: "Pits screen", alarms: "Alarms & well control" }[view]}</h2>
         <div class="cabwide"><div class="cabl">
         <div class="scrgrid" id="scrgrid"></div>
-        ${view === "pits" || view === "alarms" ? "" : `<div class="recwrap"><canvas id="rec" width="880" height="300"></canvas></div>`}
+        ${view === "pits" || view === "alarms" ? "" : `<div class="recwrap"><canvas id="rec" width="960" height="460"></canvas></div>`}
           <div class="cab-left">
             <div class="row"><span>Depth</span><b id="c_depth"></b></div><div class="row"><span>Formation</span><b id="c_form"></b></div>
             <div class="row"><span>ROP</span><b id="c_rop"></b></div><div class="row"><span>Diff pressure</span><b id="c_dp"></b></div><div class="row"><span>Surface torque</span><b id="c_tq"></b></div>
@@ -495,7 +497,7 @@ export class Game {
     (this.ui as any).panelTick = () => {
       { const ac = p.querySelector<HTMLCanvasElement>("#abars"); if (ac) { const a = s.auto; drawAutoBars(ac.getContext("2d")!, ac.width, ac.height, { on: a.on, limit: a.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: a.rop, wob: a.wob, dp: a.dp, tq: a.torque ?? 10000 } }); } }
       for (const g of this.cabGrid) g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height);
-      { const rc = p.querySelector<HTMLCanvasElement>("#rec"); const rx = rc?.getContext("2d"); if (rc && rx) drawRecorder(rx, rc.width, rc.height); }
+      { const rc = p.querySelector<HTMLCanvasElement>("#rec"); const rx = rc?.getContext("2d"); if (rc && rx && this.scrData) drawEdr(rx, this.scrData, rc.width, rc.height); }
       { const cv = p.querySelector<HTMLCanvasElement>("#tvmirror"); const src = mirror?.tex.getContext().canvas as HTMLCanvasElement | undefined; if (cv && src) cv.getContext("2d")?.drawImage(src, 0, 0, cv.width, cv.height); }
       const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
       if (sig !== sig0) { sig0 = sig; this.rerenderCabin(p, render, bind); }

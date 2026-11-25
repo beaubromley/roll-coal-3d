@@ -103,7 +103,8 @@ export class Sim {
   private dist = 0;
   /** ROP multiplier from the directional driller: sliding and oscillating cost penetration rate */
   ropMul = 1;
-  private ropN = 0;   // a slow random wobble on the penetration rate
+  private ropN = 0;
+  private killClock = 0; private dppQ: { t: number; v: number }[] = [];   // a slow random wobble on the penetration rate
   /** bit bounce (0..1): too much weight for the rock sets the string and the motor hammering; shows on the recorder and in the diff pressure and torque */
   bounce = 0; private bph = 0;
   /** autodriller: one PI loop per limit (ROP, diff, torque). Each holds the WOB that parameter would allow; the weight applied is the lowest of those and the WOB set point. */
@@ -164,7 +165,7 @@ export class Sim {
     s.mode = "killing"; s.kill.stage = "circ"; s.kill.progress = 0; s.kill.inBand = 0; s.kill.total = 0;
     s.kill.choke = 0.5; s.kill.kmw = s.mwTarget; s.kill.pumping = true;
     s.kill.cp = s.kick.sicp; s.kill.dpp = s.kick.sidpp + s.kill.scr;
-    this.dist = 0;
+    this.dist = 0; this.killClock = 0; this.dppQ = [];
   }
 
   /** where the bit is in the hole: the hole depth normally, but it comes up the hole on a trip out and goes back down on the way in */
@@ -356,8 +357,11 @@ export class Sim {
     // the choke setting that holds the right bottom-hole pressure moves as the gas comes up and the kill mud goes down: leaving the choke alone drifts out of the band
     const off = 0.3 * Math.sin(2 * Math.PI * p * 0.9);
     const target = k.cpIdeal * (0.35 + 1.3 * (k.choke - off)) + d;
-    k.cp += (target - k.cp) * Math.min(1, 0.5 * dt);
-    k.dpp = k.dppTarget + (k.cp - k.cpIdeal) * 0.9;
+    k.cp = target;                                  // the casing pressure answers the choke at once
+    // the drill pipe gauge sees it about five seconds later: the pressure wave has to travel down the pipe and back
+    this.killClock += dt; this.dppQ.push({ t: this.killClock, v: (k.cp - k.cpIdeal) * 0.9 });
+    while (this.dppQ.length > 1 && this.dppQ[1].t <= this.killClock - 5) this.dppQ.shift();
+    k.dpp = k.dppTarget + (this.killClock >= 5 ? this.dppQ[0].v : 0);
     s.spp = k.dpp;
     k.total += dt; if (Math.abs(k.dpp - k.dppTarget) <= 120) k.inBand += dt;
     if (k.cp > k.maasp && !k.fractured) { k.fractured = true; this.events.push({ type: "fractured" }); s.cost += 220000; s.pit -= 120; }
@@ -368,7 +372,9 @@ export class Sim {
       const frac = k.inBand / Math.max(1, k.total);
       const good = frac > 0.7 && !k.fractured;
       k.stage = "flowcheck"; k.pumping = false; s.mode = "shutin";
-      s.mw = Math.max(s.mw, k.kmw - 0.1); s.mwTarget = Math.max(s.mwTarget, s.mw);
+      // the kill leaves the hole overbalanced for good: the well must not kick again the moment it goes back to drilling
+      const need = s.kick.pore + 0.3 - this.ecd - s.lcm * 0.003;
+      s.mw = Math.max(s.mw, k.kmw - 0.1, need); s.mwTarget = Math.max(s.mwTarget, s.mw);
       if (!good) s.cost += 150000;
       s.kick.sidpp = 0; s.kick.sicp = 0; s.stats.kicksKilled++;
       this.events.push({ type: "killDone", good });

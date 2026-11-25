@@ -1161,6 +1161,13 @@ export class Game {
     this.openCabin("all");
   }
   stormT = 30;
+  /** the derrick inspection: the red markers show while the job is on; fly the drone within a few metres of each to photograph it */
+  private inspectStep() {
+    const R = this.rig.inspect, on = !!this.flags.inspOn, tags: boolean[] = (this.flags.inspTags ??= [false, false, false, false, false]);
+    R.marks.forEach((m, i) => { const show = on && !tags[i]; if (m.isEnabled() !== show) m.setEnabled(show); });
+    const dr = this.veh.active; if (!on || !dr || dr.kind !== "drone") return;
+    R.pts.forEach((p, i) => { if (tags[i]) return; if (Math.hypot(dr.x - p.x, dr.alt - p.y, dr.z - p.z) < 5) { tags[i] = true; const n = tags.filter(Boolean).length; this.sfx.good(); this.ui.toast("PHOTO " + n + " / 5", "Defect found: " + R.names[i] + "."); if (n >= 5) { this.flags.inspDone = true; this.radio("earl", "That's all five on camera. Now bring it home before it rains.", 7000); } } });
+  }
   /** lockout / tagout: put the six steps of shutting a machine down safely in the right order */
   lockout(title: string, done: (mistakes: number) => void) {
     const steps = ["Call the control room", "Stop the rotor with the service brake", "Open the electrical disconnect", "Put your lock on the disconnect", "Hang your tag on the lock", "Try to start it, to prove it's dead"];
@@ -1414,6 +1421,7 @@ export class Game {
       } else dn.rotation.y += Math.sin(this.realT * 0.7) * 0.003;
     }
     this.daleTweak(realDt);
+    this.inspectStep();
     if (this.started && !this.paused && !this.astMode && !this.flags.finish) this.supplyNotes(realDt); else if (this.supplyEl) this.supplyEl.innerHTML = "";
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);
     if (this.asteroid) {

@@ -1,5 +1,6 @@
 import { Vector3 } from "@babylonjs/core";
 import { rv } from "./rigxf";
+import { FOREST_CAMP } from "./outskirts";
 import type { Game, Mission } from "./game";
 import { F } from "./rig";
 import { WELL, FORMATIONS, formationAt } from "./sim";
@@ -97,6 +98,27 @@ export function defineMissions(g: Game) {
       { text: "The detonator is smashed. Lower the bomb while Harry rigs the manual trigger", at: () => g.finale.holePos(), label: "Lower the bomb", r: 6, act: (done) => { g.finale.startRun(); done(); } },
       { text: "RUN to the Freedom!", at: () => g.finale.shipPos(), watch: () => g.finale.runDone || !!g.flags.finish },
       { text: "Watch the Freedom lift off", watch: () => !!g.flags.finish },
+    ] });
+
+  // ================================================================ side: derrick inspection with the drone
+  SD({ id: "inspect", title: "Derrick Inspection", sub: "Safety wants the mast inspected, and nobody wants to climb it. Fly the drone up the derrick and photograph the five defects.", trigger: () => false, auto: () => g.sinceDone() >= 5 && s.depth > 1200 && !g.flags.finish, a: 0.45, m: 3,
+    start: () => { g.flags.inspOn = true; g.flags.inspTags = [false, false, false, false, false]; g.flags.inspDone = false; g.radio("earl", "Safety wants a derrick inspection. Nobody's climbing that mast on my watch. The drone's at the pad by the gate. Fly it up and photograph every defect. They'll be marked in red.", 12000); },
+    steps: [
+      { text: "Take the drone from its dock by the gate", at: () => { const d = g.veh.list.find((q) => q.kind === "drone"); return d ? v3(d.x, 1.4, d.z) : v3(-20, 1.4, 36); }, watch: () => !!g.veh.active && g.veh.active.kind === "drone" },
+      { text: "Fly up the mast and photograph all five defects (get within a few metres of each red marker)", at: () => { const R = g.rig.inspect, tg: boolean[] = g.flags.inspTags ?? []; const i = R.pts.findIndex((_, k) => !tg[k]); return i >= 0 ? R.pts[i] : R.pts[0]; }, watch: () => !!g.flags.inspDone },
+      { text: "Bring the drone home (press E)", watch: () => !g.veh.active || g.veh.active.kind !== "drone" },
+    ], end: () => { g.flags.inspOn = false; g.rig.inspect.marks.forEach((m) => m.setEnabled(false)); g.radio("earl", "Five defects, all documented. Maintenance will fix three of them. We'll see about the bird.", 8000); } });
+
+  // ================================================================ side: hunting with Hank (you spot, he shoots)
+  SD({ id: "hunt", title: "Hunt with Hank", sub: "Hank wants company in the forest. You spot, he shoots. His aim is a known problem.", trigger: () => false, auto: () => !!g.flags.hankFriend && g.sinceDone() >= 8 && s.depth > 3000 && !g.flags.finish, a: 0.3, m: 8,
+    start: () => { g.radio("hank" as any, "Company Man. You and me, hunters' camp in the south forest. I shoot, you spot. Don't tell anybody what happens next. Bring your good eyes.", 11000); },
+    steps: [
+      { text: "Meet Hank at the hunters' camp in the south forest", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z), label: "Hunters' camp", r: 7, act: (done) => { g.ui.toast("HANK", "About time. Binoculars up."); done(); } },
+      { text: "Spot the game for Hank (three of them)", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z), label: "Spot the game", r: 7, act: (done) => g.mini.reaction({ eyebrow: "The Hunt", title: "Spot the Deer", intro: "Hank is on the rifle. Something moves between the trees. Call it the instant you see it.", rounds: 3, goText: "THERE!" }, (r: any) => {
+        if (r && r.skipped) { g.radio("hank" as any, "You didn't see one thing. Not one. The deer saw YOU.", 6000); done(); return; }
+        if (r.score >= 0.6) g.radio("hank" as any, "Good eyes. I shot at two of 'em. Neither noticed.", 7000); else g.radio("hank" as any, "You pointed at a bush. I shot the bush. It was a good bush.", 7000);
+        setTimeout(() => { g.radio("hank" as any, "…And that's the Henderson's cow. Whoops. That was a good one too. Put it on the rig's tab.", 8000); g.sim.addCost(1800); g.ui.toast("COW DAMAGE", "$1,800 to a neighbour. Hank sends his regards."); }, 7500);
+        done(); }) },
     ] });
 
   // ================================================================ side: windmill shutdown (four turbines, each a lockout / tagout)

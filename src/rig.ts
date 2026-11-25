@@ -48,6 +48,8 @@ export interface Rig {
   buildShuttle(): TransformNode;
   deerNode: TransformNode;
   windsock: TransformNode;
+  /** the derrick inspection: five defects up the mast, shown only while the drone job is on */
+  inspect: { pts: Vector3[]; marks: Mesh[]; names: string[] };
 }
 
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
@@ -472,6 +474,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   }
   // mast legs as collision (you can't walk through the mast)
   for (let i = 0; i < 4; i++) b.blocker(base[i].x - 0.18, F, base[i].z - 0.18, base[i].x + 0.18, F + 4, base[i].z + 0.18);
+  // defects up the mast for the drone inspection (hidden unless the job is on)
+  const inspectPts: Vector3[] = [], inspectMarks: Mesh[] = [], inspectNames = ["a loose bolt on a leg flange", "a frayed fast line", "a cracked weld", "a bird's nest on the girt", "a missing cotter pin"];
+  { const im = new StandardMaterial("inspm", scene); im.emissiveColor = new Color3(1, 0.15, 0.1); im.diffuseColor = Color3.Black(); im.disableLighting = true;
+    for (const [li, u] of [[0, 0.2], [2, 0.34], [1, 0.5], [3, 0.62], [0, 0.72]] as [number, number][]) {
+      const pl = Vector3.Lerp(base[li], top[li], u).add(new Vector3(base[li].x > 0 ? 0.5 : -0.5, 0, base[li].z > -1 ? 0.5 : -0.5)), wp = rpos(pl);
+      const m = MeshBuilder.CreateSphere("insp", { diameter: 0.8, segments: 8 }, scene); m.material = im; m.position.copyFrom(wp); m.isPickable = false; m.setEnabled(false); inspectPts.push(wp); inspectMarks.push(m);
+    } }
   // crown block + beacon
   const CROWN_X = [-0.6, -0.2, 0.2, 0.6];
   b.slab("dsteel", -1.5, MH, -2.0, 1.5, MH + 1.1, 0.8);
@@ -1674,6 +1683,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   return {
     spots, colliders: b.colliders, roofs: b.roofs, merged, humans, update, setDaysSince, huddle, huddleHold, monitors: monitorList, catwalk: catCtl,
     setPortaLocked, setBump: (on) => { for (const d of dressed) d.mat.bumpTexture = on ? d.bump : null; }, setCasingTruck: (on) => { casingTruck.setEnabled(on); setTruckSolid(on); }, setWindmill: (on) => { wmTarget = on ? 2.1 : 0; },
-    heliState, shuttleState, buildShuttle: () => shuttle, deerNode, windsock,
+    heliState, shuttleState, buildShuttle: () => shuttle, deerNode, windsock, inspect: { pts: inspectPts, marks: inspectMarks, names: inspectNames },
   };
 }

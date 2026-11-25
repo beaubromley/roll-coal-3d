@@ -100,6 +100,16 @@ export function defineMissions(g: Game) {
       { text: "Watch the Freedom lift off", watch: () => !!g.flags.finish },
     ] });
 
+  // ================================================================ side: steal Singularity's laser secrets (a run-around, not a sneak)
+  SD({ id: "secrets", title: "Steal the Laser", sub: "Singularity's laser drills 14,000 feet in nine minutes. Their rig floor has the schematics. Run in, climb up, grab them, run out. The androids will try to throw you out. Try as many times as it takes.", trigger: () => false, auto: () => g.sinceDone() >= 8 && s.depth > 3500 && !g.flags.finish, a: 0.4, m: 10,
+    start: () => { g.flags.raidOn = true; g.flags.secretsGot = false; g.radio("earl", "Don't sneak, they see everything. RUN. Gate, stairs, grab the files, and out again.", 8000); },
+    steps: [
+      { text: "Run through Singularity's gate", at: () => g.outskirts.gatePos(), watch: () => g.outskirts.inLease() },
+      { text: "Climb either staircase to the rig floor (front or back)", at: () => g.outskirts.stairsBase(), watch: () => g.player.pos.y > 7.4 },
+      { text: "Grab the secrets from the data terminal on the north side of the floor", at: () => g.outskirts.terminalPos(), watch: () => !!g.flags.secretsGot },
+      { text: "RUN for the gate. Don't get caught.", at: () => g.outskirts.gatePos(), watch: () => g.outskirts.outsideGate() },
+    ], end: () => { g.flags.raidOn = false; g.flags.laserUnlocked = true; g.flags.laserOn = false; g.radio("dale", "You got the LASER?! Boss, there's a laser switch on the driller's console now. Three hundred feet an hour and the bit never wears. I need to sit down.", 12000); g.ui.toast("LASER DRILLING UNLOCKED", "Driller's console: Switch to LASER drilling."); } });
+
   // ================================================================ side: derrick inspection with the drone
   SD({ id: "inspect", title: "Derrick Inspection", sub: "Safety wants the mast inspected, and nobody wants to climb it. Fly the drone up the derrick and photograph the five defects.", trigger: () => false, auto: () => g.sinceDone() >= 5 && s.depth > 1200 && !g.flags.finish, a: 0.45, m: 3,
     start: () => { g.flags.inspOn = true; g.flags.inspTags = [false, false, false, false, false]; g.flags.inspDone = false; g.radio("earl", "Safety wants a derrick inspection. Nobody's climbing that mast on my watch. The drone's at the pad by the gate. Fly it up and photograph every defect. They'll be marked in red.", 12000); },

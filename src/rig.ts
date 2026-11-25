@@ -1278,12 +1278,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.beam("dsteel", v(-6.6, 3.55, 95.42), v(-3.4, 3.55, 95.42), 0.08);
   b.beam("dsteel", v(-6.6, 2.45, 95.42), v(-3.4, 2.45, 95.42), 0.08);
   spots.gate = v(4.1, 1.4, 96.0);
-  // pad edge fence posts
-  for (let i = -12; i <= 12; i++) { b.box("dsteel", i * 5, 0.8, 62, 0.1, 1.6, 0.1); b.box("dsteel", i * 5, 0.8, -66, 0.1, 1.6, 0.1); }
-  b.blocker(-60, 0, 61.9, -8, 1.6, 62.1); b.blocker(8, 0, 61.9, 60, 1.6, 62.1); b.blocker(-60, 0, -66.1, 60, 1.6, -65.9);   // the fence is solid
-  b.beam("dsteel", v(-60, 1.4, 62), v(-8, 1.4, 62), 0.04); b.beam("dsteel", v(8, 1.4, 62), v(60, 1.4, 62), 0.04);
-  b.beam("dsteel", v(-60, 1.4, -66), v(60, 1.4, -66), 0.04);
-
   // light towers
   for (const [x, z] of [[-28, 32], [28, 46], [-30, -34], [30, -38], [-12, 62]]) {
     if (kit) {

@@ -494,6 +494,7 @@ export class Game {
               <div class="hint">Set points: WOB (klb) · ROP (ft/hr) · DIFF (psi, motor stalls at 2,100) · TQ (ft-lb, string twists off at 16,500)</div>
               <div class="hint" id="a_lim" style="min-height:18px"></div>
               <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button></div>
+              ${this.flags.laserUnlocked ? `<div class="btns"><button class="b ${this.flags.laserOn ? "red" : "alt"}" id="a_laser" style="border-color:#2ee6ff">${this.flags.laserOn ? "LASER DRILLING: ON (300 ft/hr)" : "Switch to LASER drilling"}</button></div>` : ""}
             </div>
             <div class="cab-manual"><div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
             <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
@@ -540,6 +541,7 @@ export class Game {
       holdBtn("wobUp", 1); holdBtn("wobDn", -1);
       q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
       q("c_sweep").onclick = () => { const r = this.sim.sweep(); if (r) { this.ui.toast("NO SWEEP", r); return; } this.sfx.click(); this.ui.toast("LCM SWEEP AWAY", "A 30 lb/bbl pill is going down the pipe. It will fade as it circulates out."); this.radio("marcus", "The pill is pumped. Watch the pits and the returns.", 6000); };
+      const lz = p.querySelector<HTMLElement>("#a_laser"); if (lz) lz.onclick = () => { this.flags.laserOn = !this.flags.laserOn; this.sfx.click(); this.radio("dale", this.flags.laserOn ? "Laser is firing. No weight on bit. 300 an hour and nothing wears out. This feels illegal." : "Back to the bit. It missed us.", 7000); this.rerenderCabin(p, render, bind); };
       q("a_toggle").onclick = () => {
         const a = s.auto;
         if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
@@ -837,7 +839,11 @@ export class Game {
           <div class="btns"><button class="b alt" id="co">◀ Open (A)</button><button class="b alt" id="cc">Close (D) ▶</button></div></div>
         <div>${this.statRow("Circulation", Math.round(k.progress * 100) + "%")}${this.statRow("In band", pct + "%", pct > 70 ? "ok" : "bad")}${this.statRow("Mud weight", s.mw.toFixed(2) + " ppg")}</div></div>`;
       } else {
-        body = `<div class="note" style="border-color:var(--green)"><b>Circulation complete.</b> Pressures bled to zero. Go to the Driller's console, flow-check the well and open the BOP.</div>`;
+        body = `<div class="note" style="border-color:var(--green)"><b>Circulation complete.</b> Pressures bled to zero. Go to the Driller's console, flow-check the well and open the BOP.</div>
+        <div class="hint" style="margin:10px 0 4px">How you held it: drill pipe, casing and bottom hole pressure through the kill</div>
+        <canvas id="kc_dp" width="640" height="130" style="width:100%;display:block;margin-bottom:6px;background:#06090d;border:2px solid #000;border-radius:6px"></canvas>
+        <canvas id="kc_cp" width="640" height="130" style="width:100%;display:block;margin-bottom:6px;background:#06090d;border:2px solid #000;border-radius:6px"></canvas>
+        <canvas id="kc_bhp" width="640" height="130" style="width:100%;display:block;background:#06090d;border:2px solid #000;border-radius:6px"></canvas>`;
       }
       return `<div class="eyebrow">Well Control</div><h2>Remote Choke Panel</h2>${body}<div class="btns"><button class="b alt" data-close>Close</button></div>`;
     };
@@ -863,13 +869,13 @@ export class Game {
       const slider = p.querySelector<HTMLInputElement>("#chk");
       if (slider) slider.oninput = () => { k.choke = Number(slider.value) / 100; };
     };
-    wire();
+    wire(); this.drawKillCharts(p);
     if (this.chokeKeyHandler) window.removeEventListener("keydown", this.chokeKeyHandler);
     this.chokeKeyHandler = (e) => { if (k.stage === "circ") { if (e.code === "KeyA" || e.code === "ArrowLeft") { k.choke = clamp(k.choke - 0.025, 0, 1); } if (e.code === "KeyD" || e.code === "ArrowRight") { k.choke = clamp(k.choke + 0.025, 0, 1); } } };
     window.addEventListener("keydown", this.chokeKeyHandler);
     let lastStage = k.stage;
     (this.ui as any).panelTick = () => {
-      if (k.stage !== lastStage) { lastStage = k.stage; p.innerHTML = render(); wire(); return; }
+      if (k.stage !== lastStage) { lastStage = k.stage; p.innerHTML = render(); wire(); this.drawKillCharts(p); return; }
       if (k.stage === "readings") {
         const stable = this.sim.s.t - s.kick.shutT >= 6, ramp = clamp((this.sim.s.t - s.kick.shutT) / 5, 0, 1);
         const g1 = p.querySelector("#g1"), g2 = p.querySelector("#g2"), rec = p.querySelector<HTMLButtonElement>("#rec");
@@ -890,6 +896,29 @@ export class Game {
         const r = p.querySelectorAll(".row b"); if (r[0]) { r[0].textContent = Math.round(k.progress * 100) + "%"; const pct = Math.round((k.inBand / Math.max(1, k.total)) * 100); r[1].textContent = pct + "%"; r[1].className = pct > 70 ? "ok" : "bad"; r[2].textContent = s.mw.toFixed(2) + " ppg"; }
       }
     };
+  }
+
+  /** the three pressure charts shown when the kill is done */
+  private drawKillCharts(p: HTMLElement) {
+    const k = this.sim.s.kill, H = k.hist; if (!H || !H.length) return;
+    const draw = (id: string, title: string, unit: string, series: { f: (h: (typeof H)[0]) => number; col: string; dash?: boolean; w?: number; label?: string }[], band?: (h: (typeof H)[0]) => [number, number]) => {
+      const cv = p.querySelector<HTMLCanvasElement>("#" + id); if (!cv) return; const c = cv.getContext("2d")!, W = cv.width, Hh = cv.height, L = 62, T = 22, R = 10, B = 16;
+      let lo = Infinity, hi = -Infinity; for (const s of series) for (const h of H) { const v = s.f(h); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      const pad = Math.max(40, (hi - lo) * 0.12); lo -= pad; hi += pad;
+      const X = (u: number) => L + u * (W - L - R), Y = (v: number) => T + (1 - (v - lo) / (hi - lo)) * (Hh - T - B);
+      c.clearRect(0, 0, W, Hh); c.font = "bold 12px system-ui,sans-serif";
+      c.strokeStyle = "rgba(255,255,255,.08)"; c.lineWidth = 1; c.fillStyle = "#8a96a6"; c.textAlign = "right";
+      for (let i = 0; i <= 3; i++) { const v = lo + ((hi - lo) * i) / 3, y = Y(v); c.beginPath(); c.moveTo(L, y); c.lineTo(W - R, y); c.stroke(); c.fillText(Math.round(v / 10) * 10 + "", L - 6, y + 4); }
+      if (band) { c.fillStyle = "rgba(244,192,74,.14)"; c.beginPath(); H.forEach((h, i) => { const [a] = band(h); i ? c.lineTo(X(h.p), Y(a)) : c.moveTo(X(h.p), Y(a)); }); for (let i = H.length - 1; i >= 0; i--) c.lineTo(X(H[i].p), Y(band(H[i])[1])); c.closePath(); c.fill(); }
+      for (const s of series) { c.strokeStyle = s.col; c.lineWidth = s.w ?? 2.4; c.setLineDash(s.dash ? [6, 5] : []); c.beginPath(); H.forEach((h, i) => { const x = X(h.p), y = Y(s.f(h)); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke(); }
+      c.setLineDash([]); c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(title, L, 14);
+      let lx = L + c.measureText(title).width + 14; for (const s of series) if (s.label) { c.fillStyle = s.col; c.fillText((s.dash ? "- - " : "— ") + s.label, lx, 14); lx += c.measureText("— " + s.label).width + 16; }
+      c.fillStyle = "#8a96a6"; c.textAlign = "right"; c.fillText(unit, W - R, 14);
+    };
+    const maasp = k.maasp;
+    draw("kc_dp", "DRILL PIPE", "psi", [{ f: (h) => h.tgt, col: "#f4c04a", dash: true, w: 2, label: "target" }, { f: (h) => h.dpp, col: "#6ff08c", label: "drill pipe" }], (h) => [h.tgt - 120, h.tgt + 120]);
+    draw("kc_cp", "CASING", "psi", [{ f: () => maasp, col: "#ff6a6a", dash: true, w: 2, label: "MAASP" }, { f: (h) => h.cp, col: "#4ad8ff", label: "casing" }]);
+    draw("kc_bhp", "BOTTOM HOLE", "psi", [{ f: (h) => h.frac, col: "#ff6a6a", dash: true, w: 2, label: "fracture" }, { f: (h) => h.pore, col: "#f4c04a", dash: true, w: 2, label: "pore" }, { f: (h) => h.bhp, col: "#ffffff", label: "bottom hole" }]);
   }
 
   // ---------- slips mini-game ----------
@@ -1286,6 +1315,8 @@ export class Game {
     this.sfx.good(); this.ui.toast(m.title);
     m.steps[0].enter?.();
   }
+  /** drop the current mission without finishing it (a failed side job) */
+  abortMission() { this.active = null; this.ui.setMission("", "", ""); this.nextFromStack(); }
   stepDone() {
     const a = this.active; if (!a) return;
     a.i++;
@@ -1422,6 +1453,7 @@ export class Game {
     }
     this.daleTweak(realDt);
     this.inspectStep();
+    this.sim.laser = !!this.flags.laserUnlocked && !!this.flags.laserOn && !this.astMode;
     if (this.started && !this.paused && !this.astMode && !this.flags.finish) this.supplyNotes(realDt); else if (this.supplyEl) this.supplyEl.innerHTML = "";
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);
     if (this.asteroid) {
@@ -1513,11 +1545,11 @@ export class Game {
     this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused && !(seated && this.nearest) ? this.veh.promptLabel() : this.nearest ? this.nearest.label() : null);
 
     // task arrows: one per open task (the active job plus any jobs it interrupted)
-    const PAL = ["#f4c04a", "#4aa3e8", "#e5483b", "#3dbb6a", "#c77dff"];
-    const markers: { title: string; pos: Vector3; color: string; primary: boolean }[] = [];
+    const PAL = ["#f4c04a", "#4aa3e8", "#e5483b", "#ff8ad8", "#c77dff"], SIDE = "#3ddc84";   // side jobs are green and have no tall beam
+    const markers: { title: string; pos: Vector3; color: string; primary: boolean; side?: boolean }[] = [];
     const addM = (m: Mission, i: number, primary: boolean, ci: number) => {
       const at = m.steps[i]?.at?.();
-      if (at) markers.push({ title: m.title, pos: at, color: PAL[ci % PAL.length], primary });
+      if (at) markers.push({ title: m.title, pos: at, color: m.side ? SIDE : PAL[ci % PAL.length], primary, side: !!m.side });
     };
     if (this.active) addM(this.active.m, this.active.i, true, 0);
     for (let j = this.stack.length - 1, c = 1; j >= 0; j--, c++) addM(this.stack[j].m, this.stack[j].i, false, c);
@@ -1556,7 +1588,7 @@ export class Game {
       return { x: px, y: py, show: show && (edge || dist > 8), text: dist + " FT", title: m.title, color: m.color, edge, angle: Math.atan2(dx, -dy), primary: m.primary };
     });
     this.ui.setPins(pins);
-    this.updateBeams(show ? markers : []);
+    this.updateBeams(show ? markers.filter((m) => !m.side) : []);
     this.ui.drawMap(p.pos.x, p.pos.z, p.yaw, markers.map((m) => ({ x: m.pos.x, z: m.pos.z, color: m.color })));
     const target = markers[0]?.pos ?? null; void target;
 

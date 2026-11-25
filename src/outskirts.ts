@@ -40,7 +40,16 @@ export class Outskirts {
   private g: Game; private scene: Scene;
   private cows: { n: TransformNode; x: number; z: number; h: number; sp: number; t: number; flee: number; down: number }[] = [];
   private ducks: { m: Mesh; a: number; r: number; w: number }[] = [];
-  private guards: { h: Human; x: number; z: number; wp: [number, number][]; i: number }[] = [];
+  private guards: { h: Human; x: number; z: number; wp: [number, number][]; i: number; up?: boolean }[] = [];
+  /** the secrets job: the cool-down after somebody gets thrown out */
+  private raidCd = 0;
+  /** inside Singularity's fence */
+  inLease() { const p = this.g.player.pos; return Math.abs(p.x - RIVAL.x) < 43 && Math.abs(p.z - RIVAL.z) < 43; }
+  /** on the far side of their gate, with the data */
+  outsideGate() { const p = this.g.player.pos; return p.x > RIVAL.x + 47 && Math.abs(p.z - RIVAL.z) < 30; }
+  stairsBase() { return new Vector3(RIVAL.x + 20, 1.2, RIVAL.z); }
+  terminalPos() { return new Vector3(RIVAL.x, 9.3, RIVAL.z + 6.4); }
+  gatePos() { return new Vector3(RIVAL.x + 46, 1.2, RIVAL.z); }
   private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
   private fish = { st: "idle" as "idle" | "charge" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0, power: 0, pdir: 1, depth: 2, bed: 3 };
   private eHeld = false; private fishHud: HTMLDivElement | null = null;
@@ -521,9 +530,30 @@ export class Outskirts {
     for (let i = -40; i <= 40; i += 8) { b.slab("futglow", x + i - 0.04, 0.12, z - 40, x + i + 0.04, 0.15, z + 40); b.slab("futglow", x - 40, 0.12, z + i - 0.04, x + 40, 0.15, z + i + 0.04); }
     // the rig: a full-size drill floor on four big legs, with the laser firing straight down through the middle (open underneath so you can see it)
     for (const [lx, lz] of [[-8, -8], [8, -8], [-8, 8], [8, 8]]) { b.slab("futwhite", x + lx - 0.8, 0.12, z + lz - 0.8, x + lx + 0.8, 7.7, z + lz + 0.8, true); b.slab("futglow", x + lx - 0.82, 3.0, z + lz - 0.82, x + lx + 0.82, 3.2, z + lz + 0.82); }
-    b.slab("futdark", x - 9.5, 7.7, z - 9.5, x + 9.5, 8.3, z + 9.5);
+    b.slab("futdark", x - 9.5, 7.7, z - 9.5, x + 9.5, 8.3, z + 9.5, true);
     b.slab("futglow", x - 9.55, 8.0, z - 9.55, x + 9.55, 8.08, z + 9.55);
-    for (const s of [-1, 1]) { b.slab("futglass", x - 9.5, 8.3, z + s * 9.4 - 0.05, x + 9.5, 9.5, z + s * 9.4 + 0.05); b.slab("futglass", x + s * 9.4 - 0.05, 8.3, z - 9.5, x + s * 9.4 + 0.05, 9.5, z + 9.5); }
+    for (const s of [-1, 1]) { b.slab("futglass", x - 9.5, 8.3, z + s * 9.4 - 0.05, x + 9.5, 9.5, z + s * 9.4 + 0.05); b.blocker(x - 9.5, 8.3, z + s * 9.4 - 0.2, x + 9.5, 10.2, z + s * 9.4 + 0.2); }
+    for (const sx of [-1, 1]) for (const [a0, a1] of [[-9.5, -1.6], [1.6, 9.5]]) { b.slab("futglass", x + sx * 9.4 - 0.05, 8.3, z + a0, x + sx * 9.4 + 0.05, 9.5, z + a1); b.blocker(x + sx * 9.4 - 0.2, 8.3, z + a0, x + sx * 9.4 + 0.2, 10.2, z + a1); }   // both ends have a gap where a staircase comes up
+    // two futuristic staircases to the rig floor (front and back): floating dark treads with a glowing lip on a white spine, light rails, a glowing landing pad
+    for (const sg of [1, -1]) {
+      const x0 = x + sg * 9.5, n = 32, rise = 0.26, run = 0.3;
+      b.beam("futwhite", new Vector3(x0, 8.0, z), new Vector3(x0 + sg * n * run, 0.1, z), 0.42, 6);
+      for (let k = 1; k <= n; k++) {
+        const top = 8.3 - k * rise, cx = x0 + sg * (k - 0.5) * run;
+        b.slab("futdark", cx - run / 2, top - 0.12, z - 1.2, cx + run / 2, top, z + 1.2, true);
+        b.slab("futglow", cx - sg * run / 2 + (sg > 0 ? 0 : -0.04), top - 0.01, z - 1.2, cx - sg * run / 2 + (sg > 0 ? 0.04 : 0), top + 0.02, z + 1.2);
+        for (const s2 of [-1, 1]) b.blocker(cx - run / 2, top - 0.12, z + s2 * 1.3 - 0.06, cx + run / 2, top + 1.7, z + s2 * 1.3 + 0.06);   // the light rails are solid
+      }
+      for (const s2 of [-1, 1]) {
+        b.beam("futglow", new Vector3(x0, 9.3, z + s2 * 1.3), new Vector3(x0 + sg * n * run, 1.1, z + s2 * 1.3), 0.06, 5);
+        b.beam("futglow", new Vector3(x0, 8.7, z + s2 * 1.3), new Vector3(x0 + sg * n * run, 0.5, z + s2 * 1.3), 0.04, 5);
+        for (let k = 0; k <= n; k += 8) { const px = x0 + sg * k * run, py = 8.3 - k * rise; b.cyl("futwhite", px, py + 0.55, z + s2 * 1.3, 0.1, 1.1, { tess: 6 }); b.sphere("futglow", px, py + 1.15, z + s2 * 1.3, 0.22, 6); }
+      }
+      b.cyl("futglow", x0 + sg * (n * run + 1.2), 0.15, z, 3.2, 0.05, { tess: 24 }); b.cyl("futdark", x0 + sg * (n * run + 1.2), 0.1, z, 3.5, 0.06, { tess: 24 });
+    }
+    // the data terminal on the rig floor, against the north wall
+    b.slab("futdark", x - 1.5, 8.3, z + 7.7, x + 1.5, 9.3, z + 8.9, true); b.slab("futglow", x - 1.5, 9.3, z + 7.7, x + 1.5, 9.36, z + 8.9);
+    b.label("S.I.N.G. CORE ACCESS\nCLASSIFIED: LASER DRILLING", x, 8.85, z + 7.68, 2.8, 0.9, 0, "#06101a", "#ff3ad6", 30);
     // the tower: a tapering white hex shaft ringed with light, four slim pylons, an AI core on the crown
     b.cyl("futwhite", x, 28.5, z, 7.0, 40, { tess: 8, dia2: 2.6 });
     for (let y = 12; y < 48; y += 5) { const d = 7.0 - ((y - 8.5) / 40) * 4.4; b.cyl("futglow", x, y, z, d + 0.18, 0.22, { tess: 8 }); }
@@ -569,6 +599,7 @@ export class Outskirts {
       const h = new Human(sc, { shirt: "#dfe8f2", pants: "#cfd8e2", hat: "#f4faff", skin: "#aab6c4", vest: false, scale: scl, hair: "#aab6c4" });
       h.root.position.set(x + hx, 0.15, z + hz); this.guards.push({ h, x: x + hx, z: z + hz, wp: wps.map(([a, c]) => [x + a, z + c] as [number, number]), i: 0 });
     };
+    mk(-6, -6, 1.05, [[-6, -6], [6, -6], [6, 6], [-6, 6]]); this.guards[this.guards.length - 1].up = true; mk(6, 6, 1.05, [[6, 6], [-6, 6], [-6, -6], [6, -6]]); this.guards[this.guards.length - 1].up = true;
     mk(16, 12, 1.05, [[16, 12], [16, 26], [4, 26], [4, 12]]); mk(-14, -22, 1.06, [[-14, -22], [-4, -22], [-4, -32], [-14, -32]]); mk(14, -26, 1.04, [[14, -26], [28, -26], [28, -12], [14, -12]]); mk(-14, 18, 1.05, [[-14, 18], [-30, 18], [-30, 30], [-14, 30]]);
     // the drill floor is run entirely by robots: a working crew of androids at their stations around the hole
     for (const [i, [bx, bz]] of ([[-4, -3], [4, -3], [-4, 4], [4, 4], [0, -6.5]] as [number, number][]).entries()) {
@@ -659,6 +690,8 @@ export class Outskirts {
     // the competitor
     let rustN = 0;
     out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to UNIT-9 (Singularity supervisor unit)", r: 3.4, act: () => this.talkRusty(rustN++) });
+    out.push({ pos: () => v(RIVAL.x + 50, 1.4, RIVAL.z - 8), label: () => "Break into their rig (steal the laser secrets)", r: 3.6, ok: () => !g.doneIds.has("secrets") && !(g.active && g.active.m.id === "secrets"), act: () => { if (!g.startSide("secrets")) g.ui.toast("NOT NOW", "Finish what you're on first."); } });
+    out.push({ pos: () => this.terminalPos(), label: () => "Grab Singularity's secrets", r: 3.4, ok: () => !!g.flags.raidOn && !g.flags.secretsGot, act: () => { g.flags.secretsGot = true; g.sfx.good(); g.ui.toast("GOT THE SECRETS", "Laser drilling schematics. NOW RUN!"); g.radio("rival" as any, "UNAUTHORIZED DATA TRANSFER. ALL UNITS: REMOVE THE COMPANY MAN.", 5000); } });
     out.push({ pos: () => v(RIVAL.x + 47, 1.4, RIVAL.z + 8), label: () => "Spy on their rig", r: 3.4, act: () => {
       g.sfx.click(); g.ui.toast("YOU SQUINT", pick(["They're at 14,000 feet. In nine minutes. With a laser. Houston is not going to like this.", "The laser has no depth board. It has a feeling.", "Every worker on location is made of chrome. They look right through you.", "The rig is taller than ours. You decide it's a safety issue.", "Nobody here is wearing a hard hat. Nobody here is wearing anything. It's all very efficient."])); if (cdOk("spy", 20)) g.gain(0, -1); } });
     // the cattle: the nearest one, wherever it is
@@ -811,6 +844,17 @@ export class Outskirts {
     ] as any, "UNIT-9 — Singularity A.I.");
   }
 
+  /** caught: thrown out of the gate, and the job starts over (as many tries as you like) */
+  private throwOut() {
+    const g = this.g, p = g.player;
+    this.raidCd = 6; g.flags.secretsGot = false;
+    p.teleport(RIVAL.x + 52, 0.5, RIVAL.z + 2, Math.PI / 2); g.sfx.thud(); g.gain(0, -1);
+    for (const gd of this.guards) gd.i = 0;
+    g.ui.toast("THROWN OUT", pick(["Back to the gate. Try it again.", "ESCORT COMPLETE. Go again.", "They carried you out like a lawn chair. Go again."]));
+    g.radio("rival" as any, "ESCORT COMPLETE. YOU MAY ATTEMPT TO TRESPASS AGAIN. IT WILL NOT HELP.", 4000);
+    if (g.active && g.active.m.id === "secrets") { g.active.i = 0; g.ui.setMission(g.active.m.title, g.active.m.steps[0].text, g.jobLabel(g.active.m)); }
+  }
+
   // ---------------------------------------------------------------------------------------------- per frame
   update(dt: number) {
     const g = this.g, p = g.player; this.t += dt;
@@ -855,21 +899,49 @@ export class Outskirts {
     if (near(gx, gz, 55) && (this.cd["rivaltaunt"] ?? -99) + 15 < this.t) {
       this.cd["rivaltaunt"] = this.t; g.radio("rival" as any, pick(["INTRUDER DETECTED. HELLO, COMPANY MAN. YOU ARE WRONG LEASE.", "Your rig uses steel. We use light. Please compute the difference.", "Our laser reached TD while you were reading this. I'm joking. I do not joke. That was not a joke.", "Keep walking. Our models predict you will, anyway."]), 6500);
     }
+    // the guards: patrol; during the secrets job they chase you at a dead run, up either staircase and onto the rig floor; whoever reaches you throws you out
+    const raid = !!g.flags.raidOn, X = RIVAL.x, Z = RIVAL.z;
+    const stN = (qx: number, qz: number) => Math.abs(qz - Z) < 1.5 ? (qx > X + 9.5 && qx < X + 19.1 ? 1 : qx < X - 9.5 && qx > X - 19.1 ? -1 : 0) : 0;
+    const stH = (qx: number, sg: number) => Math.max(0.15, 8.3 - (Math.abs(qx - (X + sg * 9.5)) / 0.3) * 0.26);
+    const pUp = p.pos.y > 1.5 && (stN(px, pz) !== 0 || (Math.abs(px - X) < 9.6 && Math.abs(pz - Z) < 9.6));
+    this.raidCd -= dt;
     for (const gd of this.guards) {
-      const hunting = near(RIVAL.x, RIVAL.z, 60) && near(gx, gz, 44) && !riding;
+      const hunting = raid ? (this.inLease() && !riding) : (near(RIVAL.x, RIVAL.z, 60) && near(gx, gz, 44) && !riding);
+      const hx = gd.h.root.position.x, hz = gd.h.root.position.z, sg0 = stN(hx, hz), stairs = sg0 !== 0;
       let tx: number, tz: number, sp: number;
-      if (hunting) { tx = px; tz = pz; sp = 3.2; } else { const [wx, wz] = gd.wp[gd.i]; tx = wx; tz = wz; sp = 1.1; if (Math.hypot(wx - gd.h.root.position.x, wz - gd.h.root.position.z) < 0.6) gd.i = (gd.i + 1) % gd.wp.length; }
-      tx = Math.max(RIVAL.x - 41, Math.min(RIVAL.x + 41, tx)); tz = Math.max(RIVAL.z - 41, Math.min(RIVAL.z + 41, tz));   // they never leave the wire
-      const hx = gd.h.root.position.x, hz = gd.h.root.position.z, dx = tx - hx, dz = tz - hz, dd = Math.hypot(dx, dz);
-      if (hunting && dd < 1.7) {
-        if ((this.cd["shove"] ?? -99) + 12 < this.t) {
-          this.cd["shove"] = this.t; const ux = (px - hx) / (dd || 1), uz = (pz - hz) / (dd || 1);
+      if (hunting) {
+        sp = raid ? 7.6 : 3.2; tx = px; tz = pz;
+        if (stairs) { const s = sg0, topM: [number, number] = [X + s * 9.2, Z], botM: [number, number] = [X + s * 19.7, Z]; [tx, tz] = pUp ? topM : botM; }
+        else if (!!gd.up !== pUp) {
+          // pick the staircase that is closer to this guard
+          const mouths = [1, -1].map((s) => ({ s, top: [X + s * 9.2, Z] as [number, number], bot: [X + s * 19.7, Z] as [number, number] }));
+          const dist = (m: [number, number]) => Math.hypot(hx - m[0], hz - m[1]);
+          if (gd.up) { const c = mouths.sort((a, b) => dist(a.top) - dist(b.top))[0]; [tx, tz] = dist(c.top) < 1.0 ? c.bot : c.top; }
+          else { const c = mouths.sort((a, b) => dist(a.bot) - dist(b.bot))[0]; [tx, tz] = dist(c.bot) < 1.0 ? c.top : c.bot; }
+        }
+      } else { const [wx, wz] = gd.wp[gd.i]; tx = wx; tz = wz; sp = 1.1; if (Math.hypot(wx - hx, wz - hz) < 0.6) gd.i = (gd.i + 1) % gd.wp.length; }
+      if (!stairs) { tx = Math.max(X - 41, Math.min(X + 41, tx)); tz = Math.max(Z - 41, Math.min(Z + 41, tz)); }   // they never leave the wire
+      const dx = tx - hx, dz = tz - hz, dd = Math.hypot(dx, dz);
+      const gy = stairs ? stH(hx, sg0) : gd.up ? 8.3 : 0.15;
+      if (hunting && Math.hypot(px - hx, pz - hz) < 1.7 && Math.abs(p.pos.y - gy) < 2.6) {
+        if (raid) {
+          if (this.raidCd <= 0) this.throwOut();
+        } else if ((this.cd["shove"] ?? -99) + 12 < this.t) {
+          this.cd["shove"] = this.t; const ux = (px - hx) / (Math.hypot(px - hx, pz - hz) || 1), uz = (pz - hz) / (Math.hypot(px - hx, pz - hz) || 1);
           p.teleport(px + ux * 16, 0.5, pz + uz * 16, Math.atan2(ux, uz)); g.gain(0, -3); g.sfx.thud(); g.ui.toast("ESCORTED OFF SINGULARITY'S LEASE", "“ESCORT COMPLETE. HAVE A SUBOPTIMAL DAY.”");
           g.radio("rival" as any, "TRESPASSER REMOVED. EFFICIENCY RESTORED.", 5000);
         }
-        gd.h.animate(dt, 0); continue;
+        gd.h.root.position.y = gy; gd.h.animate(dt, 0); continue;
       }
-      if (dd > 0.3) { const k = Math.min(1, sp * dt / dd); gd.h.root.position.x = Math.max(RIVAL.x - 41, Math.min(RIVAL.x + 41, gd.h.root.position.x + dx * k)); gd.h.root.position.z = Math.max(RIVAL.z - 41, Math.min(RIVAL.z + 41, gd.h.root.position.z + dz * k)); const want = Math.atan2(dx, dz); let a = want - gd.h.root.rotation.y; while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; gd.h.root.rotation.y += a * Math.min(1, dt * 8); gd.h.animate(dt, sp); } else gd.h.animate(dt, 0);
+      if (dd > 0.3) {
+        const k = Math.min(1, sp * dt / dd); let nx = hx + dx * k, nz = hz + dz * k;
+        if (!stairs && stN(nx, nz) === 0) { nx = Math.max(X - 41, Math.min(X + 41, nx)); nz = Math.max(Z - 41, Math.min(Z + 41, nz)); }
+        gd.h.root.position.x = nx; gd.h.root.position.z = nz;
+        const sn = stN(nx, nz); if (sn !== 0) { if (Math.abs(nx - (X + sn * 9.5)) <= 0.15) gd.up = true; if (Math.abs(nx - (X + sn * 19.1)) <= 0.15) gd.up = false; }
+        const want = Math.atan2(dx, dz); let a = want - gd.h.root.rotation.y; while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; gd.h.root.rotation.y += a * Math.min(1, dt * 8); gd.h.animate(dt, sp);
+      } else gd.h.animate(dt, 0);
+      const sn2 = stN(gd.h.root.position.x, gd.h.root.position.z);
+      gd.h.root.position.y = sn2 !== 0 ? stH(gd.h.root.position.x, sn2) : gd.up ? 8.3 : 0.15;
     }
     if (this.fut && near(RIVAL.x, RIVAL.z, 260)) {
       const f = this.fut, pulse = 0.5 + 0.5 * Math.sin(this.t * 7);

@@ -87,6 +87,8 @@ export interface SimState {
     stage: "none" | "readings" | "calc" | "weightup" | "circ" | "flowcheck";
     kmw: number; progress: number; choke: number; dpp: number; dppTarget: number; cp: number; cpIdeal: number; dist: number;
     inBand: number; total: number; maasp: number; fractured: boolean; scr: number; spm: number; pumping: boolean;
+    /** the pressures through the circulation, for the charts at the end: progress 0..1, drill pipe, its target, casing, bottom hole, and the pore / fracture pressures it must stay between */
+    hist: { p: number; dpp: number; tgt: number; cp: number; bhp: number; pore: number; frac: number }[];
   };
   casing: { progress: number; phase: "none" | "run" | "cement" | "done" };
   stats: { connections: number; feetDrilled: number; npt: number; kicksKilled: number; trips: number; stalls: number };
@@ -112,11 +114,13 @@ export class Sim {
   private dist = 0;
   /** ROP multiplier from the directional driller: sliding and oscillating cost penetration rate */
   ropMul = 1;
+  /** laser drilling (stolen from Singularity): a flat 300 ft/hr, no weight on bit, no bit wear, no motor wear */
+  laser = false;
   /** the finale: the same well engine, drilling 800 ft of asteroid */
   astMode = false; private ropBase = 1;
   private get td() { return this.astMode ? 800 : WELL.td; }
   private ropN = 0;
-  private killClock = 0; private dppQ: { t: number; v: number }[] = [];   // a slow random wobble on the penetration rate
+  private killClock = 0; private histAt = -1; private dppQ: { t: number; v: number }[] = [];   // a slow random wobble on the penetration rate
   /** bit bounce (0..1): too much weight for the rock sets the string and the motor hammering; shows on the recorder and in the diff pressure and torque */
   bounce = 0; private bph = 0;
   /** autodriller: one PI loop per limit (ROP, diff, torque). Each holds the WOB that parameter would allow; the weight applied is the lowest of those and the WOB set point. */
@@ -133,7 +137,7 @@ export class Sim {
       connTimer: 0, needTrip: false, tripT: 0, tripTotal: 0, tripOut: true, standsRacked: 0,
       kick: { active: false, gain: 0, alarm: false, alarmT: 0, shut: false, shutT: 0, pore: 8.6, sidpp: 0, sicp: 0, count: 0, gasPocketDone: false },
       loss: { active: false, rate: 0, healed: 0, total: 0 },
-      kill: { stage: "none", kmw: 0, progress: 0, choke: 0.5, dpp: 0, dppTarget: 0, cp: 0, cpIdeal: 0, dist: 0, inBand: 0, total: 0, maasp: 2300, fractured: false, scr: 900, spm: 30, pumping: false },
+      kill: { stage: "none", kmw: 0, progress: 0, choke: 0.5, dpp: 0, dppTarget: 0, cp: 0, cpIdeal: 0, dist: 0, inBand: 0, total: 0, maasp: 2300, fractured: false, scr: 900, spm: 30, pumping: false, hist: [] },
       casing: { progress: 0, phase: "none" },
       stats: { connections: 0, feetDrilled: 0, npt: 0, kicksKilled: 0, trips: 0, stalls: 0 },
       paused: true,
@@ -177,7 +181,7 @@ export class Sim {
     s.mode = "killing"; s.kill.stage = "circ"; s.kill.progress = 0; s.kill.inBand = 0; s.kill.total = 0;
     s.kill.choke = 0.5; s.kill.kmw = s.mwTarget; s.kill.pumping = true;
     s.kill.cp = s.kick.sicp; s.kill.dpp = s.kick.sidpp + s.kill.scr;
-    this.dist = 0; this.killClock = 0; this.dppQ = [];
+    this.dist = 0; this.killClock = 0; this.dppQ = []; s.kill.hist = []; this.histAt = -1;
   }
 
   /** where the bit is in the hole: the hole depth normally, but it comes up the hole on a trip out and goes back down on the way in */
@@ -303,7 +307,7 @@ export class Sim {
           for (const k of ["rop", "dp", "tq"] as const) P[k] = Math.min(P[k], w + 6);
           s.wobTarget = Math.max(0, Math.min(80, Math.round(w * 10) / 10));
         } else { s.auto.limit = ""; this.pi.on = false; }
-        s.wob = s.wobTarget;                                    // like the original: weight is whatever you set, right now
+        s.wob = this.laser ? 0 : s.wobTarget;                   // like the original: weight is whatever you set, right now (the laser needs none)
         const eff = s.wob;                                      // and ROP is simply proportional to it (no founder knee)
         const baseDp = diffPressure(s.wob, f);
         // near the motor limit the pressure throws spikes, like the original; each decays back in a second or two
@@ -314,23 +318,25 @@ export class Sim {
         const hop = this.bounce * Math.sin(this.bph) + this.bounce * 0.4 * Math.sin(this.bph * 2.3 + 1);
         s.dp = baseDp * (1 + (Math.random() * 0.15 - 0.075) + hop * 0.22) * this.spike;   // ±7.5 % noise every frame, plus the hop
         s.torque = torqueFor(s.wob, f, s.depth) * (1 + (Math.random() * 0.1 - 0.05) + hop * 0.18);
-        if ((s.dp >= STALL_DP && s.wob > 0) || (s.torque > TORQUE_MAX && Math.random() < 1 - Math.exp(-0.5 * dt))) {
+        if (this.laser) { s.dp = 180 + Math.random() * 30; s.torque = 400 + Math.random() * 60; }
+        if (!this.laser && (s.dp >= STALL_DP && s.wob > 0) || (s.torque > TORQUE_MAX && Math.random() < 1 - Math.exp(-0.5 * dt))) {
           s.stallT = 12; s.stats.stalls++; s.cost += 8000; this.events.push({ type: "stall" });
         }
         // motor wear, by how hard the pressure is run (original tiers: under 1,000 psi almost none, 1,350 and 1,850 are the knees)
-        s.motor = Math.max(0, s.motor - (s.dp < 1000 ? 0 : s.dp >= 1850 ? 0.25 : s.dp >= 1350 ? 0.05 : 0.01) * dt);
+        if (!this.laser) s.motor = Math.max(0, s.motor - (s.dp < 1000 ? 0 : s.dp >= 1850 ? 0.25 : s.dp >= 1350 ? 0.05 : 0.01) * dt);
         if (s.motor <= 0 && !s.needTrip) { s.needTrip = true; this.events.push({ type: "motorDead" }); }
         let rop = eff > 0 ? (eff * 6) / f.hardness : 0;
         rop = Math.min(600, rop * fac * this.ropMul * this.ropBase);
         this.ropN = this.ropN * 0.93 + (Math.random() - 0.5) * 0.11;
         if (s.auto.on && s.auto.limit === "ROP") rop = Math.min(rop, s.auto.rop);   // held at the limit: dead flat
         else rop *= 1 + this.ropN * (1 + this.bounce);                                 // otherwise it wanders around with the rock and the bit
+        if (this.laser) rop = 300;                                                     // 300 ft/hr, dead steady
         if (s.needTrip || s.fuel <= 0) rop = 0;
         s.rop = rop;
         const dd = (rop / 60) * dt;
         s.depth = Math.min(this.hold ?? this.td, s.depth + dd); s.stats.feetDrilled += dd;
         this.dist += dd;
-        const wear = 2.4 * Math.pow(Math.max(s.wob, 0) / 20, 2.2) * f.abrasiveness * (dd > 0 ? 1 : 0);
+        const wear = this.laser ? 0 : 2.4 * Math.pow(Math.max(s.wob, 0) / 20, 2.2) * f.abrasiveness * (dd > 0 ? 1 : 0);
         s.bit = Math.max(0, s.bit - wear * (dt / 60) * (rop > 0 ? 1 : 0));
         if (s.bit < 8 && !s.needTrip) { s.needTrip = true; this.events.push({ type: "bitDead" }); }
         if (this.dist >= WELL.stand) { this.dist = 0; s.mode = "connection"; s.connTimer = 3; s.stats.connections++; this.events.push({ type: "connection" }); }
@@ -381,18 +387,23 @@ export class Sim {
     k.dppTarget = p < 0.5 ? icp + (fcp - icp) * (p / 0.5) : fcp;
     k.cpIdeal = s.kick.sicp * (1 + 0.28 * Math.sin(Math.PI * p)) - s.kick.sidpp * Math.min(1, p / 0.5) * 0.85;
     // disturbance: gas expansion makes casing pressure wander
-    this.dist += (Math.random() - 0.5) * 1.8 * dt;   // twice as erratic
-    this.dist *= 1 - 0.02 * dt;
+    this.dist += (Math.random() - 0.5) * 0.45 * dt;   // calm: the gas still makes it wander, but gently
+    this.dist *= 1 - 0.06 * dt;
     const d = this.dist * 65;
     // the choke setting that holds the right bottom-hole pressure moves as the gas comes up and the kill mud goes down: leaving the choke alone drifts out of the band
-    const off = 0.3 * Math.sin(2 * Math.PI * p * 0.9);
+    const off = 0.12 * Math.sin(2 * Math.PI * p * 0.9);
     const target = k.cpIdeal * (0.35 + 1.3 * (k.choke - off)) + d;
     k.cp = target;                                  // the casing pressure answers the choke at once
-    // the drill pipe gauge sees it about five seconds later: the pressure wave has to travel down the pipe and back
-    this.killClock += dt; this.dppQ.push({ t: this.killClock, v: (k.cp - k.cpIdeal) * 0.9 });
-    while (this.dppQ.length > 1 && this.dppQ[1].t <= this.killClock - 5) this.dppQ.shift();
-    k.dpp = k.dppTarget + (this.killClock >= 5 ? this.dppQ[0].v : 0);
+    // the drill pipe gauge sees exactly the same change a few seconds later: the pressure wave has to travel down the pipe and back (casing +400 psi means drill pipe +400 psi)
+    this.killClock += dt; this.dppQ.push({ t: this.killClock, v: k.cp - k.cpIdeal });
+    while (this.dppQ.length > 1 && this.dppQ[1].t <= this.killClock - 3) this.dppQ.shift();
+    k.dpp = k.dppTarget + (this.killClock >= 3 ? this.dppQ[0].v : 0);
     s.spp = k.dpp;
+    // bottom hole pressure: the pipe's hydrostatic plus the drill pipe pressure. Holding the pipe on target keeps it just over the pore pressure; every psi of drift on the gauge is a psi on the formation
+    if (this.killClock - this.histAt >= 0.4 || k.progress >= 1) {
+      this.histAt = this.killClock; const pore = s.kick.pore * 0.052 * s.depth, frac = fracAt(s.depth) * 0.052 * s.depth;
+      (k.hist ??= []).push({ p: k.progress, dpp: k.dpp, tgt: k.dppTarget, cp: k.cp, bhp: pore + 150 + (k.dpp - k.dppTarget), pore, frac });
+    }
     k.total += dt; if (Math.abs(k.dpp - k.dppTarget) <= 120) k.inBand += dt;
     if (k.cp > k.maasp && !k.fractured) { k.fractured = true; this.events.push({ type: "fractured" }); s.cost += 220000; s.pit -= 120; }
     // kill mud displaces the hole: mud weight in the system moves to KMW

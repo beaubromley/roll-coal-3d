@@ -97,7 +97,7 @@ export class Outskirts {
     { const og = sc.getMeshByName("ground"); if (og) { og.position.y = -14; og.receiveShadows = false; }
       this.ground = new Ground(sc, this.baseTerrain, sc.getMaterialByName("ground"), (x, z) => Math.abs(x) <= 60 && z >= -65 && z <= 65);
       this.buildBlocked([...g.rig.colliders, ...this.colliders]);
-      this.ground.prime([{ x: 0, z: 112 }, { x: 0, z: 0 }]); }
+      this.ground.prime(DIGGING ? [{ x: 0, z: 112 }, { x: 0, z: 0 }] : []); }
     this.generatorSmoke();
     this.hankFx();
     this.wild = new Wildlife(g, this.scene, this.terrain, () => {});
@@ -776,7 +776,7 @@ export class Outskirts {
     { // the diggable ground follows the player (and a point ahead when going fast)
       const lp = this.lastP ?? { x: px, z: pz }, vx = (px - lp.x) / Math.max(dt, 1e-3), vz = (pz - lp.z) / Math.max(dt, 1e-3); this.lastP = { x: px, z: pz };
       const foc = [{ x: px, z: pz }], sp = Math.hypot(vx, vz); if (sp > 8) { const k = Math.min(60, sp * 1.2) / sp; foc.push({ x: px + vx * k, z: pz + vz * k }); }
-      this.ground.update(dt, foc);
+      this.ground.update(dt, DIGGING ? foc : []);   // no digging: no fine chunks, just the one ground at 2 m (no level-of-detail seams)
     }
     { // roll coal
       const near = Math.hypot(px - 25, pz) < 260;

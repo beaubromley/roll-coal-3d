@@ -57,3 +57,32 @@ export function drawRecorder(c: CanvasRenderingContext2D, w: number, h: number) 
   if (nf && !sm && !(cur.stalled || cur.bounce > 0.12)) { c.font = `${fs}px monospace`; c.textAlign = "left"; c.fillStyle = "#6f8aa1"; c.fillText(`${f.name} · ${UCS(f.hardness).toLocaleString("en-US")} psi    next: ${nf.name} in ${Math.max(0, Math.round(f.limit - cur.depth)).toLocaleString("en-US")} ft (${UCS(nf.hardness).toLocaleString("en-US")} psi${nf.hardness > f.hardness ? ", HARDER — watch the diff" : ", softer"})`, x0, 11); }
   c.restore();
 }
+
+export interface AutoView { on: boolean; limit: string; rop: number; wob: number; dp: number; tq: number; sp: { rop: number; wob: number; dp: number; tq: number } }
+
+/** the autodriller's four bars: instantaneous ROP, WOB, diff and torque against their set points (dashed); the one holding the weight down lights up */
+export function drawAutoBars(c: CanvasRenderingContext2D, w: number, h: number, a: AutoView) {
+  const k = w / 480;
+  c.save(); c.fillStyle = "#06090d"; c.fillRect(0, 0, w, h); c.textBaseline = "middle";
+  const bars = [
+    { k: "ROP", lim: "ROP", v: a.rop, sp: a.sp.rop, max: 600, col: "#76ff03" },
+    { k: "WOB", lim: "WOB", v: a.wob, sp: a.sp.wob, max: 80, col: "#ffeb3b" },
+    { k: "DIFF", lim: "DIFF", v: a.dp, sp: a.sp.dp, max: 2400, col: "#ff4dff" },
+    { k: "TQ", lim: "TORQUE", v: a.tq, sp: a.sp.tq, max: 20000, col: "#4fd6ff" },
+  ];
+  const bw = 74 * k, gap = (w - bars.length * bw) / (bars.length + 1), top = 18 * k + 2, bot = h - 40 * k, bh = bot - top;
+  bars.forEach((b, i) => {
+    const x = gap + i * (bw + gap), hit = a.on && a.limit === b.lim, fy = (v: number) => bot - Math.max(0, Math.min(1, v / b.max)) * bh;
+    if (hit) { c.fillStyle = b.col + "26"; c.fillRect(x - 10 * k, 2, bw + 20 * k, h - 4); c.strokeStyle = b.col; c.lineWidth = 2; c.strokeRect(x - 10 * k, 2, bw + 20 * k, h - 4); }
+    c.fillStyle = "#0e1822"; c.fillRect(x, top, bw, bh);
+    c.fillStyle = b.v > b.sp * 1.0001 ? "#ff4a3a" : b.col; const y = fy(b.v); c.fillRect(x, y, bw, bot - y);
+    c.strokeStyle = "#1c2a38"; c.lineWidth = 1; for (let q = 1; q < 5; q++) { const gy = top + (q / 5) * bh; c.beginPath(); c.moveTo(x, gy); c.lineTo(x + bw, gy); c.stroke(); }
+    const sy = fy(b.sp); c.strokeStyle = "#fff"; c.lineWidth = Math.max(1, 2 * k); c.setLineDash([6 * k, 4 * k]); c.beginPath(); c.moveTo(x - 6 * k, sy); c.lineTo(x + bw + 6 * k, sy); c.stroke(); c.setLineDash([]);
+    c.textAlign = "center"; c.font = "bold " + Math.round(15 * k) + "px monospace"; c.fillStyle = hit ? b.col : "#cfe6f7"; c.fillText(b.k, x + bw / 2, h - 28 * k);
+    c.font = "bold " + Math.round(13 * k) + "px monospace"; c.fillStyle = "#e6f0f8"; c.fillText(Math.round(b.v).toLocaleString("en-US"), x + bw / 2, h - 12 * k);
+    c.font = Math.round(10 * k) + "px monospace"; c.fillStyle = "#cfe6f7"; c.fillText("SP " + Math.round(b.sp).toLocaleString("en-US"), x + bw / 2, top - 8 * k);
+    if (hit) { c.font = "bold " + Math.round(11 * k) + "px monospace"; c.fillStyle = b.col; c.fillText("LIMITING", x + bw / 2, sy < top + 14 * k ? sy + 12 * k : sy - 9 * k); }
+  });
+  c.font = "bold " + Math.round(11 * k) + "px monospace"; c.textAlign = "left"; c.fillStyle = a.on ? "#3ddc84" : "#ffb02a"; c.fillText(a.on ? "AUTODRILLER ON" : "AUTODRILLER OFF", 4, 8 * k + 1);
+  c.restore();
+}

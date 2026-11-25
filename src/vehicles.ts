@@ -475,7 +475,7 @@ export class Vehicles {
     for (const v of this.list) if (v.lockedBy) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => "Hank's old pickup (ask Hank first)", r: 4.2, ok: () => !this.riding && !this.game.flags[v.lockedBy!], act: () => { this.game.sfx.click(); this.game.ui.toast("HANK'S TRUCK", "It's Hank's. Make friends with Hank and he'll hand you the keys."); } });
     for (const v of this.list) out.push({ pos: () => new Vector3(v.x, 1.4, v.z), label: () => v.kind === "drone" ? "Pilot the drone" : `Drive the ${v.name}`, r: v.kind === "car" ? 4.2 : v.kind === "drone" ? 3.2 : 3.4, act: () => this.enter(v), ok: () => !this.riding && !v.returning && (!v.lockedBy || !!this.game.flags[v.lockedBy]) });
     out.push({ pos: () => rv(0, FB + 1.0, 5.2), label: () => "Ride the Geronimo line (emergency escape)", r: 2.0, act: () => this.startZip(), ok: () => !this.riding && this.player.pos.y > FB - 1 });
-    this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair (then click a TV)" : "Sit in the directional driller's seat", r: i === 0 ? 2.6 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
+    this.seats.forEach((st, i) => out.push({ pos: () => new Vector3(st.pos.x, F + 1.0, st.pos.z), label: () => i === 0 ? "Sit in the driller's chair" : "Sit in the directional driller's seat", r: i === 0 ? 2.6 : 1.5, act: () => this.sit(i), ok: () => !this.riding }));
     out.push({ pos: () => rv(-3.62, F + 1.2, 2.4), label: () => "Climb the ladder to the monkey board", r: 1.9, act: () => this.startClimb(F), ok: () => !this.riding && this.player.pos.y < F + 3 && this.player.pos.y > F - 0.5 });
     out.push({ pos: () => rv(-3.0, FB + 1.2, 2.3), label: () => "Climb down to the drill floor", r: 2.0, act: () => this.startClimb(FB), ok: () => !this.riding && this.player.pos.y > FB - 1 });
     return out;
@@ -675,6 +675,8 @@ export class Vehicles {
   }
   private exitPop = 0;
 
+  /** sitting in any chair (the driller's or a directional driller's) */
+  inChair() { return this.chair.on; }
   isSeated(i = 0) { return this.chair.on && this.chair.idx === i; }
   /** the driller's chair and the console are one thing: sitting down puts the console in front of you (C opens the panel again) */
   sit(i = 0) {

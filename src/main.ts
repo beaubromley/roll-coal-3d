@@ -142,10 +142,10 @@ player.onLockLost = () => { if (game.started && !ui.panelOpen && !game.flags.fin
 document.addEventListener("visibilitychange", () => { if (document.hidden && game.started && !game.flags.finish) game.togglePause(true, { allowPanel: true }); });
 // mouse wheel swaps what you are holding, left click uses it
 let wheelAt = 0;
-const handsFree = () => game.started && !game.paused && !ui.panelOpen && (!game.veh.riding || game.veh.isSeated(0)) && !game.astMode;
+const handsFree = () => game.started && !game.paused && !ui.panelOpen && (!game.veh.riding || game.veh.inChair()) && !game.astMode;
 window.addEventListener("wheel", (e) => { if (!handsFree() || performance.now() - wheelAt < 130) return; wheelAt = performance.now(); ui.toast(game.held.cycle(e.deltaY > 0 ? 1 : -1), "Scroll to switch · click to use"); }, { passive: true });
 // left click is E when the reticle has locked onto something you can use; otherwise it uses what you are holding
-window.addEventListener("mousedown", (e) => { if (e.button === 0 && handsFree() && player.locked) { if (game.nearest) game.interact(); else if (!game.veh.riding) game.useHeld(); } });
+window.addEventListener("mousedown", (e) => { if (e.button === 0 && handsFree() && player.locked) { if (game.nearest) game.interact(true); else if (!game.veh.riding) game.useHeld(); } });
 window.addEventListener("keydown", (e) => {
   if ((e.code === "AltLeft" || e.code === "AltRight") && game.started) { e.preventDefault(); if (!e.repeat && !game.paused) player.unlock(); return; }
   if (e.repeat) return;
@@ -178,7 +178,8 @@ engine.runRenderLoop(() => {
     standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true, kicking: s.kick.active || s.kick.shut || s.mode === "killing",
     near: Math.hypot(player.pos.x - 4.8, player.pos.z + 3) < 22 && player.pos.y > 4,
     screens: { depth: s.depth, wob: s.wob, rop: s.rop, spp: s.spp, flow: s.flow, pit: s.pit, mw: s.mw, mode: s.mode, rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
-      kicking: s.kick.active, dd: game.veh.dd, t: clock },
+      kicking: s.kick.active, dd: game.veh.dd, t: clock,
+      auto: { on: s.auto.on, limit: s.auto.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: s.auto.rop, wob: s.auto.wob, dp: s.auto.dp, tq: s.auto.torque ?? 10000 } } },
   };
   if (fx.running) Object.assign(frame, fx.frameOverride());
   recTick(dt, { depth: s.depth, wob: s.wob * (1 + sim.bounce * 0.3 * Math.sin(clock * 11)), rop: s.rop, dp: s.dp, torque: s.torque, bounce: s.mode === "drilling" ? sim.bounce : 0, stalled: s.stallT > 0, drilling: s.mode === "drilling" });

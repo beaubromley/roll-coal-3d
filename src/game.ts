@@ -2,7 +2,7 @@ import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, Di
 import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
-import { drawRecorder } from "./recorder";
+import { drawRecorder, drawAutoBars } from "./recorder";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
 import { UI, Who, Choice, $ } from "./ui";
@@ -292,8 +292,9 @@ export class Game {
       this.interacts.push({ pos, label: typeof label === "string" ? () => label : label, r, act, ok });
     add(() => S.board, "Work the board — rack a stand", 3.2, () => this.workBoard(), () => this.player.pos.y > 20);
     // the console is the TVs in the driller's cabin: aim at one and click (or press E) and its screen opens, with the controls that go with it
-    const TVNAME: Record<string, string> = { params: "Drilling screen", trends: "Trends screen", pits: "Pits screen", alarms: "Alarms & well control screen" };
-    for (const m of this.rig.monitors) if (m.cabin && TVNAME[m.kind]) this.interacts.push({ pos: () => m.pos, label: () => TVNAME[m.kind], r: 3.8, act: () => this.openCabin(m.kind as "params"), tv: true });
+    // (E only sits in a chair or stands up; while seated, clicking any screen opens them all)
+    for (const m of this.rig.monitors) if (m.grp === "drill") this.interacts.push({ pos: () => m.pos, label: () => "Click: all screens  ·  E: stand up", r: 4.4, act: () => this.openCabin("all"), tv: true, ok: () => this.veh.isSeated(0) });
+    for (const m of this.rig.monitors) if (m.grp === "dd") this.interacts.push({ pos: () => m.pos, label: () => "Click: the directional screens  ·  E: stand up", r: 4.4, act: () => this.openDdScreens(), tv: true, ok: () => this.veh.isSeated(1) || this.veh.isSeated(2) });
     add(() => S.hopper, "Mud hopper", 3.4, () => this.openHopper());
     add(() => S.frac, "Frac tanks: transfer to the pits", 4.2, () => this.openFrac());
     add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
@@ -325,10 +326,8 @@ export class Game {
       let i = 0;
       add(() => H[key].root.position.add(v3(0, 1.1, 0)), "Talk", 2.4, () => { this.radio(who, lines[i++ % lines.length], 6500); }, () => H[key].root.isEnabled());
     };
-    talk("driller", "dale", ["Everything's green, boss. I'm just watching the numbers.", "You want more weight? Say it in the console, I can't read minds.", "I've drilled wells since before you had a hard hat. Just so you know."]);
     talk("pusher", "earl", ["If it's not on the JSA, we don't do it.", "Your trailer's got the good chair. Don't tell the others.", "Walk the location. Then walk it again."]);
     talk("mudeng", "marcus", ["Mud's looking good. The mud is always looking good until it isn't.", "Delaware's coming up. You'll want ten-nine in the pits before six thousand.", "That's not 'sticky.' That's 'rheology.'"]);
-    talk("dd1", "tex", ["We're sliding, boss. Build rate's fine. Don't touch my toolface.", "Inclination is 2 degrees. That is, in this business, a vertical well.", "I steer a drill bit a mile down with a joystick. And you want me to fill out a JSA about the coffee."]);
     talk("hand3", "jimbo", ["Pipe's pipe, boss.", "I do not get paid enough for the forklift.", "Is it break time? It feels like break time."]);
   }
 
@@ -349,6 +348,15 @@ export class Game {
   // ---------- panels ----------
   statRow(k: string, v: string, cls = "") { return `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`; }
 
+  private cabGrid: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
+  /** the directional drillers' screens, from either of their seats */
+  openDdScreens() {
+    const p = this.open(`<div class="eyebrow">Directional Driller</div><h2>Screens</h2><div class="scrgrid" id="ddgrid" style="grid-template-columns:repeat(4,1fr)"></div><div class="btns"><button class="b alt" data-close>Close</button></div>`, { wide: true, live: true });
+    this.closeBtn(p);
+    const grid = p.querySelector<HTMLElement>("#ddgrid")!, list: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
+    for (const m of this.rig.monitors.filter((x) => x.grp === "dd")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = String(m.slot![1] + 1); grid.appendChild(cv); list.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement }); }
+    (this.ui as any).panelTick = () => { for (const g of list) g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height); };
+  }
   openCabin(view: "all" | "params" | "trends" | "pits" | "alarms" = "all") {
     // the chair and the console are the same thing: opening the console sits you in the driller's chair
     if (!this.veh.isSeated(0) && !this.veh.riding) this.veh.sit(0);
@@ -357,6 +365,7 @@ export class Game {
       const k = s.kick, a = s.auto;
       const busy = s.mode === "tripping" || s.mode === "casing";
       return `<div class="eyebrow">Driller's Cabin</div><h2>${{ all: "Driller's Console", params: "Drilling screen", trends: "Trends screen", pits: "Pits screen", alarms: "Alarms & well control" }[view]}</h2>
+        <div class="scrgrid" id="scrgrid"></div>
         ${view === "pits" || view === "alarms" ? "" : `<div class="recwrap"><canvas id="rec" width="880" height="300"></canvas></div>`}
         <div class="cabview" data-view="${view}"><canvas id="tvmirror" width="512" height="320"></canvas></div>
         <div class="grid2 cabgrid">
@@ -394,6 +403,8 @@ export class Game {
     const p = this.open(render(), { wide: true, live: true });
     const bind = () => {
       const q = <T extends HTMLElement>(id: string) => p.querySelector<T>("#" + id)!;
+      { const grid = p.querySelector<HTMLElement>("#scrgrid"); this.cabGrid = [];
+        if (grid) for (const m of this.rig.monitors.filter((x) => x.grp === "drill")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = String(m.slot![1] + 1); grid.appendChild(cv); this.cabGrid.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement }); } }
       const sl = (id: string, out: string, apply: (v: number) => void) => { const el = q<HTMLInputElement>(id); el.oninput = () => { apply(Number(el.value)); q(out).textContent = el.value; }; };
       sl("wob", "wv", (v) => { s.wobTarget = v; });
       sl("flow", "fv", (v) => { s.flowTarget = v; });
@@ -438,7 +449,8 @@ export class Game {
     let sig0 = "";
     const mirror = view === "all" ? null : this.rig.monitors.find((m) => m.cabin && m.kind === view);
     (this.ui as any).panelTick = () => {
-      { const ac = p.querySelector<HTMLCanvasElement>("#abars"); if (ac) this.drawAutoBars(ac); }
+      { const ac = p.querySelector<HTMLCanvasElement>("#abars"); if (ac) { const a = s.auto; drawAutoBars(ac.getContext("2d")!, ac.width, ac.height, { on: a.on, limit: a.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: a.rop, wob: a.wob, dp: a.dp, tq: a.torque ?? 10000 } }); } }
+      for (const g of this.cabGrid) g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height);
       { const rc = p.querySelector<HTMLCanvasElement>("#rec"); const rx = rc?.getContext("2d"); if (rc && rx) drawRecorder(rx, rc.width, rc.height); }
       { const cv = p.querySelector<HTMLCanvasElement>("#tvmirror"); const src = mirror?.tex.getContext().canvas as HTMLCanvasElement | undefined; if (cv && src) cv.getContext("2d")?.drawImage(src, 0, 0, cv.width, cv.height); }
       const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
@@ -452,30 +464,6 @@ export class Game {
       const lim = p.querySelector<HTMLElement>("#a_lim");
       if (lim) lim.innerHTML = s.auto.on ? `Holding <b>${s.wobTarget.toFixed(1)}</b> klbs — limited by <b class="${s.auto.limit === "WOB" ? "ok" : "warn"}">${s.auto.limit === "WOB" ? "your WOB set point" : s.auto.limit === "ROP" ? "the ROP limit" : s.auto.limit === "TORQUE" ? "the torque limit" : "the diff-pressure limit"}</b>` : "";
     };
-  }
-  /** the autodriller's four bars: instantaneous ROP, WOB, diff and torque against their set points (dashed); the one holding the weight down lights up */
-  private drawAutoBars(cv: HTMLCanvasElement) {
-    const c = cv.getContext("2d")!, w = cv.width, h = cv.height, s = this.sim.s, a = s.auto, tq = a.torque ?? 10000;
-    c.fillStyle = "#06090d"; c.fillRect(0, 0, w, h); c.textBaseline = "middle";
-    const bars = [
-      { k: "ROP", lim: "ROP", v: s.rop, sp: a.rop, max: 600, unit: "ft/hr", col: "#76ff03" },
-      { k: "WOB", lim: "WOB", v: s.wob, sp: a.wob, max: 80, unit: "klb", col: "#ffeb3b" },
-      { k: "DIFF", lim: "DIFF", v: s.dp, sp: a.dp, max: 2400, unit: "psi", col: "#ff4dff" },
-      { k: "TQ", lim: "TORQUE", v: s.torque, sp: tq, max: 20000, unit: "ft-lb", col: "#4fd6ff" },
-    ];
-    const bw = 74, gap = (w - bars.length * bw) / (bars.length + 1), top = 18, bot = h - 40, bh = bot - top;
-    bars.forEach((b, i) => {
-      const x = gap + i * (bw + gap), hit = a.on && a.limit === b.lim, fy = (v: number) => bot - Math.max(0, Math.min(1, v / b.max)) * bh;
-      if (hit) { c.fillStyle = b.col + "26"; c.fillRect(x - 10, 2, bw + 20, h - 4); c.strokeStyle = b.col; c.lineWidth = 2; c.strokeRect(x - 10, 2, bw + 20, h - 4); }
-      c.fillStyle = "#0e1822"; c.fillRect(x, top, bw, bh);
-      const over = b.v > b.sp * 1.0001; c.fillStyle = over ? "#ff4a3a" : b.col; const y = fy(b.v); c.fillRect(x, y, bw, bot - y);
-      c.strokeStyle = "#1c2a38"; c.lineWidth = 1; for (let q = 1; q < 5; q++) { const gy = top + (q / 5) * bh; c.beginPath(); c.moveTo(x, gy); c.lineTo(x + bw, gy); c.stroke(); }
-      const sy = fy(b.sp); c.strokeStyle = "#fff"; c.lineWidth = 2; c.setLineDash([6, 4]); c.beginPath(); c.moveTo(x - 6, sy); c.lineTo(x + bw + 6, sy); c.stroke(); c.setLineDash([]);
-      c.textAlign = "center"; c.font = "bold 15px monospace"; c.fillStyle = hit ? b.col : "#cfe6f7"; c.fillText(b.k, x + bw / 2, h - 28);
-      c.font = "bold 13px monospace"; c.fillStyle = "#e6f0f8"; c.fillText(Math.round(b.v).toLocaleString("en-US"), x + bw / 2, h - 12);
-      c.font = "10px monospace"; c.fillStyle = "#cfe6f7"; c.fillText("SP " + Math.round(b.sp).toLocaleString("en-US"), x + bw / 2, top - 8);
-      if (hit) { c.font = "bold 11px monospace"; c.fillStyle = b.col; c.fillText("LIMITING", x + bw / 2, sy < top + 14 ? sy + 12 : sy - 9); }
-    });
   }
   private rerenderCabin(p: HTMLElement, render: () => string, bind: () => void) {
     const ky = p.scrollTop; p.innerHTML = render(); bind(); p.scrollTop = ky;
@@ -1337,7 +1325,7 @@ export class Game {
     for (const it of this.interacts) consider(it);
     cand.sort((a, b) => a.score - b.score);
     // nothing can be used through a wall: take the closest candidate that has a clear line from the eyes
-    const seated = this.veh.isSeated(0), pool = this.veh.riding ? (seated ? cand.filter((c) => c.it.tv) : []) : cand;
+    const seated = this.veh.inChair(), pool = this.veh.riding ? (seated ? cand.filter((c) => c.it.tv) : []) : cand;
     const clear = this.ui.panelOpen || !this.started || this.paused ? undefined : pool.find((c) => !this.blockedLOS(eye, c.it.pos()));
     this.nearest = clear?.it ?? null;
     this.ui.setPrompt(this.veh.riding && !this.ui.panelOpen && this.started && !this.paused && !(seated && this.nearest) ? this.veh.promptLabel() : this.nearest ? this.nearest.label() : null);
@@ -1408,7 +1396,7 @@ export class Game {
     const d = this.district();
     if (d !== this.lastDistrict) { this.lastDistrict = d; this.ui.setDistrict(d); }
     {   // third-person-aim style reticle: a dot at screen centre that eases onto whatever you can use, and opens into a gold ring while it is locked on
-      const ch = $("crosshair"), live = this.started && !this.ui.panelOpen && !this.paused && (!this.veh.riding || this.veh.isSeated(0));
+      const ch = $("crosshair"), live = this.started && !this.ui.panelOpen && !this.paused && (!this.veh.riding || this.veh.inChair());
       ch.style.display = live ? "block" : "none";
       if (live) {
         const eng = this.scene.getEngine(), cam = this.player.cam, W = document.documentElement.clientWidth || 1, Hh = document.documentElement.clientHeight || 1;
@@ -1498,8 +1486,12 @@ export class Game {
     return "Location";
   }
 
-  interact() {
-    if (this.started && !this.paused && !this.ui.panelOpen && this.veh.riding) { if (this.veh.isSeated(0) && this.nearest?.tv) { this.sfx.click(); this.nearest.act(); return; } this.veh.leave(); return; }
+  interact(fromMouse = false) {
+    if (this.started && !this.paused && !this.ui.panelOpen && this.veh.riding) {
+      if (this.veh.inChair()) { if (fromMouse) { if (this.nearest?.tv) { this.sfx.click(); this.nearest.act(); } } else this.veh.leave(); return; }
+      if (!fromMouse) this.veh.leave();
+      return;
+    }
     if (!this.started || this.paused || this.ui.panelOpen || !this.nearest) return;
     this.sfx.click(); this.onInteract(); this.nearest.act();
   }

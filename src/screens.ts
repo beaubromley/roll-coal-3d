@@ -1,13 +1,13 @@
 import { Scene, DynamicTexture } from "@babylonjs/core";
-import { drawRecorder } from "./recorder";
+import { drawRecorder, drawAutoBars, type AutoView } from "./recorder";
 
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
   depth: number; wob: number; rop: number; spp: number; flow: number; pit: number; mw: number; mode: string;
-  rotating: boolean; kicking: boolean; dd: { inc: number; azi: number; tf: number; sliding: boolean }; t: number;
+  rotating: boolean; kicking: boolean; dd: { inc: number; azi: number; tf: number; sliding: boolean }; t: number; auto?: AutoView;
 }
 
-export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news";
+export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto";
 
 const W = 256, H = 160;
 const BG = "#050a12", GRID = "rgba(120,170,220,0.16)", CY = "#4fd6ff", GR = "#5dff8a", AM = "#ffb02a", RD = "#ff5a4a", TX = "#cfe6f7", DIM = "#6f8aa1";
@@ -78,6 +78,7 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
         c.fillStyle = TX; c.font = "9px monospace"; c.textAlign = "center"; c.fillText(`${Math.round(lv * 760)}`, x + 17, 138); c.fillStyle = DIM; c.fillText(["ACT", "RSV", "TRIP", "SLUG"][i], x + 17, 150); }
       break;
     }
+    case "auto": { if (d.auto) drawAutoBars(c, W, H, d.auto); else { frame(c, "AUTODRILLER"); } break; }
     case "edr": break;   // drawn by drawEdr (it has its own, bigger canvas)
     case "news": {
       const heads = ["MAN WINS ARGUMENT WITH GPS, GPS DEMANDS RECOUNT", "BIGFOOT SPOTTED IN PERMIAN WALMART, BUYS ONLY ICE", "SENATOR CHALLENGES THE MOON TO A DEBATE", "GOAT ELECTED MAYOR; VOTER TURNOUT UP 400%", "SCIENTISTS CONFIRM MONDAY STILL MONDAY", "LOCAL TRUCK 'JUST NEEDS A LITTLE FREON'", "TOWN BANS SUNDAY AFTER 'TOO MANY MONDAYS'", "EXPERT: PROBABLY FINE. ANOTHER EXPERT: PROBABLY NOT",

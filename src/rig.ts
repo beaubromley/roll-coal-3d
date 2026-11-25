@@ -32,7 +32,7 @@ export interface Rig {
   /** the off-location windmill: spinning (true) or braked (false) */
   setWindmill(on: boolean): void;
   /** the live monitors (desk screens in the driller's cabin): what they show, and where they are in the world */
-  monitors: { kind: ScreenKind; tex: DynamicTexture; pos: Vector3; cabin: boolean }[];
+  monitors: { kind: ScreenKind; tex: DynamicTexture; pos: Vector3; cabin: boolean; grp: "drill" | "dd" | "tv"; slot?: [number, number] }[];
   /** the safety trailer's "days since last incident" board */
   setDaysSince(n: number): void;
   /** the hydraulic catwalk's controls (the ground station and the rig-floor remote both drive these) */
@@ -57,7 +57,7 @@ function noiseTex(scene: Scene, base: string, speck: string[], n: number, size =
   c.fillStyle = base; c.fillRect(0, 0, size, size);
   for (let i = 0; i < n; i++) {
     c.fillStyle = speck[(Math.random() * speck.length) | 0];
-    const s = 1 + Math.random() * 3;
+    const s = 0.7 + Math.random() * 1.7;
     const px = Math.random() * size, py = Math.random() * size;
     // draw wrapped so the texture tiles seamlessly (clipped speckles left a faint grid line at every tile edge)
     for (const ox of [0, -size]) for (const oy of [0, -size]) c.fillRect(px + ox, py + oy, s, s);
@@ -91,13 +91,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // ---------- materials ----------
   const ground = new StandardMaterial("ground", scene);
-  ground.diffuseTexture = noiseTex(scene, "#b59d78", ["#a58b66", "#c8b28c", "#8f7852", "#d6c4a0"], 5000, 256, 267);   // same tile size on a ground six times wider
+  ground.diffuseTexture = noiseTex(scene, "#b59d78", ["#a58b66", "#c8b28c", "#8f7852", "#d6c4a0"], 5000, 256, 450);   // same tile size on a ground six times wider
   ground.specularColor = Color3.Black();
   const groundMesh = MeshBuilder.CreateGround("ground", { width: 6000, height: 6000 }, scene);   // wide enough that its edge is past the far plane and lost in the fog (no line on the horizon)
   groundMesh.material = ground; groundMesh.receiveShadows = true;
 
   const padMat = new StandardMaterial("pad", scene);
-  padMat.diffuseTexture = noiseTex(scene, "#c9b48f", ["#bba57e", "#d8c8a6", "#a68f68", "#e1d3b4"], 4000, 256, 14);
+  padMat.diffuseTexture = noiseTex(scene, "#c9b48f", ["#bba57e", "#d8c8a6", "#a68f68", "#e1d3b4"], 4000, 256, 24);
   padMat.specularColor = Color3.Black();
   const pad = MeshBuilder.CreateGround("padmesh", { width: 120, height: 130 }, scene);
   pad.position.set(0, 0.04, 0); padMat.zOffset = -2; pad.material = padMat; pad.receiveShadows = false;
@@ -106,7 +106,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   road.position.set(0, 0.08, 190);
   const rm = new StandardMaterial("roadm", scene);
   rm.diffuseTexture = noiseTex(scene, "#5a5650", ["#4a463f", "#6a665e", "#3d3a34"], 2500, 256, 8);
-  { const rt = rm.diffuseTexture as DynamicTexture; rt.uScale = 2; rt.vScale = 86; rt.anisotropicFilteringLevel = 1; }   // the road is 7 m x 300 m: tile the texture to match, or it streaks
+  { const rt = rm.diffuseTexture as DynamicTexture; rt.uScale = 3; rt.vScale = 129; rt.anisotropicFilteringLevel = 1; }   // the road is 7 m x 300 m: tile the texture to match, or it streaks
   rm.specularColor = Color3.Black(); rm.zOffset = -4; road.material = rm; road.receiveShadows = false;
 
   b.defMat("steel", "#7b8087"); b.defMat("dsteel", "#3a3f45"); b.defMat("black", "#16181a");
@@ -285,9 +285,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const tvScreens = new Screens(scene);
   let tvT = 0, lastScr: import("./screens").ScreenData | undefined;
   const monitorList: Rig["monitors"] = [];
-  const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens) => {
+  const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens, slot?: [number, number]) => {
     const key = "scr" + scrN++, tex = scr.make(kind, false);
-    monitorList.push({ kind, tex, pos: rpos(v(cx + (face === "+x" ? 0.3 : -0.3), cy, cz)), cabin: scr === screens });
+    monitorList.push({ kind, tex, pos: rpos(v(cx + (face === "+x" ? 0.3 : -0.3), cy, cz)), cabin: scr === screens, grp: scr !== screens ? "tv" : face === "+x" ? "drill" : "dd", slot });
     tex.wAng = Math.PI / 2;   // the box side faces map the canvas turned a quarter turn
     const m = b.defMat(key, "#000000"); m.emissiveTexture = tex; m.diffuseTexture = tex; m.diffuseColor.set(0.4, 0.4, 0.4); m.emissiveColor.set(0.85, 0.85, 0.85); m.specularColor.set(0, 0, 0);
     b.slab("black", cx - 0.04, cy - h / 2 - 0.03, cz - w / 2 - 0.03, cx + 0.04, cy + h / 2 + 0.03, cz + w / 2 + 0.03);
@@ -300,8 +300,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const deskZ = [-5.45, -4.55, -1.85, -0.95];
   b.slab("dsteel", 2.8, F, -5.9, 3.6, F + 0.95, -0.5, true);
   b.slab("steel", 2.8, F + 0.95, -5.9, 3.6, F + 0.99, -0.5);
-  (["params", "trends", "pits", "alarms"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k));
-  (["pumps", "hookload", "steer"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.0, F + 2.35, -4.3 + i * 1.3, 0.85, 0.52, k));
+  // the wall of screens: four on the desk with a two-monitor gap in the middle to see the rotary through, six hung across the top
+  (["params", "auto", "alarms", "pits"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k, screens, [1, [0, 1, 4, 5][i]]));
+  (["trends", "edr", "pumps", "hookload", "steer", "plan"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.0, F + 2.35, -5.45 + i * 0.9, 0.82, 0.5, k, screens, [0, i]));
   for (const mz of deskZ) b.slab("black", 3.55, F + 0.99, mz - 0.25, 3.85, F + 1.03, mz + 0.25);   // keyboards / panels under each monitor
   // driller's chair at (4.5, -3.2) facing west: joystick arms, throttle and brake
   b.cyl("black", 4.5, F + 0.25, -3.2, 0.14, 0.5, { tess: 8 }); b.slab("black", 4.1, F, -3.6, 4.9, F + 0.07, -2.8);
@@ -312,8 +313,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // ---- directional driller / MWD desk along the east wall: they face east, back to the driller ----
   b.slab("dsteel", 6.0, F, -5.7, 6.8, F + 0.95, -1.6, true);
   b.slab("steel", 6.0, F + 0.95, -5.7, 6.8, F + 0.99, -1.6);
-  ([["survey", -5.2], ["toolface", -4.45], ["gamma", -3.7], ["mwd", -2.95]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.45, F + 1.32, z, 0.7, 0.5, k));
-  ([["plan", -4.8], ["steer", -3.3]] as [ScreenKind, number][]).forEach(([k, z]) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k));
+  ([["survey", -5.2], ["toolface", -4.45], ["gamma", -3.7], ["mwd", -2.95]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.45, F + 1.32, z, 0.7, 0.5, k, screens, [1, i]));
+  ([["plan", -4.8], ["steer", -3.3]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k, screens, [0, i]));
   for (const z of [-5.0, -4.0, -3.0]) b.slab("black", 6.15, F + 0.99, z - 0.25, 6.4, F + 1.03, z + 0.25);
   for (const cz of [-4.7]) {                                                     // the directional driller's chair, facing the desk
     b.cyl("black", 5.4, F + 0.25, cz, 0.12, 0.5, { tess: 8 }); b.slab("black", 5.0, F, cz - 0.4, 5.8, F + 0.07, cz + 0.4);

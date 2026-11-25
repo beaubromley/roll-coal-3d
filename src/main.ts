@@ -64,7 +64,7 @@ kit?.casters.forEach((m) => sg.addShadowCaster(m));
 player.body.setShadow(sg);
 game.veh.setShadow(sg);
 Object.values(rig.humans).forEach((h) => h.setShadow(sg));
-scene.meshes.forEach((m) => { if (m.name === "ground" || m.name === "padmesh" || m.name === "road") m.receiveShadows = true; });
+scene.meshes.forEach((m) => { if (m.name === "ground") m.receiveShadows = true; });   // the pad and the road take no shadows: long shadows from the thin rig steel streaked them
 
 const glow = new GlowLayer("glow", scene, { mainTextureFixedSize: 512, blurKernelSize: 24 });
 glow.intensity = 0.45;

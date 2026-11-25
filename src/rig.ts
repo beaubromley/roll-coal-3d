@@ -99,14 +99,14 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   padMat.diffuseTexture = noiseTex(scene, "#c9b48f", ["#bba57e", "#d8c8a6", "#a68f68", "#e1d3b4"], 4000, 256, 14);
   padMat.specularColor = Color3.Black();
   const pad = MeshBuilder.CreateGround("padmesh", { width: 120, height: 130 }, scene);
-  pad.position.set(0, 0.04, 0); padMat.zOffset = -2; pad.material = padMat; pad.receiveShadows = true;
+  pad.position.set(0, 0.04, 0); padMat.zOffset = -2; pad.material = padMat; pad.receiveShadows = false;
 
   const road = MeshBuilder.CreateGround("road", { width: 7, height: 300 }, scene);
   road.position.set(0, 0.08, 190);
   const rm = new StandardMaterial("roadm", scene);
   rm.diffuseTexture = noiseTex(scene, "#5a5650", ["#4a463f", "#6a665e", "#3d3a34"], 2500, 256, 8);
   { const rt = rm.diffuseTexture as DynamicTexture; rt.uScale = 2; rt.vScale = 86; rt.anisotropicFilteringLevel = 1; }   // the road is 7 m x 300 m: tile the texture to match, or it streaks
-  rm.specularColor = Color3.Black(); rm.zOffset = -4; road.material = rm; road.receiveShadows = true;
+  rm.specularColor = Color3.Black(); rm.zOffset = -4; road.material = rm; road.receiveShadows = false;
 
   b.defMat("steel", "#7b8087"); b.defMat("dsteel", "#3a3f45"); b.defMat("black", "#16181a");
   b.defMat("orange", "#e0701a"); b.defMat("white", "#e3e5e8"); b.defMat("blue", "#2c5d8a"); b.defMat("navy", "#233a52");

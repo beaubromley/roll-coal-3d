@@ -40,7 +40,7 @@ export class Game {
   started = false;
   approval = 3; morale = 62; incidents = 0;
   interacts: Interactable[] = [];
-  private chX = 0; private chY = 0; private hudDays = -1; private hudClock = ""; private hudCost = "";
+  private chX = 0; private chY = 0; private hudDays = -1; private hudClock = ""; private hudCost = ""; private hudWell = "";
   queue: Mission[] = [];
   active: { m: Mission; i: number } | null = null;
   stack: { m: Mission; i: number }[] = [];
@@ -401,7 +401,7 @@ export class Game {
     q("ddflip").onclick = () => this.flipSeat(true);
     let ddSel = 0;
     const grid = q("ddgrid"), list: { cv: HTMLCanvasElement; src: HTMLCanvasElement; kind: string }[] = [];
-    for (const m of this.rig.monitors.filter((x) => x.grp === "dd")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); cv.style.cursor = "pointer"; const idx = list.length; cv.onclick = () => { ddSel = idx; this.sfx.click(); }; grid.appendChild(cv); list.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement, kind: m.kind }); }
+    for (const m of this.rig.monitors.filter((x) => x.grp === "dd")) { const cv = document.createElement("canvas"); cv.width = 256; { const sc2 = m.tex.getContext().canvas as HTMLCanvasElement; cv.height = Math.round(256 * sc2.height / sc2.width); } cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); cv.style.cursor = "pointer"; const idx = list.length; cv.onclick = () => { ddSel = idx; this.sfx.click(); }; grid.appendChild(cv); list.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement, kind: m.kind }); }
     q("dm_rotate").onclick = () => dd.setMode("rotate"); q("dm_slide").onclick = () => dd.setMode("slide"); q("dm_osc").onclick = () => dd.setMode("osc");
     q<HTMLInputElement>("dtf").oninput = (ev) => dd.setTf(Number((ev.target as HTMLInputElement).value));
     p.querySelectorAll<HTMLButtonElement>("[data-tf]").forEach((b) => b.onclick = () => { dd.setTf(dd.tfSet + Number(b.dataset.tf)); this.sfx.click(); });
@@ -462,7 +462,7 @@ export class Game {
     const bind = () => {
       const q = <T extends HTMLElement>(id: string) => p.querySelector<T>("#" + id)!;
       { const grid = p.querySelector<HTMLElement>("#scrgrid"); this.cabGrid = [];
-        if (grid) for (const m of this.rig.monitors.filter((x) => x.grp === "drill")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); cv.style.cursor = "pointer"; const idx = this.cabGrid.length; cv.onclick = () => { this.cabSel = idx; this.sfx.click(); }; grid.appendChild(cv); this.cabGrid.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement, kind: m.kind }); }
+        if (grid) for (const m of this.rig.monitors.filter((x) => x.grp === "drill")) { const cv = document.createElement("canvas"); cv.width = 256; { const sc2 = m.tex.getContext().canvas as HTMLCanvasElement; cv.height = Math.round(256 * sc2.height / sc2.width); } cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); cv.style.cursor = "pointer"; const idx = this.cabGrid.length; cv.onclick = () => { this.cabSel = idx; this.sfx.click(); }; grid.appendChild(cv); this.cabGrid.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement, kind: m.kind }); }
         if (this.cabSel < 0 || this.cabSel >= this.cabGrid.length) this.cabSel = Math.max(0, this.cabGrid.findIndex((g) => g.kind === "edr")); }
       const sl = (id: string, out: string, apply: (v: number) => void) => { const el = q<HTMLInputElement>(id); el.oninput = () => { apply(Number(el.value)); q(out).textContent = el.value; }; };
       sl("wob", "wv", (v) => { s.wobTarget = v; });
@@ -1473,6 +1473,9 @@ export class Game {
     }
     { // the corner: time of day and cost
       { const day = clockString(this.sim.s.t).day, d = Math.max(0, day - ((this.flags.lastIncDay as number | undefined) ?? -141)); if (d !== this.hudDays) { this.hudDays = d; this.rig.setDaysSince(d); } }
+      { const s = this.sim.s, days = s.t / 1440, drilled = s.stats.feetDrilled, fmt0 = (n: number) => Math.round(n).toLocaleString("en-US");
+        const dep = fmt0(s.depth) + " ft", dy = "Day " + (Math.floor(days) + 1) + (days > 0.05 && drilled > 1 ? "  ·  " + fmt0(drilled / days) + " ft/day" : ""), cf = "$" + fmt0(s.cost) + "  ·  $" + fmt0(s.cost / Math.max(1, s.depth)) + "/ft";
+        const key = dep + dy + cf; if (key !== this.hudWell) { this.hudWell = key; $("ws_depth").textContent = dep; $("ws_days").textContent = dy; $("ws_cost").textContent = cf; } }
       const cs = "$" + Math.round(this.sim.s.cost).toLocaleString("en-US"); if (cs !== this.hudCost) { this.hudCost = cs; $("cost").textContent = cs; }
       const ck = clockString(this.sim.s.t).hhmm; if (ck !== this.hudClock) { this.hudClock = ck; $("clock").textContent = ck; }
     }

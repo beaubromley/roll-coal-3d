@@ -10,7 +10,7 @@ export interface ScreenData {
   rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; bitDepth?: number; casing?: "run" | "cement" | "done" | "none";
 }
 
-export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac" | "systems" | "dirq" | "ddq";
+export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac" | "systems" | "dirq" | "ddq" | "weight";
 
 const W = 256, H = 160;
 const BG = "#0b0e12", GRID = "rgba(120,140,160,0.22)", CY = "#2fd0d0", GR = "#22c06a", AM = "#e8d34a", RD = "#ff6a7a", TX = "#e6ebf0", DIM = "#8d98a5";
@@ -41,7 +41,7 @@ export class Screens {
       push(hist.res, 8 + 5 * Math.sin(d.depth / 130 + 1) + (Math.random() - 0.5) * 2);
       pushEdr(d);
     }
-    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(s.w, 0); c.scale(-1, 1); } if (s.kind === "edr" || s.kind === "trends") drawEdr(c, d, s.w, s.h); else { if (s.w !== W || s.h !== H) c.scale(s.w / W, s.h / H); draw(s.kind, c, d); } c.restore(); s.tex.update(); }
+    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(s.w, 0); c.scale(-1, 1); } if (s.kind === "edr" || s.kind === "trends") drawEdr(c, d, s.w, s.h); else if (s.kind === "weight") drawWeight(c, d, s.w, s.h); else { if (s.w !== W || s.h !== H) c.scale(s.w / W, s.h / H); draw(s.kind, c, d); } c.restore(); s.tex.update(); }
   }
 }
 
@@ -231,6 +231,23 @@ function trip(d: ScreenData): { hook: number; block: number } {
   return { hook: W - d.wob * (d.rotating ? 1 : 0), block: 5 + (1 - ((((d.depth - WELL.startDepth) % STAND) + STAND) % STAND) / STAND) * (STROKE - 5) };   // starts at the top of a stand and comes down as the hole is made
 }
 const edrHist: number[][] = [];
+/** the weight indicator: a big dial for hookload, with the weight on bit shown as the amber stretch between the hanging weight and the reading */
+function drawWeight(c: CanvasRenderingContext2D, d: ScreenData, w: number, h: number) {
+  const t = trip(d), free = d.tripping || d.casing === "run" ? t.hook : t.hook + (d.rotating ? d.wob : 0), MAX = 500;
+  c.fillStyle = "#0b0e12"; c.fillRect(0, 0, w, h); c.textBaseline = "middle";
+  c.fillStyle = "#14181e"; c.fillRect(0, 0, w, h * 0.09); c.fillStyle = "#e6ebf0"; c.font = "bold " + Math.round(h * 0.055) + "px monospace"; c.textAlign = "left"; c.fillText("WEIGHT INDICATOR", w * 0.04, h * 0.045);
+  c.textAlign = "right"; c.fillStyle = "#8d98a5"; c.font = Math.round(h * 0.04) + "px monospace"; c.fillText("klb", w * 0.96, h * 0.045);
+  const cx = w / 2, cy = h * 0.56, R = Math.min(w * 0.44, h * 0.46), a0 = (150 * Math.PI) / 180, a1 = (390 * Math.PI) / 180, ang = (v: number) => a0 + (Math.max(0, Math.min(MAX, v)) / MAX) * (a1 - a0);
+  c.fillStyle = "#0e1217"; c.beginPath(); c.arc(cx, cy, R * 1.04, 0, 6.3); c.fill(); c.strokeStyle = "#252c35"; c.lineWidth = 2; c.stroke();
+  c.lineWidth = R * 0.09; c.lineCap = "butt"; c.strokeStyle = "#1c5a34"; c.beginPath(); c.arc(cx, cy, R * 0.86, ang(0), ang(Math.min(free, MAX))); c.stroke();     // the hanging weight
+  if (d.rotating && !d.tripping && d.wob > 0) { c.strokeStyle = "#ffb02a"; c.beginPath(); c.arc(cx, cy, R * 0.86, ang(t.hook), ang(free)); c.stroke(); }      // weight on bit
+  c.lineWidth = 2; c.strokeStyle = "#8d98a5"; c.fillStyle = "#cfd6dc"; c.font = "bold " + Math.round(R * 0.11) + "px monospace"; c.textAlign = "center";
+  for (let v = 0; v <= MAX; v += 25) { const a = ang(v), big = v % 100 === 0, r0 = R * (big ? 0.68 : 0.74), r1 = R * 0.79; c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.stroke(); if (big) c.fillText(String(v), cx + Math.cos(a) * R * 0.56, cy + Math.sin(a) * R * 0.56); }
+  const na = ang(t.hook); c.strokeStyle = "#ff4a3a"; c.lineWidth = Math.max(3, R * 0.03); c.beginPath(); c.moveTo(cx - Math.cos(na) * R * 0.12, cy - Math.sin(na) * R * 0.12); c.lineTo(cx + Math.cos(na) * R * 0.78, cy + Math.sin(na) * R * 0.78); c.stroke();
+  c.fillStyle = "#cfd6dc"; c.beginPath(); c.arc(cx, cy, R * 0.07, 0, 6.3); c.fill();
+  c.font = "bold " + Math.round(R * 0.26) + "px monospace"; c.fillStyle = "#e6ebf0"; c.textAlign = "center"; c.fillText(t.hook.toFixed(0), cx, cy + R * 0.38);
+  c.font = Math.round(h * 0.045) + "px monospace"; c.fillStyle = "#8d98a5"; c.textAlign = "left"; c.fillText("WOB " + (d.rotating && !d.tripping ? d.wob.toFixed(1) : "0.0") + " klb", w * 0.04, h * 0.95); c.textAlign = "right"; c.fillText("BLOCK " + t.block.toFixed(0) + " ft", w * 0.96, h * 0.95);
+}
 const edrMode: number[] = [];   // 0 rotating, 1 sliding, 2 oscillating slide, 3 not drilling
 const edrState = { rop2: 0, wob2: 0 };
 function pushEdr(d: ScreenData) {

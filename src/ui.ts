@@ -66,6 +66,8 @@ export class UI {
   log: { name: string; text: string; time: string }[] = [];
   logClock: () => string = () => "";
   private record(name: string, text: string) { this.log.push({ name, text, time: this.logClock() }); if (this.log.length > 400) this.log.shift(); }
+  /** goes in the L log but not on screen */
+  logOnly(who: Who, text: string) { this.record(CAST[who].name, text); }
   radio(who: Who, text: string, ms = 7000) {
     const c = CAST[who];
     this.record(c.name, text);
@@ -74,8 +76,8 @@ export class UI {
     el.innerHTML = `<img src="${import.meta.env.BASE_URL}portraits/${c.img}.jpg" alt=""/><div><div class="who">${c.name}</div><div class="txt">${text}</div></div>`;
     $("radio").appendChild(el);
     this.radioQ.push(el);
-    while (this.radioQ.length > 4) this.radioQ.shift()!.remove();
-    window.setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .5s"; window.setTimeout(() => el.remove(), 520); }, Math.max(11000, ms * 1.9) + text.length * 45);
+    while (this.radioQ.length > 2) this.radioQ.shift()!.remove();
+    window.setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .5s"; window.setTimeout(() => el.remove(), 520); }, Math.min(10000, 3500 + text.length * 55));
   }
 
   /** Open a modal panel. `tick` runs every frame while open (for live gauges). */

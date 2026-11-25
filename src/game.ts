@@ -5,6 +5,8 @@ import { Player } from "./player";
 import { drawAutoBars } from "./recorder";
 import { setupBoard } from "./scores";
 import { drawEdr, Screens, type ScreenData } from "./screens";
+import { drawMissionArt } from "./cards";
+import { ACHIEVEMENTS, checkAchievements } from "./achievements";
 import { Dd, OFFSETS, DEFAULT_WPS, presetWps, planStats } from "./dd";
 import { drawPlanEditor, planEditorMap } from "./ddscreens";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
@@ -74,7 +76,7 @@ export class Game {
     this.player.canLock = () => !this.ui.panelOpen && !this.paused;
     this.finale = new Finale(this);
     this.ui.logClock = () => { const c = clockString(this.sim.s.t); return "Day " + c.day + " " + c.hhmm; };
-    this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
+    this.ui.onPanelClose = () => { if (this.cardPending) { const f = this.cardPending; this.cardPending = null; f(); } this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
     this.player.onRampFall = (h) => {
       this.sfx.thud(); this.sim.addCost(3000); this.inc(1, "SLIP ON V-DOOR RAMP");
@@ -194,7 +196,7 @@ export class Game {
     this.paused = want;
     document.body.classList.toggle("paused", want);
     if (want) {
-      this.refreshPause(); $("pctrlbox").style.display = "none"; $("pause").style.display = "grid"; this.drawCurve();
+      this.refreshPause(); $("pctrlbox").style.display = "none"; $("pause").style.display = "grid"; this.renderTally();
       this.player.enabled = false; this.player.unlock();
       try { this.sfx.ctx?.suspend(); } catch { /* ignore */ }
     } else {
@@ -208,10 +210,20 @@ export class Game {
   inc(n = 1, why = "") { this.incidents += n; this.flags.lastIncDay = clockString(this.sim.s.t).day; this.rig.setDaysSince(0); this.approval = clamp(this.approval - 0.3 * n, 0, 5); this.sfx.bad(); if (why) this.ui.toast("INCIDENT", why); }
   gain(a = 0, m = 0) { this.approval = clamp(this.approval + a, 0, 5); this.morale = clamp(this.morale + m, 0, 100); }
   say(who: Who, text: string, choices?: Choice[], eyebrow?: string, opts?: { closable?: boolean }) { this.player.enabled = false; this.player.unlock(); this.ui.say(who, text, choices, eyebrow, opts); this.sfx.radio(); }
+  /** the radio: messages queue up and come one at a time so there is time to read them; mission briefings come as cards instead */
+  private radioPend: { who: Who; text: string; ms?: number }[] = []; private radioLast = -99; private quiet = false;
   radio(who: Who, text: string, ms?: number) {
     // on the asteroid it is just you and Harry on the radio (and Houston)
     if (this.astMode && !["harry", "nasa"].includes(who as string)) who = "harry" as Who;
-    this.ui.radio(who, text, ms); this.sfx.radio();
+    if (this.quiet) { this.ui.logOnly(who, text); return; }
+    this.radioPend.push({ who, text, ms }); while (this.radioPend.length > 3) { const d = this.radioPend.shift()!; this.ui.logOnly(d.who, d.text); }
+    this.pumpRadio();
+  }
+  private pumpRadio() {
+    if (!this.radioPend.length) return;
+    const gap = this.astMode || this.flags.finish ? 1.6 : 4.5;
+    if (this.realT - this.radioLast < gap) return;
+    const r = this.radioPend.shift()!; this.radioLast = this.realT; this.ui.radio(r.who, r.text, r.ms); this.sfx.radio();
   }
   open(html: string, o: { wide?: boolean; live?: boolean; tick?: () => void } = {}) {
     this.player.enabled = false; this.player.unlock(); this.live = !!o.live;
@@ -221,8 +233,35 @@ export class Game {
   }
   closeBtn(p: HTMLElement) { p.querySelector<HTMLButtonElement>("[data-close]")?.addEventListener("click", () => this.ui.closePanel()); }
   sinceDone() { return this.realT - this.lastDone; }
+  /** achievements */
+  private achT = 1;
+  hasAward(id: string) { return !!(this.flags.ach && this.flags.ach[id]); }
+  award(id: string) {
+    const a = ACHIEVEMENTS.find((x) => x.id === id); if (!a || this.hasAward(id)) return;
+    (this.flags.ach ??= {})[id] = Math.round(this.realT);
+    this.sfx.good(); this.ui.toast("★ ACHIEVEMENT", a.name + " — " + a.desc); this.gain(0, 2);
+  }
+  /** the tally book on the pause screen */
+  tallyTab = "main";
+  renderTally() {
+    const box = $("tallybook"); if (!box) return;
+    const tab = this.tallyTab;
+    const mark = (n: number) => { let s = ""; for (let i = 0; i < Math.floor(n / 5); i++) s += '<span class="tm5">||||</span> '; s += "|".repeat(n % 5); return s || "&nbsp;"; };
+    const status = (m: Mission) => this.doneIds.has(m.id) ? ["✔", "DONE", "ok"] : (this.active && this.active.m === m) || this.stack.some((r) => r.m === m) ? ["▶", "NOW", "now"] : ["○", m.side ? "OPEN" : "COMING UP", "wait"];
+    const row = (m: Mission) => { const [ic, st, cl] = status(m); return `<div class="trow ${cl}"><b>${ic}</b><div><div class="tt">${m.title}</div><div class="ts">${m.sub}</div></div><em>${st}</em></div>`; };
+    let body = "";
+    const main = this.allMissions, side = this.sideList, sd = side.filter((m) => this.doneIds.has(m.id)).length, md = main.filter((m) => this.doneIds.has(m.id)).length;
+    if (tab === "main") body = `<div class="tmarks">${mark(md)}</div>${main.map(row).join("")}`;
+    else if (tab === "side") body = `<div class="tmarks">${mark(sd)}</div>${side.map(row).join("")}`;
+    else if (tab === "ach") { const n = ACHIEVEMENTS.filter((a) => this.hasAward(a.id)).length; body = `<div class="tmarks">${n} / ${ACHIEVEMENTS.length}</div><div class="agrid">${ACHIEVEMENTS.map((a) => { const on = this.hasAward(a.id); return `<div class="ach ${on ? "on" : ""}"><b>${on ? "★" : "☆"}</b><div><div class="tt">${on || !a.secret ? a.name : "???"}</div><div class="ts">${on || !a.secret ? a.desc : "A secret."}</div></div></div>`; }).join("")}</div>`; }
+    box.innerHTML = `<div class="ttabs">${[["main", "MAIN JOBS"], ["side", "SIDE JOBS"], ["ach", "ACHIEVEMENTS"], ["depth", "DEPTH"]].map(([k, l]) => `<button class="ttab ${tab === k ? "on" : ""}" data-t="${k}">${l}</button>`).join("")}</div><div class="tbody">${body}</div>`;
+    box.querySelectorAll<HTMLButtonElement>(".ttab").forEach((b) => b.onclick = () => { this.tallyTab = b.dataset.t!; this.renderTally(); });
+    $("curvewrap").style.display = tab === "depth" ? "block" : "none"; if (tab === "depth") this.drawCurve();
+  }
+  /** daylight on the lease (about 7am to 6pm) */
+  daytime() { const h = clockString(this.sim.s.t).hour % 24; return h >= 7 && h < 18; }
   fell(m: number) {
-    this.sfx.thud();
+    this.sfx.thud(); this.award("fall");
     this.inc(1, "FALL FROM HEIGHT");
     this.radio("earl", `You fell ${Math.round(m * 3.28)} feet. That's a recordable. Do the paperwork, Company Man.`);
     this.standDown(`You fell ${Math.round(m * 3.28)} feet. Someone has to call it in, and that someone is a lot of people.`, 5000, 900, () => this.player.teleport(28, 0.5, 14, Math.PI / 2));
@@ -541,7 +580,7 @@ export class Game {
       holdBtn("wobUp", 1); holdBtn("wobDn", -1);
       q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
       q("c_sweep").onclick = () => { const r = this.sim.sweep(); if (r) { this.ui.toast("NO SWEEP", r); return; } this.sfx.click(); this.ui.toast("LCM SWEEP AWAY", "A 30 lb/bbl pill is going down the pipe. It will fade as it circulates out."); this.radio("marcus", "The pill is pumped. Watch the pits and the returns.", 6000); };
-      const lz = p.querySelector<HTMLElement>("#a_laser"); if (lz) lz.onclick = () => { this.flags.laserOn = !this.flags.laserOn; this.sfx.click(); this.radio("dale", this.flags.laserOn ? "Laser is firing. No weight on bit. 300 an hour and nothing wears out. This feels illegal." : "Back to the bit. It missed us.", 7000); this.rerenderCabin(p, render, bind); };
+      const lz = p.querySelector<HTMLElement>("#a_laser"); if (lz) lz.onclick = () => { this.flags.laserOn = !this.flags.laserOn; if (this.flags.laserOn) this.award("pew"); this.sfx.click(); this.radio("dale", this.flags.laserOn ? "Laser is firing. No weight on bit. 300 an hour and nothing wears out. This feels illegal." : "Back to the bit. It missed us.", 7000); this.rerenderCabin(p, render, bind); };
       q("a_toggle").onclick = () => {
         const a = s.auto;
         if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
@@ -991,9 +1030,8 @@ export class Game {
   /** start a side mission (from a person or a place). It takes over for now, and the story job under it waits on the stack. */
   startSide(id: string): boolean {
     const m = this.sideList.find((x) => x.id === id);
-    if (!m || this.doneIds.has(id) || (this.active && this.active.m.id === id) || this.stack.some((r) => r.m.id === id)) return false;
-    if (this.active) this.stack.push(this.active);
-    this.beginMission(m); return true;
+    if (!m || this.doneIds.has(id) || (this.active && this.active.m.id === id) || this.stack.some((r) => r.m.id === id) || this.cardOpen) return false;
+    this.beginMission(m, { ask: true }); return true;
   }
   onInteract: () => void = () => {};
   hasSave(): boolean { try { return !!localStorage.getItem(Game.SAVE_KEY); } catch { return false; } }
@@ -1308,12 +1346,37 @@ export class Game {
   }
 
   // ---------- mission engine ----------
-  beginMission(m: Mission) {
+  /** hand out a job. Story jobs and side jobs come on a pixel card (urgent ones start at once). A side job that offers itself can be put off for later. */
+  cardOpen = false; private cardPending: (() => void) | null = null; private declined = new Map<string, number>();
+  beginMission(m: Mission, o: { offer?: boolean; ask?: boolean } = {}) {
+    if (m.priority || !this.started) { this.runMission(m, false); return; }
+    const side = !!m.side, offered = !!(o.offer || o.ask);
+    this.showCard(m, side, offered, () => this.runMission(m, true), offered ? () => { this.declined.set(m.id, this.realT); } : undefined);
+  }
+  private runMission(m: Mission, carded: boolean) {
+    if (this.active) this.stack.push(this.active);
     this.active = { m, i: 0 }; this.missionNo++;
-    m.start?.();
+    this.quiet = carded; try { m.start?.(); } finally { this.quiet = false; }
     this.ui.setMission(m.title, m.steps[0].text, this.jobLabel(m));
     this.sfx.good(); this.ui.toast(m.title);
     m.steps[0].enter?.();
+  }
+  private showCard(m: Mission, side: boolean, offered: boolean, go: () => void, no?: () => void) {
+    this.cardOpen = true; this.player.enabled = false; this.player.unlock(); this.live = false;
+    const total = this.missionTotal, story = [...this.doneIds].filter((id) => !this.sideList.some((s) => s.id === id)).length;
+    const pay = side && (m.a || m.m) ? `Pays ${m.a ? "+" + m.a + " approval" : ""}${m.a && m.m ? " · " : ""}${m.m ? "+" + m.m + " morale" : ""}` : "";
+    const p = this.ui.panel(`<div class="eyebrow" style="color:${side ? "#3ddc84" : "#f4c04a"}">${side ? "SIDE JOB · OPTIONAL" : "MAIN JOB " + Math.min(total, story + 1) + " OF " + total}</div>
+      <canvas id="mcard" style="width:100%;image-rendering:pixelated;border:3px solid #000;display:block;margin:8px 0;background:#000"></canvas>
+      <h2 style="margin:0 0 6px">${m.title}</h2><p>${m.sub}</p>
+      <div class="hint">FIRST: ${m.steps[0].text}</div>${pay ? `<div class="hint" style="color:#3ddc84">${pay}</div>` : ""}
+      <div class="btns"><button class="b green" id="mc_go">${offered ? "ACCEPT" : "LET'S GO"}</button>${offered ? '<button class="b alt" id="mc_no">LATER</button>' : ""}</div>`, { closable: false });
+    this.sfx.click(); drawMissionArt(p.querySelector<HTMLCanvasElement>("#mcard")!, m.id);
+    let chosen = false;
+    const resolve = (yes: boolean) => { if (chosen) return; chosen = true; this.cardOpen = false; if (yes) go(); else no?.(); };
+    this.cardPending = () => resolve(!offered);   // Esc: a story job starts, an offer is put off
+    const pick = (yes: boolean) => () => { this.cardPending = null; this.ui.closePanel(); resolve(yes); };
+    p.querySelector<HTMLElement>("#mc_go")!.onclick = pick(true); const nb = p.querySelector<HTMLElement>("#mc_no"); if (nb) nb.onclick = pick(false);
+    p.querySelector<HTMLElement>("#mc_go")!.focus();
   }
   /** drop the current mission without finishing it (a failed side job) */
   abortMission() { this.active = null; this.ui.setMission("", "", ""); this.nextFromStack(); }
@@ -1344,18 +1407,19 @@ export class Game {
     if (r) { this.active = r; this.ui.setMission(r.m.title, r.m.steps[r.i].text, this.jobLabel(r.m)); }
   }
   updateMissions() {
+    if (this.cardOpen || !this.started) return;
+    const quiet = !this.ui.panelOpen && !this.paused && !this.veh.riding;   // cards wait for a quiet moment
     // priority missions can interrupt
     for (const m of this.queue) {
       if (m.priority && m.trigger() && !(this.active && this.active.m === m)) {
-        if (this.active) this.stack.push(this.active);
         this.queue.splice(this.queue.indexOf(m), 1); this.beginMission(m); break;
       }
     }
-    if (!this.active) { const s = this.sideList.find((m) => m.auto && !this.doneIds.has(m.id) && m.auto()); if (s) { this.beginMission(s); return; } }
+    if (!this.active && quiet) { const s = this.sideList.find((m) => m.auto && !this.doneIds.has(m.id) && this.realT - (this.declined.get(m.id) ?? -1e9) > 360 && m.auto()); if (s) { this.beginMission(s, { offer: true }); return; } }
     if (!this.active) {
       const head = this.queue.find((m) => !m.priority);
       const held = this.sim.s.depth > 8000 && !this.flags.chainDone;   // close to TD: the remaining jobs start straight away instead of waiting on their timers
-      if (head && (head.trigger() || held)) { this.queue.splice(this.queue.indexOf(head), 1); this.beginMission(head); }
+      if (head && (head.trigger() || held) && !this.ui.panelOpen && !this.paused) { this.queue.splice(this.queue.indexOf(head), 1); this.beginMission(head); }
       else if (this.stack.length) this.nextFromStack();
     }
     const a = this.active;
@@ -1402,7 +1466,7 @@ export class Game {
         case "stall": this.radio("dale", "MOTOR STALL! Picking up off bottom. Too much weight for this rock — differential pressure spiked.", 9000); this.gain(0, -3); this.sfx.bad(); break;
         case "tripDone": this.radio("dale", "New bit's on bottom. Let's make hole.", 7000); break;
         case "fractured": this.radio("dale", "Casing pressure's too high — we just broke down the shoe!", 9000); this.inc(1, "SHOE BROKE DOWN"); break;
-        case "killDone": this.radio("marcus", e.good ? "Kill's complete. Textbook." : "Kill's done, but that was ugly. Houston's going to ask.", 9000); if (!e.good) this.inc(1); this.sfx.good(); break;
+        case "killDone": if (e.good) this.award("textbook"); this.radio("marcus", e.good ? "Kill's complete. Textbook." : "Kill's done, but that was ugly. Houston's going to ask.", 9000); if (!e.good) this.inc(1); this.sfx.good(); break;
         case "blackout": if (!this.flags.blackout) { this.flags.blackout = true; this.radio("earl", "We're out of diesel! Power's down, boss. Order fuel at the tank!", 10000); } break;
         case "td": this.radio("dale", "TD, boss. Eighty-five hundred feet. Circulate and condition?", 9000); break;
         case "casingDone": this.ui.toast("CASING & CEMENT IN PLACE"); break;
@@ -1453,6 +1517,8 @@ export class Game {
     }
     this.daleTweak(realDt);
     this.inspectStep();
+    this.pumpRadio();
+    if ((this.achT -= realDt) <= 0) { this.achT = 1; if (this.started) checkAchievements(this); }
     this.sim.laser = !!this.flags.laserUnlocked && !!this.flags.laserOn && !this.astMode;
     if (this.started && !this.paused && !this.astMode && !this.flags.finish) this.supplyNotes(realDt); else if (this.supplyEl) this.supplyEl.innerHTML = "";
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);

@@ -120,7 +120,7 @@ export function defineMissions(g: Game) {
     ], end: () => { g.flags.inspOn = false; g.rig.inspect.marks.forEach((m) => m.setEnabled(false)); g.radio("earl", "Five defects, all documented. Maintenance will fix three of them. We'll see about the bird.", 8000); } });
 
   // ================================================================ side: hunting with Hank (you spot, he shoots)
-  SD({ id: "hunt", title: "Hunt with Hank", sub: "Hank wants company in the forest. You spot, he shoots. His aim is a known problem.", trigger: () => false, auto: () => !!g.flags.hankFriend && g.sinceDone() >= 8 && s.depth > 3000 && !g.flags.finish, a: 0.3, m: 8,
+  SD({ id: "hunt", title: "Hunt with Hank", sub: "Hank wants company in the forest. You spot, he shoots. His aim is a known problem.", trigger: () => false, auto: () => g.daytime() && !!g.flags.hankFriend && g.sinceDone() >= 8 && s.depth > 3000 && !g.flags.finish, a: 0.3, m: 8,
     start: () => { g.radio("hank" as any, "Company Man. You and me, hunters' camp in the south forest. I shoot, you spot. Don't tell anybody what happens next. Bring your good eyes.", 11000); },
     steps: [
       { text: "Meet Hank at the hunters' camp in the south forest", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z), label: "Hunters' camp", r: 7, act: (done) => { g.ui.toast("HANK", "About time. Binoculars up."); done(); } },

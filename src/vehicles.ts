@@ -841,7 +841,7 @@ export class Vehicles {
     if (v.id === "f250") {   // roll coal: floor it while somewhere between about 15 and 48 mph and the stacks belch black smoke
       const acc = (v.speed - this.lastSp) / Math.max(dt, 1e-3); this.lastSp = v.speed;
       const mph = v.speed * 2.237;
-      if (gasIn > 0.6 && mph > 15 && mph < 48 && acc > 2.6) this.coalT = 0.9; else this.coalT = Math.max(0, this.coalT - dt);
+      if (gasIn > 0.6 && mph > 15 && mph < 48 && acc > 2.6) { this.coalT = 0.9; this.game.award("coal"); } else this.coalT = Math.max(0, this.coalT - dt);
       for (const ps of this.coalPS) ps.emitRate = this.coalT > 0 ? 230 : 0;
     }
     const hand = v.kind === "car" && this.k("Space");

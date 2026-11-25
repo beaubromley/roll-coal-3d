@@ -53,6 +53,21 @@ export class Outskirts {
   private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
   private fish = { st: "idle" as "idle" | "charge" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0, power: 0, pdir: 1, depth: 2, bed: 3 };
   private eHeld = false; private fishHud: HTMLDivElement | null = null;
+  /** the rod in the angler's hands: one on the body (third person) and one on the camera (first person) */
+  private rodBody: Mesh | null = null; private rodCam: Mesh | null = null;
+  private makeRod(): Mesh {
+    const m = MeshBuilder.CreateCylinder("heldrod", { diameterTop: 0.012, diameterBottom: 0.035, height: 2.3, tessellation: 6 }, this.scene);
+    const mat = new StandardMaterial("heldrodm", this.scene); mat.diffuseColor = Color3.FromHexString("#c9a15a"); mat.specularColor = Color3.Black(); m.material = mat; m.isPickable = false; m.setEnabled(false);
+    const reel = MeshBuilder.CreateCylinder("reel", { diameter: 0.1, height: 0.07, tessellation: 10 }, this.scene); const rm = new StandardMaterial("reelm", this.scene); rm.diffuseColor = Color3.FromHexString("#2b2f36"); reel.material = rm; reel.parent = m; reel.position.set(0.05, -0.6, 0); reel.rotation.z = Math.PI / 2; reel.isPickable = false;
+    const grip = MeshBuilder.CreateCylinder("grip", { diameter: 0.05, height: 0.45, tessellation: 8 }, this.scene); grip.material = rm; grip.parent = m; grip.position.y = -0.95; grip.isPickable = false;
+    return m;
+  }
+  private rodsFor(third: boolean): Mesh {
+    const g = this.g;
+    if (!this.rodBody) { this.rodBody = this.makeRod(); this.rodBody.parent = g.player.body.root; this.rodBody.position.set(0.28, 1.65, 1.04); this.rodBody.rotation.set(0.9, 0, 0); }
+    if (!this.rodCam) { this.rodCam = this.makeRod(); this.rodCam.parent = g.player.cam; this.rodCam.position.set(0.42, -0.2, 1.5); this.rodCam.rotation.set(1.05, -0.12, 0); }
+    return third ? this.rodBody : this.rodCam;
+  }
   private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh;
   private floorBots: { h: Human; x: number; z: number; ph: number; ang: number }[] = [];
   private smoke: { ps: ParticleSystem; t: number; burst: number }[] = [];
@@ -119,7 +134,7 @@ export class Outskirts {
     const bf = this.bf; if (!bf) return; const g = this.g, p = g.player.pos, POSTS: [number, number][] = [[-120, -430], [70, -480], [-260, -190], [160, -420], [-20, -250], [-190, -440]];
     const d = Math.hypot(p.x - bf.position.x, p.z - bf.position.z);
     bf.position.y = Math.max(0, this.terrain(bf.position.x, bf.position.z));
-    if (d < 70 && !this.bfSeen) { this.bfSeen = true; g.ui.toast("DISCOVERED", "BIGFOOT? (Something big is watching you from the trees.)"); g.sfx.good(); g.gain(0, 6); }
+    if (d < 70 && !this.bfSeen) { this.bfSeen = true; g.ui.toast("DISCOVERED", "BIGFOOT? (Something big is watching you from the trees.)"); g.sfx.good(); g.gain(0, 6); g.award("bigfoot"); }
     if (this.bfRun > 0) {
       this.bfRun -= dt; const dx = bf.position.x - p.x, dz = bf.position.z - p.z, l = Math.hypot(dx, dz) || 1; bf.position.x += (dx / l) * 11 * dt; bf.position.z += (dz / l) * 11 * dt; bf.rotation.y = Math.atan2(dx, dz); bf.position.x = Math.max(-460, Math.min(460, bf.position.x)); bf.position.z = Math.max(-520, Math.min(-130, bf.position.z));
       if (this.bfRun <= 0 || l > 90) { this.bfRun = 0; bf.setEnabled(false); setTimeout(() => { this.bfPost = (this.bfPost + 1 + ((Math.random() * 4) | 0)) % POSTS.length; bf.position.x = POSTS[this.bfPost][0]; bf.position.z = POSTS[this.bfPost][1]; bf.setEnabled(true); }, 25000 + Math.random() * 20000); }
@@ -706,7 +721,7 @@ export class Outskirts {
   private shorePoint() { const p = this.g.player.pos, dx = (p.x - POND.x) / POND.rx, dz = (p.z - POND.z) / POND.rz, l = Math.hypot(dx, dz) || 1; return new Vector3(POND.x + (dx / l) * POND.rx * 0.97, 1.2, POND.z + (dz / l) * POND.rz * 0.97); }
   fishSave() { return { caught: this.fish.caught, best: this.fish.best }; }
   fishLoad(d: { pole?: boolean; caught?: number; best?: number } | undefined) { if (!d) return; this.fish.caught = d.caught ?? 0; this.fish.best = d.best ?? 0; }
-  private stopFishing() { const f = this.fish; f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); if (this.fishHud) this.fishHud.style.display = "none"; }
+  private stopFishing() { const f = this.fish; f.st = "idle"; if (this.rodBody) this.rodBody.setEnabled(false); if (this.rodCam) this.rodCam.setEnabled(false); this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); if (this.fishHud) this.fishHud.style.display = "none"; }
   /** press: start charging a cast, set the hook on a bite, or reel in */
   fishClick(): [string, string] | null {
     const g = this.g, f = this.fish;
@@ -731,7 +746,7 @@ export class Outskirts {
         const value = Math.round(val / 1000) * 1000;
         if (id === "rss") {
           // the whole tool: the vendor credits the lost-in-hole charge from the last well, and the credit lands on THIS well's AFE
-          const credit = 500000; g.sim.addCost(-credit); g.gain(0, 8);
+          const credit = 500000; g.sim.addCost(-credit); g.gain(0, 8); g.award("rss");
           sub = `LIH credit: $${credit.toLocaleString("en-US")} for the tool lost in hole on the last well, applied to THIS well's AFE.`;
           g.radio("tex", "THAT'S THE WHOLE RSS! I'll never lose anything again. (I will. I'll lose it again.)", 7000);
           setTimeout(() => g.radio("brent", "Accounting says the vendor reverses the lost-in-hole charge from the last run. It lands on this well. Don't ask how that works.", 9000), 3500);
@@ -780,9 +795,12 @@ export class Outskirts {
     const g = this.g, p = g.player, f = this.fish;
     if (!this.fishHud) { const d = document.createElement("div"); d.style.cssText = "position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:8;display:none;min-width:260px;padding:8px 14px;background:rgba(10,16,24,.88);border:2px solid #4fd6ff;color:#fff;font:700 13px system-ui,sans-serif;text-align:center;pointer-events:none"; document.body.appendChild(d); this.fishHud = d; }
     const hud = this.fishHud!;
-    if (f.st === "idle") { hud.style.display = "none"; return; }
+    if (f.st === "idle") { hud.style.display = "none"; if (this.rodBody) this.rodBody.setEnabled(false); if (this.rodCam) this.rodCam.setEnabled(false); return; }
     if (Math.hypot(p.pos.x - f.sx, p.pos.z - f.sz) > 9 && f.st !== "charge") { this.stopFishing(); g.ui.toast("FISHING", "You reel the line in."); return; }
-    const fwd = new Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw)), tip = p.pos.add(new Vector3(0, 1.35, 0)).add(fwd.scale(0.6));
+    // he holds a rod: the body turns to face the water, the right arm comes up, and the line runs from the rod tip
+    p.body.root.rotation.y = p.yaw; p.body.useHand("rod", 0.4);
+    const rod = this.rodsFor(p.third); this.rodBody!.setEnabled(p.third); this.rodCam!.setEnabled(!p.third);
+    rod.computeWorldMatrix(true); const tip = Vector3.TransformCoordinates(new Vector3(0, 1.15, 0), rod.getWorldMatrix());
     hud.style.display = "block";
     if (f.st === "charge") {
       f.power += f.pdir * dt * 0.9; if (f.power >= 1) { f.power = 1; f.pdir = -1; } if (f.power <= 0) { f.power = 0; f.pdir = 1; }
@@ -847,7 +865,7 @@ export class Outskirts {
   /** caught: thrown out of the gate, and the job starts over (as many tries as you like) */
   private throwOut() {
     const g = this.g, p = g.player;
-    this.raidCd = 6; g.flags.secretsGot = false;
+    this.raidCd = 6; g.flags.secretsGot = false; g.award("thrown");
     p.teleport(RIVAL.x + 52, 0.5, RIVAL.z + 2, Math.PI / 2); g.sfx.thud(); g.gain(0, -1);
     for (const gd of this.guards) gd.i = 0;
     g.ui.toast("THROWN OUT", pick(["Back to the gate. Try it again.", "ESCORT COMPLETE. Go again.", "They carried you out like a lawn chair. Go again."]));

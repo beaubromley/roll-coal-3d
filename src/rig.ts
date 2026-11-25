@@ -302,8 +302,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("steel", 2.8, F + 0.95, -5.9, 3.6, F + 0.99, -0.5);
   // the wall of screens: four on the desk with a two-monitor gap in the middle to see the rotary through, six hung across the top
   // four on the desk (EDR, autodriller, and two screens that each combine four), with a two-monitor gap in the middle; two big ones hung above
-  (["edr", "auto", "systems", "dirq"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k, screens, [1, [0, 1, 4, 5][i]], 1, [640, 400]));
-  monitor("+x", 3.0, F + 2.3, -5.0, 1.28, 0.8, "params", screens, [0, 0], 2, [640, 400]);
+  (["params", "auto", "systems", "dirq"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k, screens, [1, [0, 1, 4, 5][i]], 1, [640, 400]));
+  monitor("+x", 3.0, F + 2.3, -5.0, 1.28, 0.8, "edr", screens, [0, 0], 2, [640, 400]);
   monitor("+x", 3.0, F + 2.3, -1.4, 1.28, 0.8, "survey", screens, [0, 4], 2, [640, 400]);
   monitor("+x", 3.0, F + 2.3, -3.2, 1.0, 0.8, "weight", screens, [0, 2], 2, [640, 512]);   // in the gap up high: the weight indicator
   for (const mz of deskZ) b.slab("black", 3.55, F + 0.99, mz - 0.25, 3.85, F + 1.03, mz + 0.25);   // keyboards / panels under each monitor

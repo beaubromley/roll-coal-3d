@@ -63,7 +63,7 @@ function noiseTex(scene: Scene, base: string, speck: string[], n: number, size =
     for (const ox of [0, -size]) for (const oy of [0, -size]) c.fillRect(px + ox, py + oy, s, s);
   }
   t.update();
-  t.anisotropicFilteringLevel = 8;
+  t.anisotropicFilteringLevel = 1;   // anisotropic taps smear a speckle texture into long streaks fanning toward the horizon
   t.uScale = repeat; t.vScale = repeat;
   return t;
 }
@@ -105,7 +105,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   road.position.set(0, 0.08, 190);
   const rm = new StandardMaterial("roadm", scene);
   rm.diffuseTexture = noiseTex(scene, "#5a5650", ["#4a463f", "#6a665e", "#3d3a34"], 2500, 256, 8);
-  { const rt = rm.diffuseTexture as DynamicTexture; rt.uScale = 2; rt.vScale = 86; rt.anisotropicFilteringLevel = 8; }   // the road is 7 m x 300 m: tile the texture to match, or it streaks
+  { const rt = rm.diffuseTexture as DynamicTexture; rt.uScale = 2; rt.vScale = 86; rt.anisotropicFilteringLevel = 1; }   // the road is 7 m x 300 m: tile the texture to match, or it streaks
   rm.specularColor = Color3.Black(); rm.zOffset = -4; road.material = rm; road.receiveShadows = true;
 
   b.defMat("steel", "#7b8087"); b.defMat("dsteel", "#3a3f45"); b.defMat("black", "#16181a");

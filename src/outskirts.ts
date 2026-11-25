@@ -41,7 +41,8 @@ export class Outskirts {
   private ducks: { m: Mesh; a: number; r: number; w: number }[] = [];
   private guards: { h: Human; x: number; z: number; wp: [number, number][]; i: number }[] = [];
   private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
-  private fish = { st: "idle" as "idle" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0 };
+  private fish = { st: "idle" as "idle" | "charge" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0, power: 0, pdir: 1, depth: 2, bed: 3 };
+  private eHeld = false; private fishHud: HTMLDivElement | null = null;
   private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh;
   private floorBots: { h: Human; x: number; z: number; ph: number; ang: number }[] = [];
   private smoke: { ps: ParticleSystem; t: number; burst: number }[] = [];
@@ -81,6 +82,11 @@ export class Outskirts {
       ["black", "#16181a"], ["steel", "#7b8087"], ["dsteel", "#3a3f45"], ["pad", "#4a443c"], ["flag", "#d8261c"], ["sign", "#d9cfae"], ["reed", "#8a7a3a"], ["sage", "#6a7a52"],
     ];
     for (const [k, c, o] of mats) b.defMat(k, c, o ?? {});
+    window.addEventListener("keydown", (ev) => { if (ev.code === "KeyE") this.eHeld = true; const f = this.fish; if (f.st !== "idle" && f.st !== "charge") { if (ev.code === "KeyR") f.depth = Math.min(Math.max(0.5, f.bed - 0.15), f.depth + 0.5); if (ev.code === "KeyF") f.depth = Math.max(0.5, f.depth - 0.5); } });
+    window.addEventListener("keyup", (ev) => { if (ev.code === "KeyE") this.eHeld = false; });
+    window.addEventListener("mousedown", (ev) => { if (ev.button === 0) this.eHeld = true; }); window.addEventListener("mouseup", (ev) => { if (ev.button === 0) this.eHeld = false; });
+    window.addEventListener("blur", () => { this.eHeld = false; });
+    window.addEventListener("wheel", (ev) => { const f = this.fish; if (f.st !== "idle" && f.st !== "charge") f.depth = ev.deltaY > 0 ? Math.min(Math.max(0.5, f.bed - 0.15), f.depth + 0.5) : Math.max(0.5, f.depth - 0.5); }, { passive: true });
     this.hills(b);
     this.kickers(b);
     this.pond(b);
@@ -565,8 +571,9 @@ export class Outskirts {
       if (n >= 6 && cdOk("skipgain", 20)) g.gain(0, 2); } });
     void fishN;
     // fishing is something you do at the dock: stand at the end of it, E (or a click) to cast, again to set the hook when the bobber dips, again to reel in
-    out.push({ pos: () => v(POND.x + POND.rx - 14, 1.7, POND.z), label: () => !g.flags.hankFriend ? "Hank's dock (make friends with Hank first)" : this.fish.st === "idle" ? "Fish off the dock: cast" : this.fish.st === "bite" ? "SET THE HOOK!" : "Fishing: reel in", r: 3.6, act: () => {
-      if (!g.flags.hankFriend) { g.sfx.click(); g.ui.toast("HANK'S DOCK", "Hank's pond, Hank's dock. Go and make friends with Hank first. (Not near the pond.)"); return; }
+    // fishing is something you do from anywhere along the shore (once Hank is a friend): hold to charge the cast, release to throw it, R / F or the wheel to set how deep the bait sinks
+    out.push({ pos: () => this.shorePoint(), label: () => !g.flags.hankFriend ? "Hank's pond (make friends with Hank first)" : this.fish.st === "idle" ? "Fish the pond: hold to charge a cast" : this.fish.st === "bite" ? "SET THE HOOK!" : this.fish.st === "charge" ? "Release to cast" : "Reel in", r: 6, ok: () => this.nearShore(), act: () => {
+      if (!g.flags.hankFriend) { g.sfx.click(); g.ui.toast("HANK'S POND", "Hank's pond, Hank's fish. Go and make friends with Hank first. (Not near the pond.)"); return; }
       const r = this.fishClick(); if (r) { g.sfx.click(); g.ui.toast(r[0], r[1]); } } });
     // taco truck
     out.push({ pos: () => v(TACO.x + 3.2, 1.3, TACO.z), label: () => "Order tacos", r: 3.4, act: () => this.orderTacos() });
@@ -596,29 +603,31 @@ export class Outskirts {
     return out;
   }
 
+  private nearShore() { const p = this.g.player.pos; const u = ((p.x - POND.x) / POND.rx) ** 2 + ((p.z - POND.z) / POND.rz) ** 2; return u < 1.7 && this.terrain(p.x, p.z) > -0.6; }
+  private shorePoint() { const p = this.g.player.pos, dx = (p.x - POND.x) / POND.rx, dz = (p.z - POND.z) / POND.rz, l = Math.hypot(dx, dz) || 1; return new Vector3(POND.x + (dx / l) * POND.rx * 0.97, 1.2, POND.z + (dz / l) * POND.rz * 0.97); }
   fishSave() { return { caught: this.fish.caught, best: this.fish.best }; }
   fishLoad(d: { pole?: boolean; caught?: number; best?: number } | undefined) { if (!d) return; this.fish.caught = d.caught ?? 0; this.fish.best = d.best ?? 0; }
-  /** left click with the fishing pole: cast, set the hook on a bite, or reel in */
+  private stopFishing() { const f = this.fish; f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); if (this.fishHud) this.fishHud.style.display = "none"; }
+  /** press: start charging a cast, set the hook on a bite, or reel in */
   fishClick(): [string, string] | null {
-    const g = this.g, p = g.player, f = this.fish;
-    if (f.st === "idle") {
-      let ok = false, tx = 0, tz = 0;
-      for (const d of [9, 13, 6, 16, 4, 19]) { tx = p.pos.x + Math.sin(p.yaw) * d; tz = p.pos.z + Math.cos(p.yaw) * d; if (((tx - POND.x) / POND.rx) ** 2 + ((tz - POND.z) / POND.rz) ** 2 < 0.8) { ok = true; break; } }
-      if (!ok) return ["NO WATER", "Face the pond and stand near the shore. You can't catch anything in dirt."];
-      f.st = "fly"; f.t = 0; f.sx = p.pos.x; f.sz = p.pos.z; f.bx = tx; f.bz = tz; this.bobber.setEnabled(true); this.fline.setEnabled(true);
-      return ["CAST", "Wait for the bobber to dip, then click to set the hook."];
-    }
+    const g = this.g, f = this.fish;
+    if (f.st === "idle") { f.st = "charge"; f.power = 0; f.pdir = 1; return ["CHARGING", "Hold to power up, release to cast. The farther you cast, the deeper the water."]; }
+    if (f.st === "charge") return null;
     if (f.st === "bite") {
-      f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false);
-      const deep = (f.bx - DEEP.x) ** 2 + (f.bz - DEEP.z) ** 2 < (DEEP.r * 1.05) ** 2;
-      // shallow water: ordinary fish and junk. The deep hole: pieces of lost rotary steerable systems (RSS), a few of them worth a lot of money.
-      const T: [string, number, number, number, string, string][] = deep
-        ? [["RSS Steering Pad", 18000, 30000, 26, "A hydraulically actuated pad. It still has a little give.", "pad"], ["RSS Bias Unit", 80000, 120000, 14, "The part that actually steers the bit. Tex has been looking for this.", "bias"], ["RSS Control Shaft", 12000, 22000, 18, "Straight as ever. Slightly corroded.", "shaft"], ["MWD Pulser Module", 25000, 45000, 16, "A mud-pulse telemetry module. It was still pulsing.", "pulser"], ["RSS Tool Face Controller Board", 9000, 16000, 14, "Green board, tiny chips, a lot of mud.", "board"], ["Turbine Alternator", 20000, 35000, 8, "It spins when you blow on it.", "turbine"], ["Complete Rotary Steerable System", 380000, 460000, 2, "The whole tool. Houston will want a photo. Houston will want the fish.", "rss"]]
-        : [["Bluegill", 0.3, 0.9, 30, "Small, shiny, offended.", "bluegill"], ["Largemouth Bass", 1.5, 6, 22, "A proper fish.", "bass"], ["Channel Catfish", 2, 12, 16, "It has whiskers and opinions.", "catfish"], ["Crappie", 0.5, 2, 14, "Perfectly fine.", "crappie"], ["Common Carp", 3, 18, 8, "A big, slow, unbothered fish.", "carp"], ["Old Boot", 0, 0, 5, "Left foot. It's always the left foot.", "boot"], ["Lost Drill Bit", 0, 0, 3, "Technically, a fishing job.", "bit"], ["The Legendary Lunker", 30, 44, 2, "It is enormous and it looks unimpressed.", "lunker"]];
+      this.stopFishing();
+      const deepHole = (f.bx - DEEP.x) ** 2 + (f.bz - DEEP.z) ** 2 < (DEEP.r * 1.05) ** 2, onBottom = f.depth >= f.bed - 1.4;
+      const sixty = deepHole && f.depth >= 5 && !!g.flags.sixtyOn && !g.flags.sixty && Math.random() < 0.4;
+      if (sixty) { this.fightSixty(); return ["HOOKED", "That's not a small fish."]; }
+      // what is down there depends on how deep you fish: the shallows, the middle, the deep water, and the deep hole's bottom (lost steerable tools)
+      let T: [string, number, number, number, string, string][];
+      if (deepHole && onBottom) T = [["RSS Steering Pad", 18000, 30000, 26, "A hydraulically actuated pad. It still has a little give.", "pad"], ["RSS Bias Unit", 80000, 120000, 14, "The part that actually steers the bit. Tex has been looking for this.", "bias"], ["RSS Control Sub", 40000, 70000, 22, "Electronics. It stopped talking a long time ago.", "sub"], ["Complete RSS Tool", 250000, 400000, 3, "The whole thing. It looks promising. It always did.", "rss"], ["Pond Boot", 0, 0, 20, "Not RSS. Just a boot.", "boot"], ["Rusty Can", 0, 0, 15, "Beans. Possibly from a decade ago.", "can"]];
+      else if (f.depth < 1.5) T = [["Bluegill", 0.3, 0.9, 40, "Small, shiny, offended.", "bluegill"], ["Crappie", 0.5, 2, 25, "Perfectly fine. Nobody has ever been excited about a crappie.", "crappie"], ["Largemouth Bass", 1.5, 6, 18, "A proper fish.", "bass"], ["Pond Boot", 0, 0, 10, "Left foot.", "boot"], ["Rusty Can", 0, 0, 7, "Spam, maybe.", "can"]];
+      else if (f.depth < 4) T = [["Largemouth Bass", 1.5, 6, 34, "A proper fish.", "bass"], ["Channel Catfish", 2, 12, 28, "It has whiskers and opinions.", "catfish"], ["Crappie", 0.5, 2, 12, "Mid-depth crappie.", "crappie"], ["The Lunker", 9, 14, 3, "Old as the pond.", "lunker"], ["Pond Boot", 0, 0, 12, "Right foot this time.", "boot"], ["Rusty Can", 0, 0, 11, "Still sealed.", "can"]];
+      else T = [["Channel Catfish", 6, 30, 46, "Big, slow and unimpressed.", "catfish"], ["Flathead Catfish", 12, 40, 14, "It eats other fish and holds a grudge.", "catfish"], ["Largemouth Bass", 3, 9, 20, "It came up from the cold water.", "bass"], ["The Lunker", 9, 16, 6, "Old as the pond.", "lunker"], ["Pond Boot", 0, 0, 8, "Waterlogged.", "boot"], ["Rusty Can", 0, 0, 6, "Nothing good lives in a can.", "can"]];
       let r = Math.random() * T.reduce((a, c) => a + c[3], 0), c = T[0]; for (const x of T) { r -= x[3]; if (r <= 0) { c = x; break; } }
       const [name, lo, hi, , quip, id] = c, val = lo + Math.random() * (hi - lo);
       f.caught++; g.sfx.good();
-      let sub: string;
+      let sub: string; const deep = deepHole && onBottom;
       if (deep) {
         const value = Math.round(val / 1000) * 1000;
         if (id === "rss") {
@@ -627,17 +636,30 @@ export class Outskirts {
           sub = `LIH credit: $${credit.toLocaleString("en-US")} for the tool lost in hole on the last well, applied to THIS well's AFE.`;
           g.radio("tex", "THAT'S THE WHOLE RSS! I'll never lose anything again. (I will. I'll lose it again.)", 7000);
           setTimeout(() => g.radio("brent", "Accounting says the vendor reverses the lost-in-hole charge from the last run. It lands on this well. Don't ask how that works.", 9000), 3500);
-        } else { g.sim.addCost(-Math.round(value * 0.25)); g.gain(0, 3); sub = `Est. value $${value.toLocaleString("en-US")}. Insurance recovery credits $${Math.round(value * 0.25).toLocaleString("en-US")} to the AFE.`; }
+        } else if (value > 0) { g.sim.addCost(-Math.round(value * 0.25)); g.gain(0, 3); sub = `Est. value $${value.toLocaleString("en-US")}. Insurance recovery credits $${Math.round(value * 0.25).toLocaleString("en-US")} to the AFE.`; }
+        else sub = "Worth nothing, and you got it from the bottom of the deep hole.";
       } else {
         if (val > f.best) f.best = val;
-        if (id === "lunker") { g.gain(0, 5); g.radio("hank" as any, "THAT'S THE LUNKER! He's been in that pond since '94! Put him BACK, Company Man!", 7000); } else if (f.caught % 2 === 0) g.gain(0, 1);
+        if (id === "lunker") { g.gain(0, 5); g.radio("hank" as any, "THAT'S THE LUNKER! He's been in that pond since '94! Put him BACK, Company Man!", 7000); } else if (f.caught % 2 === 0 && val > 0) g.gain(0, 1);
         sub = val > 0 ? `${val.toFixed(1)} lb${val >= f.best ? ". New personal best." : "."}` : "No weight to speak of.";
       }
       this.showCatch(name, `${sub} ${quip}`, id, deep);
       return [`CAUGHT: ${name.toUpperCase()}`, `${quip} (${f.caught} caught)`];
     }
-    f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false);
-    return ["REELED IN", f.st === "idle" ? "Nothing on the hook. Patience is a virtue. You are not virtuous." : ""];
+    this.stopFishing();
+    return ["REELED IN", "Nothing on the hook. Patience is a virtue. You are not virtuous."];
+  }
+  /** Old Sixty, a sixty-pound catfish in the deep water: a fight you win by mashing */
+  private fightSixty() {
+    const g = this.g;
+    g.ui.toast("OLD SIXTY!", "The line is screaming. Reel!"); g.sfx.thud();
+    g.mini.mash({ eyebrow: "The Big Catfish", title: "Old Sixty", intro: "Sixty pounds of whiskers and bad attitude. Reel him in before the line breaks.", seconds: 9, label: "reel!" }, (r: any) => {
+      if (r && r.skipped) { g.radio("hank" as any, "You let go of OLD SIXTY?! I've been after him for thirty years!", 6000); return; }
+      if (r && r.score < 0.45) { g.ui.toast("LINE SNAPPED", "He's gone. He looked back at you."); g.radio("hank" as any, "He snapped it. He does that. Try again, he'll be back.", 6000); return; }
+      g.flags.sixty = true; this.fish.caught++; g.sfx.good(); g.gain(0.4, 12);
+      this.showCatch("OLD SIXTY", "62.4 lb. Whiskers like a Texas senator. Hank will want a photo.", "catfish", false, "THE BIG ONE");
+      g.radio("hank" as any, "THAT'S HIM. THAT'S OLD SIXTY. Thirty years. Put him back, put him BACK, then take a picture first.", 9000);
+    });
   }
   private catchEl: HTMLDivElement | null = null; private catchT = 0;
   /** a card with a picture of what you caught */
@@ -657,9 +679,25 @@ export class Outskirts {
   private updateFishing(dt: number) {
     if (this.catchT > 0) { this.catchT -= dt; if (this.catchT <= 0 && this.catchEl) this.catchEl.style.opacity = "0"; }
     const g = this.g, p = g.player, f = this.fish;
-    if (f.st === "idle") return;
-    if (Math.hypot(p.pos.x - f.sx, p.pos.z - f.sz) > 6) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("FISHING", "You reel the line in."); return; }
-    const tip = this.pole.getAbsolutePosition().add(new Vector3(-0.25, 1.12, 0));   // the tip of the pole leaning on the dock rail
+    if (!this.fishHud) { const d = document.createElement("div"); d.style.cssText = "position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:8;display:none;min-width:260px;padding:8px 14px;background:rgba(10,16,24,.88);border:2px solid #4fd6ff;color:#fff;font:700 13px system-ui,sans-serif;text-align:center;pointer-events:none"; document.body.appendChild(d); this.fishHud = d; }
+    const hud = this.fishHud!;
+    if (f.st === "idle") { hud.style.display = "none"; return; }
+    if (Math.hypot(p.pos.x - f.sx, p.pos.z - f.sz) > 9 && f.st !== "charge") { this.stopFishing(); g.ui.toast("FISHING", "You reel the line in."); return; }
+    const fwd = new Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw)), tip = p.pos.add(new Vector3(0, 1.35, 0)).add(fwd.scale(0.6));
+    hud.style.display = "block";
+    if (f.st === "charge") {
+      f.power += f.pdir * dt * 0.9; if (f.power >= 1) { f.power = 1; f.pdir = -1; } if (f.power <= 0) { f.power = 0; f.pdir = 1; }
+      hud.innerHTML = '<div style="font-size:10px;letter-spacing:2px;color:#4fd6ff">CAST</div><div style="height:12px;background:#1b2836;margin:6px 0"><div style="height:100%;width:' + Math.round(f.power * 100) + '%;background:' + (f.power > 0.85 ? "#ff6a3d" : "#4fd6ff") + '"></div></div>release to throw';
+      if (!this.eHeld) {
+        const dist = 4 + f.power * 24, tx = p.pos.x + Math.sin(p.yaw) * dist, tz = p.pos.z + Math.cos(p.yaw) * dist;
+        if (((tx - POND.x) / POND.rx) ** 2 + ((tz - POND.z) / POND.rz) ** 2 > 0.92) { this.stopFishing(); g.ui.toast("SPLASH IN THE DIRT", "You can't catch anything in dirt. Face the water, and charge it up."); return; }
+        f.st = "fly"; f.t = 0; f.sx = p.pos.x; f.sz = p.pos.z; f.bx = tx; f.bz = tz; f.bed = Math.max(0.5, -this.baseTerrain(tx, tz)); f.depth = Math.min(f.depth, Math.max(0.5, f.bed - 0.3));
+        this.bobber.setEnabled(true); this.fline.setEnabled(true); g.sfx.click();
+      }
+      return;
+    }
+    // R / F and the wheel set how deep the bait sinks (and so what is down there)
+    hud.innerHTML = (f.st === "bite" ? '<div style="color:#ff6a3d;font-size:15px">BITE! CLICK NOW</div>' : '<div style="font-size:10px;letter-spacing:2px;color:#4fd6ff">LINE OUT</div>') + 'depth <b>' + f.depth.toFixed(1) + ' m</b> of ' + f.bed.toFixed(1) + ' m  ·  R deeper · F shallower · wheel';
     if (f.st === "fly") {
       f.t += dt / 0.6; const u = Math.min(1, f.t);
       this.bobber.position.set(tip.x + (f.bx - tip.x) * u, tip.y + (WATER_Y + 0.08 - tip.y) * u + Math.sin(Math.PI * u) * 2.4, tip.z + (f.bz - tip.z) * u);
@@ -671,9 +709,9 @@ export class Outskirts {
     } else if (f.st === "bite") {
       f.bite -= dt; this.bobber.position.set(f.bx + Math.sin(this.t * 40) * 0.03, WATER_Y - 0.02 + Math.sin(this.t * 25) * 0.04, f.bz);
       const k = ((this.t * 3) % 1); this.ripple.scaling.set(0.4 + k * 1.6, 1, 0.4 + k * 1.6); (this.ripple.material as StandardMaterial).alpha = 0.8 * (1 - k);
-      if (f.bite <= 0) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("IT GOT AWAY", "Too slow. It looked smug about it."); return; }
+      if (f.bite <= 0) { this.stopFishing(); g.ui.toast("IT GOT AWAY", "Too slow. It looked smug about it."); return; }
     }
-    // the line, from the rod tip to the bobber
+    // the line, from the angler's hands to the bobber
     const a = tip, b2 = this.bobber.position, d = b2.subtract(a), len = d.length();
     if (len > 0.05) { this.fline.position.copyFrom(a.add(b2).scale(0.5)); this.fline.scaling.y = len; if (!this.fline.rotationQuaternion) this.fline.rotationQuaternion = new Quaternion(); Quaternion.FromUnitVectorsToRef(Vector3.Up(), d.scale(1 / len), this.fline.rotationQuaternion); }
   }

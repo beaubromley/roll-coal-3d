@@ -99,5 +99,11 @@ export function defineMissions(g: Game) {
       { text: "Watch the Freedom lift off", watch: () => !!g.flags.finish },
     ] });
 
+  // ================================================================ side: the big catfish
+  SD({ id: "sixty", title: "Old Sixty", sub: "Hank has been after a sixty-pound catfish for thirty years. Cast far over the dark water, sink the bait deep, and fight him.", trigger: () => false, auto: () => !!g.flags.hankFriend && g.sinceDone() >= 4 && !g.flags.finish, a: 0.4, m: 10,
+    start: () => { g.flags.sixtyOn = true; g.radio("hank" as any, "There's a catfish in my pond. Sixty pounds. Name's Old Sixty. I've been after him thirty years. He lives in the deep water, past five meters. Cast far, and sink it. He'll hit hard.", 12000); },
+    steps: [{ text: "Land Old Sixty: cast far over the dark water (hold to charge) and sink the bait past 5 m (R / F)", at: () => v3(-128, 1.2, 190), watch: () => !!g.flags.sixty }],
+    end: () => { g.sim.addCost(-0); } });
+
   g.missionTotal = g.queue.length;
 }

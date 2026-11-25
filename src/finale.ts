@@ -39,7 +39,8 @@ export class Finale {
   private bear: Human | null = null; private lev: Human | null = null;
   // the run
   runOn = false; runDone = false; private runT = 0; private blastT = 0; private stun = 0; private blasts: { x: number; z: number; t: number; mark: Mesh; ball: Mesh | null; mat: StandardMaterial | null; boomed: boolean }[] = []; private cracks = false;
-  get harryRunning() { return this.runOn; }
+  get harryRunning() { return false; }   // Harry stays at the hole with the trigger
+  private finT = 0; private harryLine = false; private fireAcc = 0; private balls: { m: Mesh; mat: StandardMaterial; t: number; size: number }[] = [];
   get harryHuman() { return this.harry; }
   holePos(): Vector3 { return v3(this.O.x, 1, this.O.z + this.SITE_Z); }
   shipPos(): Vector3 { return this.freedom ? this.freedom.position.clone() : v3(this.O.x + 92, 0, this.O.z + this.SITE_Z - 100); }
@@ -147,7 +148,7 @@ export class Finale {
     g.arm.console = v3(ox + 4, 1.8, oz + this.SITE_Z + 4.6);
     const fr = g.rig.shuttleState.node.clone("freedom", null)!; fr.setEnabled(true); fr.position.set(ox + 92, 0.2, oz + this.SITE_Z - 100); fr.rotation.set(0, 0, 0); this.freedom = fr;
     const hh = new Human(sc, { shirt: "#e07010", pants: "#d0d0d0", hat: null, skin: "#d9a77f", scale: 1.04 });
-    hh.root.position.set(ox + 2.5, 0.5, oz + this.SITE_Z + 5.5); hh.root.rotation.y = Math.PI; g.armCrew.push(hh); this.harry = hh;
+    hh.root.position.set(ox - 3.5, 0.5, oz + this.SITE_Z + 3); hh.root.rotation.y = Math.PI; g.armCrew.push(hh); this.harry = hh;
     for (const h of g.armCrew as Human[]) h.setSuit(true);
   }
 
@@ -321,8 +322,8 @@ export class Finale {
     this.shakeAmt = 0.8; g.sfx.thud(); g.sfx.horn();
     $("fade").style.transition = "opacity .1s"; $("fade").style.background = "#ffb060"; $("fade").style.opacity = "0.85";
     setTimeout(() => { $("fade").style.transition = "opacity .6s"; $("fade").style.opacity = "0"; $("fade").style.background = "#000"; }, 260);
-    g.radio("max", "HARRY! The rig's going up! The gas, it's — I can't hold her —", 6000);
-    setTimeout(() => g.radio("harry", "Max! MAX! …Oh, God. Keep drilling, boys. Keep drilling.", 8000), 4200);
+    g.radio("harry", "GAS POCKET! Hold on to something, A.J.! She's kicking!", 6000);
+    setTimeout(() => g.radio("harry", "Easy now. Check your motor and your bit, then keep drilling, son. Keep drilling.", 8000), 4200);
     g.sim.hit(25); g.sim.s.bit = Math.max(25, g.sim.s.bit - 30); g.sim.s.stallT = Math.max(g.sim.s.stallT, 6);
   }
 
@@ -340,16 +341,16 @@ export class Finale {
     this.shakeAmt = 0.7; g.sfx.horn();
     g.ui.toast("ASTEROID STORM", "Debris is hitting the site");
     g.radio("nasa", "Harry, you've hit eight hundred! But the storm has smashed the remote detonator signal.", 8000);
-    setTimeout(() => g.radio("harry", "Then we do it the old way, A.J. The bomb goes down the hole by hand, and the second it does, we run for the Freedom. Get over to the hole!", 11000), 3200);
+    setTimeout(() => g.radio("harry", "Then it's a two-man job, A.J. You lower the bomb, I hook up the manual trigger and hold it until you're clear. Get over to the hole!", 11000), 3200);
   }
   /** the bomb is down: sprint for the Freedom while the asteroid comes apart round you */
   startRun() {
     const g = this.g;
     this.mode = "run"; this.runOn = true; this.runDone = false; this.runT = 42; this.blastT = 1.2; this.stun = 0; this.clearBlasts();
     g.player.speedMul = 1; this.hud.style.display = "block"; this.shakeAmt = 0.8; g.sfx.horn(); g.sfx.thud();
-    if (this.harry) { this.harry.root.setEnabled(true); this.harry.root.position.set(this.O.x + 2.5, 0.5, this.O.z + this.SITE_Z + 4); }
+    if (this.harry) { this.harry.root.setEnabled(true); this.harry.root.position.set(this.O.x - 3.5, 0.5, this.O.z + this.SITE_Z + 3); this.harry.root.rotation.y = Math.atan2(this.shipPos().x - this.O.x, this.shipPos().z - this.O.z - this.SITE_Z); }
     g.ui.toast("BOMB ARMED", "Run for the Freedom");
-    g.radio("harry", "Bomb's down and the timer's live! RUN, A.J.! Straight at the ship, don't stop for anything!", 8000);
+    g.radio("harry", "Bomb's down and I've got the trigger! GO, A.J.! RUN! The ship's that way and she won't wait!", 8000);
     if (!this.cracks) { this.cracks = true; this.buildCracks(); }
   }
   private buildCracks() {
@@ -397,11 +398,6 @@ export class Finale {
       }
     }
     this.blasts = this.blasts.filter((b) => b.t > -900);
-    // Harry runs just ahead of you, a little to the side
-    if (this.harry) {
-      const tx = px + dx * 5 - dz * 2.6, tz = pz + dz * 5 + dx * 2.6, hx = this.harry.root.position.x, hz = this.harry.root.position.z, hl = Math.hypot(tx - hx, tz - hz) || 1, sp = Math.min(hl, 11 * dt);
-      this.harry.root.position.x += ((tx - hx) / hl) * sp; this.harry.root.position.z += ((tz - hz) / hl) * sp; this.harry.root.rotation.y = Math.atan2(dx, dz);
-    }
     const left = Math.max(0, this.runT);
     this.hud.innerHTML = `<div style="color:#ff6a3d;font-size:15px">THE ASTEROID IS COMING APART</div><div style="font-size:26px">T-MINUS ${left.toFixed(0).padStart(2, "0")} <small style="font-size:12px;color:#9fb4c8">s</small></div>`
       + `<div style="font-size:12px;color:#9fb4c8;font-weight:600;margin-top:4px">SHIFT sprint · SPACE jump · ${Math.round(dist)} m to the Freedom · stay out of the red circles</div>`;
@@ -414,13 +410,13 @@ export class Finale {
     g.ui.toast("TOO SLOW", "The timer rolled back. Run again, A.J.");
     g.radio("harry", "The Freedom's engines are still hot. We got lucky, kid. Go again, and GO!", 7000);
     g.player.teleport(this.O.x, 0.6, this.O.z + this.SITE_Z - 8, Math.atan2(this.shipPos().x - this.O.x, this.shipPos().z - (this.O.z + this.SITE_Z)));
-    if (this.harry) this.harry.root.position.set(this.O.x + 3, 0.5, this.O.z + this.SITE_Z - 4);
+    if (this.harry) this.harry.root.position.set(this.O.x - 3.5, 0.5, this.O.z + this.SITE_Z + 3);
   }
   private runWin() {
     const g = this.g;
     this.runOn = false; this.runDone = true; this.mode = "site"; this.hud.style.display = "none"; this.clearBlasts(); g.player.speedMul = 1; this.shakeAmt = 0.4;
     g.player.enabled = false; g.player.unlock();
-    this.say("harry", "Go on, A.J. The timer's stuck on the manual trigger. Somebody's got to hold the button. You take care of my little girl. You're the son I never had.", [{ label: "HARRY! NO!", run: () => this.liftoff() }], "The Freedom");
+    this.say("harry", "(over the radio) You made it, son. Get aboard. I'll hold this button until you're clear. You take care of my little girl. You're the son I never had.", [{ label: "HARRY!", run: () => this.liftoff() }], "The Freedom");
   }
 
   private liftoff() {
@@ -431,23 +427,28 @@ export class Finale {
     if (this.harry) { this.harry.root.position.set(this.O.x + 6, 0.5, this.O.z + this.SITE_Z + 6); this.harry.root.setEnabled(true); }
     this.freedomUp = true; this.freedomV = 0; g.sfx.thud(); this.shakeAmt = 0.35;
     this.cine = { node: fr, bx: fr.position.x, bz: fr.position.z };
-    g.radio("nasa", "Freedom is clear of the blast radius. Harry — you're on your own. Thirty seconds.", 7000);
-    setTimeout(() => this.eruption(), 7000);
-    void fr;
+    g.radio("nasa", "Freedom is lifting off. Harry — you have thirty seconds.", 7000);
+    this.finT = 11; this.harryLine = false; this.fireAcc = 0; void fr;
   }
-  private eruption() {
-    const g = this.g;
-    this.cine = null; g.player.cam.fov = 0.95;
-    g.player.teleport(this.O.x + 6, 0.6, this.O.z + this.SITE_Z - 14, 0); g.player.third = false; g.player.pitch = -0.05;
-    this.shakeAmt = 0.9; g.sfx.horn(); this.harryFlung = 1;
-    g.ui.toast("GAS ERUPTION", "Harry is thrown across the rock");
-    g.radio("harry", "Come on, Grace… come on, baby girl… Daddy's gotta press the button.", 6000);
-    setTimeout(() => {
-      g.mini.mash({ eyebrow: "Harry Stamper", title: "Crawl to the Detonator", intro: "The blast threw it out of reach. Crawl across the rock and press the button before the clock hits zero.", seconds: 9, label: "crawl!" }, () => {
-        g.radio("harry", "…I'm coming, Grace.", 4000);
-        setTimeout(() => g.detonate(), 700);
-      });
-    }, 1800);
+  private fireball(x: number, z: number, size: number) {
+    const sc = this.g.scene, m = MeshBuilder.CreateSphere("fball", { diameter: 2, segments: 10 }, sc), mat = new StandardMaterial("fbm", sc);
+    mat.emissiveColor = Color3.FromHexString(Math.random() < 0.5 ? "#ff8a2a" : "#ffd060"); mat.diffuseColor = Color3.Black(); mat.disableLighting = true; mat.alpha = 0.9; m.material = mat;
+    m.position.set(x, size * 0.5, z); m.isPickable = false; m.scaling.setAll(0.2); this.balls.push({ m, mat, t: 0, size });
+  }
+  /** the asteroid coming apart: fireballs and columns of fire all round the Freedom and across the site, more and more of them, until the bomb goes */
+  private finaleStep(dt: number) {
+    const g = this.g, ship = this.shipPos(), k = 1 - this.finT / 11;
+    this.finT -= dt; this.shakeAmt = Math.max(this.shakeAmt, 0.18 + 0.35 * k);
+    this.fireAcc += dt * (2.5 + 9 * k);
+    while (this.fireAcc >= 1) {
+      this.fireAcc -= 1;
+      const near = Math.random() < 0.65, a = Math.random() * 6.283, r = near ? 35 + Math.random() * 110 : Math.random() * 60;
+      const cx = near ? ship.x : this.O.x, cz = near ? ship.z : this.O.z + this.SITE_Z;
+      this.fireball(cx + Math.cos(a) * r, cz + Math.sin(a) * r, 5 + Math.random() * 12 + k * 8);
+      if (Math.random() < 0.3) g.sfx.thud();
+    }
+    if (this.finT < 6 && !this.harryLine) { this.harryLine = true; g.radio("harry", "Come on, Grace… come on, baby girl… Daddy's gotta press the button.", 6000); }
+    if (this.finT <= 0) { this.finT = -1; g.detonate(); }
   }
 
   /** a scripted dialog: it cannot be dismissed with Esc or a click outside, so the scene can never stall on a closed box */
@@ -459,6 +460,9 @@ export class Finale {
     if (this.mode === "off") return;
     if (this.mode === "drive") this.driveStep(dt);
     if (this.mode === "run") this.runStep(dt);
+    if (this.finT > 0) this.finaleStep(dt);
+    for (const b of this.balls) { b.t += dt; const u = Math.min(1, b.t / 0.7); b.m.scaling.set(0.2 + u * b.size * 0.5, 0.2 + u * b.size * (0.6 + 0.5 * (b.size % 2)), 0.2 + u * b.size * 0.5); b.mat.alpha = 0.9 * Math.max(0, 1 - Math.max(0, b.t - 0.5) / 1.2); if (b.t > 1.8) { b.m.dispose(); b.mat.dispose(); b.t = -999; } }
+    this.balls = this.balls.filter((b) => b.t > -900);
     // camera
     const p = g.player, cam = p.cam;
     if (this.mode === "drive") {

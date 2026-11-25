@@ -1064,8 +1064,8 @@ export class Game {
     (["params", "edr", "auto"] as const).forEach((k, i) => {
       const tex = this.astScreens!.make(k as any, false, [640, 400]);
       const m = new StandardMaterial("astscr" + i, sc); m.emissiveTexture = tex; m.diffuseColor = Color3.Black(); m.specularColor = Color3.Black(); m.backFaceCulling = false;
-      const pl = MeshBuilder.CreatePlane("ascr" + i, { width: 1.5, height: 0.94 }, sc); pl.material = m; pl.position.set(ox + 2.6 + i * 1.6, 2.0, oz + 2.6); pl.rotation.y = Math.PI;
-      const fr = MeshBuilder.CreateBox("asfr" + i, { width: 1.6, height: 1.04, depth: 0.08 }, sc); fr.material = steel; fr.position.set(ox + 2.6 + i * 1.6, 2.0, oz + 2.56);
+      const pl = MeshBuilder.CreatePlane("ascr" + i, { width: 1.5, height: 0.94 }, sc); pl.material = m; pl.position.set(ox + 2.3 + i * 1.75, 2.0, oz + 2.62); pl.rotation.y = Math.PI;
+      const fr = MeshBuilder.CreateBox("asfr" + i, { width: 1.62, height: 1.06, depth: 0.08 }, sc); fr.material = steel; fr.position.set(ox + 2.3 + i * 1.75, 2.0, oz + 2.54);
     });
     this.arm.console = v3(ox + 4, 1.8, oz + 4.6);
   }
@@ -1106,9 +1106,10 @@ export class Game {
   stormT = 30;
   armUpdate(dt: number) {
     const a = this.arm, s = this.sim.s;
-    if (!this.astMode || !this.sim.astMode) return;
-    a.depth = s.depth;
+    if (!this.astMode) return;
     if (this.astScreens && this.scrData && a.site && Math.hypot(this.player.pos.x - a.console.x, this.player.pos.z - a.console.z) < 40) this.astScreens.update(this.scrData);
+    if (!this.sim.astMode) return;
+    a.depth = s.depth;
     if (a.bombed || this.flags.armTD) return;
     if (s.depth >= 560 && !this.flags.armGas) { this.flags.armGas = true; this.finale.gasPocket(); }
     if (s.depth >= 799.5 && !this.flags.armTD) { this.flags.armTD = true; this.ui.closePanel(); this.finale.detonatorFails(); return; }

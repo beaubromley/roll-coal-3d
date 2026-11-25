@@ -596,7 +596,7 @@ export class Vehicles {
   }
 
   /** who is visible at the controls: everything except the drone and the lifted pickup (the cab is too low for a hard hat) */
-  private showsDriver(v: Veh) { return v.kind !== "drone" && v.id !== "f250" && v.id !== "hank";   // (the trucks are closed cabs: no driver poking out of the roof) }
+  private showsDriver(v: Veh) { return v.kind !== "drone" && v.id !== "f250" && v.id !== "hank"; }   // (the trucks are closed cabs: no driver poking out of the roof)
 
   enter(v: Veh) {
     if (this.riding) return;

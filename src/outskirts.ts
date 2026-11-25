@@ -42,7 +42,7 @@ export class Outskirts {
   private guards: { h: Human; x: number; z: number; wp: [number, number][]; i: number }[] = [];
   private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
   private fish = { st: "idle" as "idle" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0 };
-  private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh; private poleOwned = false;
+  private bobber!: Mesh; private fline!: Mesh; private ripple!: Mesh; private pole!: Mesh;
   private floorBots: { h: Human; x: number; z: number; ph: number; ang: number }[] = [];
   private smoke: { ps: ParticleSystem; t: number; burst: number }[] = [];
   ground!: Ground; private blockedCells = new Set<number>(); private lastP: { x: number; z: number } | null = null;
@@ -564,12 +564,10 @@ export class Outskirts {
       g.sfx.click(); const n = Math.floor(rnd(0, 8)); skips++; g.ui.toast(n === 0 ? "KERPLUNK" : `${n} SKIP${n > 1 ? "S" : ""}`, n === 0 ? "It sinks like a stone. It was a stone." : n >= 6 ? "Personal best. Nobody saw it." : "Not bad for a Company Man.");
       if (n >= 6 && cdOk("skipgain", 20)) g.gain(0, 2); } });
     void fishN;
-    out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Pick up the fishing pole", r: 3.0, ok: () => !this.poleOwned && !!g.flags.hankFriend, act: () => {
-      this.givePole(); g.held.equip("rod"); g.sfx.good(); g.save();
-      g.ui.toast("FISHING POLE", "Face the pond and click to cast. When the bobber dips, click again to set the hook. Scroll or Q to put it away."); } });
-    out.push({ pos: () => this.pole.getAbsolutePosition().add(v(0, -0.2, 0)), label: () => "Hank's fishing pole", r: 3.0, ok: () => !this.poleOwned && !g.flags.hankFriend, act: () => { g.sfx.click(); g.ui.toast("HANK'S POLE", "Hank's pond, Hank's pole. Go and make friends with Hank first. (Not near the pond.)"); } });
-    out.push({ pos: () => v(POND.x + POND.rx - 14, 1.7, POND.z), label: () => "Fishing spot", r: 3.4, act: () => {
-      g.sfx.click(); g.ui.toast("FISHING", this.poleOwned ? "Hold the pole (scroll or Q), face the water and click to cast." : "You need a pole. There's one leaning by the chair on the dock."); } });
+    // fishing is something you do at the dock: stand at the end of it, E (or a click) to cast, again to set the hook when the bobber dips, again to reel in
+    out.push({ pos: () => v(POND.x + POND.rx - 14, 1.7, POND.z), label: () => !g.flags.hankFriend ? "Hank's dock (make friends with Hank first)" : this.fish.st === "idle" ? "Fish off the dock: cast" : this.fish.st === "bite" ? "SET THE HOOK!" : "Fishing: reel in", r: 3.6, act: () => {
+      if (!g.flags.hankFriend) { g.sfx.click(); g.ui.toast("HANK'S DOCK", "Hank's pond, Hank's dock. Go and make friends with Hank first. (Not near the pond.)"); return; }
+      const r = this.fishClick(); if (r) { g.sfx.click(); g.ui.toast(r[0], r[1]); } } });
     // taco truck
     out.push({ pos: () => v(TACO.x + 3.2, 1.3, TACO.z), label: () => "Order tacos", r: 3.4, act: () => this.orderTacos() });
     // the landowner
@@ -598,14 +596,11 @@ export class Outskirts {
     return out;
   }
 
-  /** you have the pole: take it off the dock and into your items (also used when a save is loaded) */
-  givePole() { this.poleOwned = true; this.pole.setEnabled(false); this.g.held.owned.add("rod"); }
-  fishSave() { return { pole: this.poleOwned, caught: this.fish.caught, best: this.fish.best }; }
-  fishLoad(d: { pole?: boolean; caught?: number; best?: number } | undefined) { if (!d) return; if (d.pole) this.givePole(); this.fish.caught = d.caught ?? 0; this.fish.best = d.best ?? 0; }
+  fishSave() { return { caught: this.fish.caught, best: this.fish.best }; }
+  fishLoad(d: { pole?: boolean; caught?: number; best?: number } | undefined) { if (!d) return; this.fish.caught = d.caught ?? 0; this.fish.best = d.best ?? 0; }
   /** left click with the fishing pole: cast, set the hook on a bite, or reel in */
   fishClick(): [string, string] | null {
     const g = this.g, p = g.player, f = this.fish;
-    g.player.body.useHand("rod", 1.0);
     if (f.st === "idle") {
       let ok = false, tx = 0, tz = 0;
       for (const d of [9, 13, 6, 16, 4, 19]) { tx = p.pos.x + Math.sin(p.yaw) * d; tz = p.pos.z + Math.cos(p.yaw) * d; if (((tx - POND.x) / POND.rx) ** 2 + ((tz - POND.z) / POND.rz) ** 2 < 0.8) { ok = true; break; } }
@@ -658,8 +653,8 @@ export class Outskirts {
     if (this.catchT > 0) { this.catchT -= dt; if (this.catchT <= 0 && this.catchEl) this.catchEl.style.opacity = "0"; }
     const g = this.g, p = g.player, f = this.fish;
     if (f.st === "idle") return;
-    if (g.held.kind !== "rod" || Math.hypot(p.pos.x - f.sx, p.pos.z - f.sz) > 6) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("FISHING", "You reel the line in."); return; }
-    const tip = g.held.tipPos() ?? new Vector3(p.pos.x, p.pos.y + 1.6, p.pos.z);
+    if (Math.hypot(p.pos.x - f.sx, p.pos.z - f.sz) > 6) { f.st = "idle"; this.bobber.setEnabled(false); this.fline.setEnabled(false); this.ripple.setEnabled(false); g.ui.toast("FISHING", "You reel the line in."); return; }
+    const tip = this.pole.getAbsolutePosition().add(new Vector3(-0.25, 1.12, 0));   // the tip of the pole leaning on the dock rail
     if (f.st === "fly") {
       f.t += dt / 0.6; const u = Math.min(1, f.t);
       this.bobber.position.set(tip.x + (f.bx - tip.x) * u, tip.y + (WATER_Y + 0.08 - tip.y) * u + Math.sin(Math.PI * u) * 2.4, tip.z + (f.bz - tip.z) * u);

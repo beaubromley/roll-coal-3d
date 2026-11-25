@@ -195,6 +195,9 @@ export class Builder {
     for (const s of [-1, 1]) {
       this.beam(matSide, new Vector3(x + s * ox, topY - 0.1, z + s * oz), new Vector3(ex + s * ox, botY + 0.1, ez + s * oz), 0.1);
       this.beam(matSide, new Vector3(x + s * ox, topY + 1.0, z + s * oz), new Vector3(ex + s * ox, botY + 1.0, ez + s * oz), 0.05);
+      // a vertical post at each end of the handrail, so it never floats
+      const px0 = x + s * ox, pz0 = z + s * oz, px1 = ex + s * ox, pz1 = ez + s * oz;
+      this.box(matSide, px0, topY + 0.45, pz0, 0.07, 1.1, 0.07); this.box(matSide, px1, botY + 0.55, pz1, 0.07, 1.1, 0.07);
     }
   }
 

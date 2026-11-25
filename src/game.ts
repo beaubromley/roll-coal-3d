@@ -11,7 +11,6 @@ import { Human } from "./npcs";
 import { pushOutXZ } from "./builder";
 import { Mini } from "./minigames";
 import { Vehicles } from "./vehicles";
-import { Held, drawHeldIcon } from "./held";
 import { Outskirts } from "./outskirts";
 import { defineMissions } from "./tasks";
 
@@ -40,7 +39,7 @@ export class Game {
   started = false;
   approval = 3; morale = 62; incidents = 0;
   interacts: Interactable[] = [];
-  held!: Held; private chX = 0; private chY = 0; private hudDays = -1; private hudClock = ""; private hudCost = ""; private hudItem = "";
+  private chX = 0; private chY = 0; private hudDays = -1; private hudClock = ""; private hudCost = "";
   queue: Mission[] = [];
   active: { m: Mission; i: number } | null = null;
   stack: { m: Mission; i: number }[] = [];
@@ -69,7 +68,6 @@ export class Game {
     this.ui.onPanelOpen = () => { this.player.enabled = false; this.player.unlock(); };
     this.player.canLock = () => !this.ui.panelOpen && !this.paused;
     this.finale = new Finale(this);
-    this.held = new Held(scene, player, { kicking: () => this.sim.s.kick.active && !this.sim.s.kick.shut, ringing: () => !!this.flags.ringing, clock: () => clockString(this.sim.s.t).hhmm, depth: () => this.sim.s.depth });
     this.ui.logClock = () => { const c = clockString(this.sim.s.t); return "Day " + c.day + " " + c.hhmm; };
     this.ui.onPanelClose = () => { this.mini.cleanup(); this.miniTick = null; this.live = false; this.slip.on = false; if (this.chokeKeyHandler) { window.removeEventListener("keydown", this.chokeKeyHandler); this.chokeKeyHandler = null; } this.player.enabled = true; this.player.lock(); };
     this.player.onFall = (m) => this.fell(m);
@@ -661,18 +659,6 @@ export class Game {
     this.sim.addCost(n * 20);
   }
 
-  /** left click: use what you are holding */
-  useHeld() {
-    // the White House is calling: the cell phone answers it, wherever you are
-    if (this.held.kind === "phone" && this.flags.ringing) {
-      const st = this.active ? this.active.m.steps[this.active.i] : null;
-      if (st?.act) { this.sfx.click(); this.held.use(); st.act(() => this.stepDone()); return; }
-    }
-    if (this.held.kind === "rod") { this.held.use(); const r = this.outskirts.fishClick(); if (r) { this.sfx.click(); this.ui.toast(r[0], r[1]); } return; }
-    const [title, text, alarm] = this.held.use();
-    if (alarm) this.sfx.horn(); else this.sfx.click();
-    this.ui.toast(title, text);
-  }
   /** the hydraulic catwalk: the ground station and the rig-floor remote are the same controls */
   openCatwalk(remote: boolean) {
     const c = this.rig.catwalk;
@@ -1436,7 +1422,7 @@ export class Game {
       this.flags.ringT = ((this.flags.ringT as number) || 0) + dt;
       const rt = this.flags.ringT as number, last = (this.flags.ringLast as number) ?? 0;
       if (rt - last >= 4) { this.flags.ringLast = rt; this.sfx.radio(); }
-      if (rt > 25 && !this.flags.ringNag) { this.flags.ringNag = true; this.radio("earl", "Boss. Your phone. It has been ringing for a while. Click to pick it up.", 9000); }
+      if (rt > 25 && !this.flags.ringNag) { this.flags.ringNag = true; this.radio("earl", "Boss. Your phone. It has been ringing for a while. Go and answer it.", 9000); }
     }
     // district banner
     const d = this.district();
@@ -1457,16 +1443,14 @@ export class Game {
         ch.style.left = this.chX + "px"; ch.style.top = this.chY + "px"; ch.classList.toggle("lock", lock);
       }
     }
-    { // the corner: time of day, and what you are holding
+    { // the corner: time of day and cost
       { const day = clockString(this.sim.s.t).day, d = Math.max(0, day - ((this.flags.lastIncDay as number | undefined) ?? -141)); if (d !== this.hudDays) { this.hudDays = d; this.rig.setDaysSince(d); } }
       const cs = "$" + Math.round(this.sim.s.cost).toLocaleString("en-US"); if (cs !== this.hudCost) { this.hudCost = cs; $("cost").textContent = cs; }
       const ck = clockString(this.sim.s.t).hhmm; if (ck !== this.hudClock) { this.hudClock = ck; $("clock").textContent = ck; }
-      if (this.held.kind !== this.hudItem) { this.hudItem = this.held.kind; drawHeldIcon($("itemcv") as HTMLCanvasElement, this.held.kind); }
     }
     if (this.started && !this.paused && !this.astMode) this.outskirts.update(Math.min(dt, 0.1));
     { const ev = this.rig.catwalk.takeEvent(); if (ev === "loaded") this.ui.toast("CATWALK", "Joint on the trough."); else if (ev === "delivered") { this.sfx.good(); this.ui.toast("JOINT ON THE FLOOR", "Right at the V-door. The floor hands thank you."); } }
     this.player.bound = this.astMode || this.finale.mode !== "off" ? null : 585;   // the cliffs ring the world
-    this.held.update(dt, this.started && !this.paused && !this.veh.riding && !this.astMode && !this.ui.panelOpen && this.finale.mode !== "launch" && this.finale.mode !== "drive");
   }
 
   private beams: Mesh[] = [];

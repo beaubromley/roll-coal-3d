@@ -7,7 +7,7 @@ import type { Dd } from "./dd";
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
   depth: number; wob: number; rop: number; spp: number; flow: number; pit: number; mw: number; mode: string;
-  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number;
+  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; bitDepth?: number;
 }
 
 export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac";
@@ -182,10 +182,10 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
 const EDR_N = 240;
 interface Chan { name: string; unit: string; col: string; max: number; get: (d: ScreenData, s: { rop2: number; wob2: number }) => number; }
 const EDR: [Chan, Chan][] = [
-  [{ name: "Hookload", unit: "klb", col: "#6cb4ff", max: 750, get: (d) => 250 - d.wob * 1.2 + (d.rotating ? 0 : 40) },
-   { name: "Block Height", unit: "ft", col: "#d8dde3", max: 150, get: (d) => 20 + ((d.depth % 93) / 93) * 100 }],
-  [{ name: "Avg ROP", unit: "ft/hr", col: "#22c06a", max: 500, get: (_d, s) => s.rop2 },
-   { name: "Inst ROP", unit: "ft/hr", col: "#ff6a7a", max: 500, get: (d) => d.rop }],
+  [{ name: "Hookload", unit: "klb", col: "#6cb4ff", max: 750, get: (d) => trip(d).hook },
+   { name: "Block Height", unit: "ft", col: "#d8dde3", max: 150, get: (d) => trip(d).block }],
+  [{ name: "Inst ROP", unit: "ft/hr", col: "#22c06a", max: 500, get: (d) => d.rop },
+   { name: "ROP Set Pt", unit: "ft/hr", col: "#ff6a7a", max: 500, get: (d) => d.auto?.sp.rop ?? 0 }],
   [{ name: "WOB", unit: "klb", col: "#ffeb3b", max: 100, get: (d) => d.wob },
    { name: "WOB Set Pt", unit: "klb", col: "#2fd0d0", max: 100, get: (d) => d.wobSet ?? d.wob }],
   [{ name: "Diff Press", unit: "psi", col: "#ff4dff", max: 2400, get: (d) => d.dp ?? 0 },
@@ -199,6 +199,18 @@ const EDR: [Chan, Chan][] = [
   [{ name: "Total Volume", unit: "bbl", col: "#ff6a7a", max: 1000, get: (d) => d.pit },
    { name: "Flow Out", unit: "%", col: "#22c06a", max: 100, get: (d) => Math.min(100, d.flow / 16 + (d.kicking ? 18 : 0)) }],
 ];
+/** hookload and block height. Drilling: the string hangs from the hook less the weight on bit, and the block creeps down. Tripping: a sawtooth: the block climbs with a stand
+ *  (string weight on the hook; it shrinks as pipe comes out and grows as it goes in) and then drops back empty (just the block and top drive) for the next one. */
+const STAND = 93, STROKE = 100, BLOCKS = 50;
+function trip(d: ScreenData): { hook: number; block: number } {
+  const bd = d.bitDepth ?? d.depth, W = BLOCKS + 0.025 * bd;
+  if (d.tripping) {
+    const u = 1 - ((bd % STAND) + STAND) % STAND / STAND;          // 0..1 through each stand; it moves forward coming out and backward going in
+    if (u < 0.88) return { hook: W, block: (u / 0.88) * STROKE };   // loaded: pipe on the hook, block travelling with it
+    return { hook: BLOCKS, block: STROKE * (1 - (u - 0.88) / 0.12) };   // empty: block and top drive going back for the next stand
+  }
+  return { hook: W - d.wob * (d.rotating ? 1 : 0), block: 20 + ((d.depth % STAND) / STAND) * 80 };
+}
 const edrHist: number[][] = [];
 const edrState = { rop2: 0, wob2: 0 };
 function pushEdr(d: ScreenData) {

@@ -116,7 +116,7 @@ export class Ground {
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const a = j * V + i, b = a + 1, c = a + V, d = c + 1; idx.push(a, c, b, b, c, d); }
     for (let e = 0; e < 4 * n; e++) { const k = e, k2 = (e + 1) % (4 * n); const eIdx = (q: number) => { const s = q; if (s <= n) return s; if (s <= 2 * n) return (s - n) * V + n; if (s <= 3 * n) return n * V + (3 * n - s); return (4 * n - s) * V; }; const a = eIdx(k), b = eIdx(k2), sa = V * V + k, sb = V * V + k2; idx.push(a, sa, b, b, sa, sb); }
     vd.indices = idx; vd.applyToMesh(m, true);
-    if (this.mat) m.material = this.mat; m.receiveShadows = true; m.isPickable = false; m.alwaysSelectAsActiveMesh = false;
+    if (this.mat) m.material = this.mat; m.receiveShadows = false; m.isPickable = false; m.alwaysSelectAsActiveMesh = false;
     return m;
   }
   private setUV(m: Mesh, x0: number, z0: number, step: number, n: number) {

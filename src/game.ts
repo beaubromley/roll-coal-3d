@@ -363,13 +363,14 @@ export class Game {
           <div class="cab-left">
             <div class="row"><span>Depth</span><b id="c_depth"></b></div><div class="row"><span>Formation</span><b id="c_form"></b></div>
             <div class="row"><span>ROP</span><b id="c_rop"></b></div><div class="row"><span>Diff pressure</span><b id="c_dp"></b></div><div class="row"><span>Surface torque</span><b id="c_tq"></b></div>
-            <div class="row"><span>Bit health</span><b id="c_bit"></b></div><div class="row"><span>Standpipe pressure</span><b id="c_spp"></b></div>
+            <div class="row"><span>Bit health</span><b id="c_bit"></b></div><div class="row"><span>Motor life</span><b id="c_motor"></b></div><div class="row"><span>Standpipe pressure</span><b id="c_spp"></b></div>
             <div class="row"><span>Mud weight</span><b id="c_mw"></b></div><div class="row"><span>Pit volume</span><b id="c_pit"></b></div>
             <div class="row"><span>Mode</span><b id="c_mode"></b></div>
           </div>
           <div class="cab-right">
             <div class="autobox cab-auto">
               <div class="row"><span>AUTODRILLER</span><b id="a_state" class="warn">${a.on ? "ON" : "OFF"}</b></div>
+              <canvas id="abars" width="480" height="260" style="width:100%;display:block;margin:6px 0;background:#06090d;border:2px solid #000;border-radius:6px"></canvas>
               <div class="hint">WOB set point: <b id="aw">${a.wob}</b> klbs</div>
               <input type="range" id="a_wob" min="5" max="60" step="1" value="${a.wob}" />
               <div class="hint">ROP limit: <b id="ar">${a.rop}</b> ft/hr</div>
@@ -437,6 +438,7 @@ export class Game {
     let sig0 = "";
     const mirror = view === "all" ? null : this.rig.monitors.find((m) => m.cabin && m.kind === view);
     (this.ui as any).panelTick = () => {
+      { const ac = p.querySelector<HTMLCanvasElement>("#abars"); if (ac) this.drawAutoBars(ac); }
       { const rc = p.querySelector<HTMLCanvasElement>("#rec"); const rx = rc?.getContext("2d"); if (rc && rx) drawRecorder(rx, rc.width, rc.height); }
       { const cv = p.querySelector<HTMLCanvasElement>("#tvmirror"); const src = mirror?.tex.getContext().canvas as HTMLCanvasElement | undefined; if (cv && src) cv.getContext("2d")?.drawImage(src, 0, 0, cv.width, cv.height); }
       const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
@@ -445,11 +447,35 @@ export class Game {
       set("c_depth", fmt(s.depth) + " ft" + (s.mode === "tripping" ? "  ·  bit at " + fmt(this.sim.bitDepth) + " ft" : "")); set("c_form", formationAt(s.depth).name); set("c_rop", fmt(s.rop) + " ft/hr");
       set("c_dp", fmt(s.dp) + " psi" + (s.stallT > 0 ? " · STALLED" : ""), s.dp > STALL_DP * 0.9 || s.stallT > 0 ? "bad" : "");
       set("c_tq", fmt(s.torque) + " ft-lb", s.torque > TORQUE_MAX * 0.9 ? "bad" : "");
-      set("c_bit", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : ""); set("c_spp", fmt(s.spp) + " psi"); set("c_mw", s.mw.toFixed(2) + " ppg");
+      set("c_bit", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : ""); set("c_motor", Math.round(s.motor) + "%", s.motor < 30 ? "bad" : s.motor < 60 ? "warn" : ""); set("c_spp", fmt(s.spp) + " psi"); set("c_mw", s.mw.toFixed(2) + " ppg");
       set("c_pit", fmt(s.pit) + " bbl", s.kick.active ? "bad" : ""); set("c_mode", s.mode.toUpperCase());
       const lim = p.querySelector<HTMLElement>("#a_lim");
       if (lim) lim.innerHTML = s.auto.on ? `Holding <b>${s.wobTarget.toFixed(1)}</b> klbs — limited by <b class="${s.auto.limit === "WOB" ? "ok" : "warn"}">${s.auto.limit === "WOB" ? "your WOB set point" : s.auto.limit === "ROP" ? "the ROP limit" : s.auto.limit === "TORQUE" ? "the torque limit" : "the diff-pressure limit"}</b>` : "";
     };
+  }
+  /** the autodriller's four bars: instantaneous ROP, WOB, diff and torque against their set points (dashed); the one holding the weight down lights up */
+  private drawAutoBars(cv: HTMLCanvasElement) {
+    const c = cv.getContext("2d")!, w = cv.width, h = cv.height, s = this.sim.s, a = s.auto, tq = a.torque ?? 10000;
+    c.fillStyle = "#06090d"; c.fillRect(0, 0, w, h); c.textBaseline = "middle";
+    const bars = [
+      { k: "ROP", lim: "ROP", v: s.rop, sp: a.rop, max: 600, unit: "ft/hr", col: "#76ff03" },
+      { k: "WOB", lim: "WOB", v: s.wob, sp: a.wob, max: 80, unit: "klb", col: "#ffeb3b" },
+      { k: "DIFF", lim: "DIFF", v: s.dp, sp: a.dp, max: 2400, unit: "psi", col: "#ff4dff" },
+      { k: "TQ", lim: "TORQUE", v: s.torque, sp: tq, max: 20000, unit: "ft-lb", col: "#4fd6ff" },
+    ];
+    const bw = 74, gap = (w - bars.length * bw) / (bars.length + 1), top = 18, bot = h - 40, bh = bot - top;
+    bars.forEach((b, i) => {
+      const x = gap + i * (bw + gap), hit = a.on && a.limit === b.lim, fy = (v: number) => bot - Math.max(0, Math.min(1, v / b.max)) * bh;
+      if (hit) { c.fillStyle = b.col + "26"; c.fillRect(x - 10, 2, bw + 20, h - 4); c.strokeStyle = b.col; c.lineWidth = 2; c.strokeRect(x - 10, 2, bw + 20, h - 4); }
+      c.fillStyle = "#0e1822"; c.fillRect(x, top, bw, bh);
+      const over = b.v > b.sp * 1.0001; c.fillStyle = over ? "#ff4a3a" : b.col; const y = fy(b.v); c.fillRect(x, y, bw, bot - y);
+      c.strokeStyle = "#1c2a38"; c.lineWidth = 1; for (let q = 1; q < 5; q++) { const gy = top + (q / 5) * bh; c.beginPath(); c.moveTo(x, gy); c.lineTo(x + bw, gy); c.stroke(); }
+      const sy = fy(b.sp); c.strokeStyle = "#fff"; c.lineWidth = 2; c.setLineDash([6, 4]); c.beginPath(); c.moveTo(x - 6, sy); c.lineTo(x + bw + 6, sy); c.stroke(); c.setLineDash([]);
+      c.textAlign = "center"; c.font = "bold 15px monospace"; c.fillStyle = hit ? b.col : "#cfe6f7"; c.fillText(b.k, x + bw / 2, h - 28);
+      c.font = "bold 13px monospace"; c.fillStyle = "#e6f0f8"; c.fillText(Math.round(b.v).toLocaleString("en-US"), x + bw / 2, h - 12);
+      c.font = "10px monospace"; c.fillStyle = "#cfe6f7"; c.fillText("SP " + Math.round(b.sp).toLocaleString("en-US"), x + bw / 2, top - 8);
+      if (hit) { c.font = "bold 11px monospace"; c.fillStyle = b.col; c.fillText("LIMITING", x + bw / 2, sy < top + 14 ? sy + 12 : sy - 9); }
+    });
   }
   private rerenderCabin(p: HTMLElement, render: () => string, bind: () => void) {
     const ky = p.scrollTop; p.innerHTML = render(); bind(); p.scrollTop = ky;
@@ -1179,6 +1205,7 @@ export class Game {
         case "autoShutIn": this.radio("dale", "I shut it in myself. Late. Got a bigger gain than I'd like.", 9000); this.inc(1); break;
         case "lossStart": this.radio("marcus", "We're losing returns! Pits are dropping — you're over frac. Back off the mud weight or pump LCM.", 10000); this.wake("LOSSES"); break;
         case "lossHealed": this.radio("marcus", "Losses healed. Pits are stable.", 6000); break;
+        case "motorDead": this.radio("dale", "Motor's gone, boss. No more differential pressure, no more ROP. We have to trip for a new one.", 10000); this.wake("MOTOR DEAD"); break;
         case "bitDead": this.radio("dale", "Bit's done, boss. ROP fell off a cliff. We need to trip.", 10000); this.wake("BIT DEAD"); break;
         case "stall": this.radio("dale", "MOTOR STALL! Picking up off bottom. Too much weight for this rock — differential pressure spiked.", 9000); this.gain(0, -3); this.sfx.bad(); break;
         case "tripDone": this.radio("dale", "New bit's on bottom. Let's make hole.", 7000); break;

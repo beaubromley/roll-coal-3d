@@ -83,6 +83,8 @@ export interface SimState {
   stats: { connections: number; feetDrilled: number; npt: number; kicksKilled: number; trips: number; stalls: number };
   paused: boolean;
   dp: number; torque: number; stallT: number;
+  /** mud-motor life, %: drains faster the closer the diff pressure runs to the stall, and each pressure spike takes a bite */
+  motor: number;
   auto: { on: boolean; wob: number; rop: number; dp: number; torque: number; limit: "" | "WOB" | "ROP" | "DIFF" | "TORQUE" };
 }
 
@@ -90,7 +92,7 @@ export type SimEvent =
   | { type: "kickAlarm" } | { type: "autoShutIn" } | { type: "lossStart" } | { type: "lossHealed" }
   | { type: "connection" } | { type: "bitDead" } | { type: "tripDone" } | { type: "formation"; name: string }
   | { type: "td" } | { type: "casingDone" } | { type: "killDone"; good: boolean } | { type: "fractured" }
-  | { type: "blackout" } | { type: "stall" } | { type: "pitLow" } | { type: "dpSpike" };
+  | { type: "blackout" } | { type: "motorDead" } | { type: "stall" } | { type: "pitLow" } | { type: "dpSpike" };
 
 export class Sim {
   s: SimState;
@@ -101,6 +103,8 @@ export class Sim {
   private dist = 0;
   /** bit bounce (0..1): too much weight for the rock sets the string and the motor hammering; shows on the recorder and in the diff pressure and torque */
   bounce = 0; private bph = 0;
+  /** autodriller: one PI loop per limit (ROP, diff, torque). Each holds the WOB that parameter would allow; the weight applied is the lowest of those and the WOB set point. */
+  private pi = { rop: 0, dp: 0, tq: 0, on: false };
   hold: number | null = null;
   accumDead = false;
   private lastForm = "";
@@ -117,7 +121,7 @@ export class Sim {
       casing: { progress: 0, phase: "none" },
       stats: { connections: 0, feetDrilled: 0, npt: 0, kicksKilled: 0, trips: 0, stalls: 0 },
       paused: true,
-      dp: 0, torque: 0, stallT: 0,
+      dp: 0, torque: 0, stallT: 0, motor: 100,
       auto: { on: false, wob: 20, rop: 200, dp: 1200, torque: 10000, limit: "" },
     };
   }
@@ -250,20 +254,26 @@ export class Sim {
         }
         // AUTODRILLER: hold the lowest of the WOB set point, the WOB that would exceed the ROP limit, and the WOB that would exceed the diff limit
         if (s.auto.on) {
-          const effMax = (s.auto.rop * f.hardness) / (6 * Math.max(0.05, fac));
-          const wRop = effMax;
-          const wDp = (s.auto.dp * (f.hardness / 1.5)) / 12;
-          const tqLim = s.auto.torque ?? 10000;
-          const wTq = Math.max(0, (tqLim - 600 - s.depth * 0.35) / (160 + 120 * f.hardness));
-          const w = Math.min(s.auto.wob, wRop, wDp, wTq);
-          s.auto.limit = w === s.auto.wob ? "WOB" : w === wRop ? "ROP" : w === wDp ? "DIFF" : "TORQUE";
-          s.wobTarget = Math.max(0, Math.round(w * 10) / 10);
-        } else s.auto.limit = "";
+          // proportional + integral, no derivative: error is how far under the limit the measured value is, as a fraction of the limit
+          const P = this.pi, KP = 14, KI = 1.6;
+          if (!P.on) { P.on = true; P.rop = P.dp = P.tq = Math.max(s.wobTarget, 1); }
+          const loop = (u: number, meas: number, sp: number) => { const e = (sp - meas) / Math.max(sp, 1); return Math.max(0, Math.min(80, u + KI * e * dt * 10)) + 0 * KP; };
+          const tq = s.auto.torque ?? 10000;
+          P.rop = loop(P.rop, s.rop, s.auto.rop); P.dp = loop(P.dp, s.dp, s.auto.dp); P.tq = loop(P.tq, s.torque, tq);
+          // the P term acts on the output right away; the integrators hold the long-term weight
+          const out = (u: number, meas: number, sp: number) => Math.max(0, u + KP * Math.min(0.5, (sp - meas) / Math.max(sp, 1)));
+          const cRop = out(P.rop, s.rop, s.auto.rop), cDp = out(P.dp, s.dp, s.auto.dp), cTq = out(P.tq, s.torque, tq);
+          const w = Math.min(s.auto.wob, cRop, cDp, cTq);
+          s.auto.limit = w === s.auto.wob ? "WOB" : w === cRop ? "ROP" : w === cDp ? "DIFF" : "TORQUE";
+          // anti-windup: a loop that is not the limiting one never runs far ahead of the weight actually applied
+          for (const k of ["rop", "dp", "tq"] as const) P[k] = Math.min(P[k], w + 6);
+          s.wobTarget = Math.max(0, Math.min(80, Math.round(w * 10) / 10));
+        } else { s.auto.limit = ""; this.pi.on = false; }
         s.wob = s.wobTarget;                                    // like the original: weight is whatever you set, right now
         const eff = s.wob;                                      // and ROP is simply proportional to it (no founder knee)
         const baseDp = diffPressure(s.wob, f);
         // near the motor limit the pressure throws spikes, like the original; each decays back in a second or two
-        if (baseDp >= 1850 && Math.random() < 1 - Math.exp(-(0.15 + (baseDp - 1850) / 220) * dt)) { this.spike = 1.12 + Math.random() * 0.2; this.events.push({ type: "dpSpike" }); }
+        if (baseDp >= 1850 && Math.random() < 1 - Math.exp(-(0.15 + (baseDp - 1850) / 220) * dt)) { this.spike = 1.12 + Math.random() * 0.2; this.events.push({ type: "dpSpike" }); s.motor = Math.max(0, s.motor - (5 + Math.random() * 5)); }
         this.spike = 1 + (this.spike - 1) * Math.exp(-1.3 * dt);
         // bounce: past the weight this rock wants, and the harder the rock the worse, the bit starts to hop
         this.bounce = Math.max(0, Math.min(1, (s.wob / woptFor(f) - 0.95) * (0.4 + f.hardness) * 1.4)); this.bph += dt * (7 + this.bounce * 5);
@@ -273,6 +283,9 @@ export class Sim {
         if ((s.dp >= STALL_DP && s.wob > 0) || (s.torque > TORQUE_MAX && Math.random() < 1 - Math.exp(-0.5 * dt))) {
           s.stallT = 12; s.stats.stalls++; s.cost += 8000; this.events.push({ type: "stall" });
         }
+        // motor wear, by how hard the pressure is run (original tiers: under 1,000 psi almost none, 1,350 and 1,850 are the knees)
+        s.motor = Math.max(0, s.motor - (s.dp < 1000 ? 0 : s.dp >= 1850 ? 0.25 : s.dp >= 1350 ? 0.05 : 0.01) * dt);
+        if (s.motor <= 0 && !s.needTrip) { s.needTrip = true; this.events.push({ type: "motorDead" }); }
         let rop = eff > 0 ? (eff * 6) / f.hardness : 0;
         rop = Math.min(600, rop * fac);
         if (s.needTrip || s.fuel <= 0) rop = 0;
@@ -299,7 +312,7 @@ export class Sim {
         const outFrac = Math.min(1, frac * 2 * (s.tripTotal / (s.tripTotal - 60 + 1e-6)) * 0.5);
         s.standsRacked = frac < 0.5 ? Math.min(40, Math.round(outFrac * 80 * (s.depth / 8500))) : Math.round(40 * (1 - (frac - 0.5) * 2));
         if (s.tripT >= s.tripTotal) {
-          s.bit = 100; s.needTrip = false; s.mode = "drilling"; s.cost += 15000 + 25000; s.standsRacked = 40;
+          s.bit = 100; s.motor = 100; s.needTrip = false; s.mode = "drilling"; s.cost += 15000 + 25000; s.standsRacked = 40;
           this.events.push({ type: "tripDone" });
         }
         s.spp = 0;

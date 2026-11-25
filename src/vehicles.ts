@@ -425,7 +425,7 @@ export class Vehicles {
   private buildManlift(x: number, z: number, yaw: number): Veh {
     const v = this.blank("manlift", "Scissor Manlift", "lift", x, z, yaw), r = v.root;
     Object.assign(v, { wheelbase: 2.4, maxFwd: 3.2, maxRev: 2.4, accel: 2.5, radius: 0.95, pts: [0.9, -0.9], camDist: 14, camHeight: 4.8, eye: { x: 0, y: 1.6, z: 0.1 }, boxH: 1.3,
-      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  E get out (at height the gate opens and you jump)  ·  SPACE jump out" });
+      controls: "W gas  ·  S brake / reverse  ·  A/D steer  ·  R/F raise / lower the basket  ·  E opens the gate (at height)  ·  SPACE jump out" });
     const O = "#e07a10", D = "#3d434b";
     this.box(v, r, O, 1.7, 0.55, 3.0, 0, 0.62, 0);
     this.box(v, r, D, 1.5, 0.1, 2.8, 0, 0.92, 0);
@@ -783,7 +783,8 @@ export class Vehicles {
     }
     const lv = this.active;
     if (lv && lv.kind === "lift" && lv.platformY > 1.2) {
-      if (!this.pendingJump) { lv.gateOpen = true; this.pendingJump = { v: lv, t: 0.55 }; this.game.ui.toast("GATE OPEN", "No steps up here. You have to jump."); }
+      lv.gateOpen = !lv.gateOpen;   // E only works the gate; the jump is yours (SPACE)
+      this.game.ui.toast(lv.gateOpen ? "GATE OPEN" : "GATE CLOSED", lv.gateOpen ? "No steps up here. Press SPACE when you're ready to jump. E closes the gate." : "Back inside the basket.");
       return;
     }
     if (lv && lv.kind === "lift" && lv.gate) lv.gateOpen = true;

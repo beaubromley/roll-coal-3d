@@ -94,7 +94,16 @@ export class Outskirts {
     this.skyline();
     this.cellar();
     // the open ground is one diggable height field now (the old flat plane sinks out of the way underneath; the pad keeps its own mesh)
-    { const og = sc.getMeshByName("ground"); if (og) { og.position.y = -14; og.receiveShadows = false; }
+    { const og = sc.getMeshByName("ground"); if (og) og.setEnabled(false);
+      // a safety floor half a metre under the open ground: whatever the height field misses (its far edge, a gap in a tile) shows sand, never the void. It has holes where the ground really is lower: the pond basin and the cellar.
+      { const mat = sc.getMaterialByName("ground"), xs = [-3000, -245, -105, -4, 4, 3000], zs = [-3000, -4, 4, 110, 220, 3000];
+        for (let i = 0; i < xs.length - 1; i++) for (let j = 0; j < zs.length - 1; j++) {
+          const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1];
+          if ((x0 === -245 && z0 === 110) || (x0 === -4 && z0 === -4)) continue;
+          const m = MeshBuilder.CreateGround("groundfloor", { width: x1 - x0, height: z1 - z0 }, sc); m.position.set((x0 + x1) / 2, -0.5, (z0 + z1) / 2);
+          const uv: number[] = []; const p = m.getVerticesData("position")!; for (let k = 0; k < p.length; k += 3) uv.push((p[k] + m.position.x + 3000) / 6000, (p[k + 2] + m.position.z + 3000) / 6000);
+          m.setVerticesData("uv", uv); if (mat) m.material = mat; m.receiveShadows = false; m.isPickable = false;
+        } }
       this.ground = new Ground(sc, this.baseTerrain, sc.getMaterialByName("ground"), (x, z) => Math.abs(x) <= 60 && z >= -65 && z <= 65);
       this.buildBlocked([...g.rig.colliders, ...this.colliders]);
       this.ground.prime(DIGGING ? [{ x: 0, z: 112 }, { x: 0, z: 0 }] : []); }

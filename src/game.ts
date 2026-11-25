@@ -30,6 +30,8 @@ export interface Mission {
   id: string; title: string; sub: string; steps: Step[];
   trigger: () => boolean; start?: () => void; end?: () => void;
   a?: number; m?: number; priority?: boolean;
+  /** a side mission: optional, never blocks the story, offered by a place or a person (or by itself when auto() says so) and paid in approval and morale */
+  side?: boolean; auto?: () => boolean;
 }
 interface Interactable { pos: () => Vector3; label: () => string; r: number; act: () => void; ok?: () => boolean; mission?: boolean; tv?: boolean }
 
@@ -956,6 +958,14 @@ export class Game {
   // ---------- save / load ----------
   static SAVE_KEY = "rcmh2.save.v1";
   allMissions: Mission[] = []; doneIds = new Set<string>(); saveT = 0;
+  sideList: Mission[] = [];
+  /** start a side mission (from a person or a place). It takes over for now, and the story job under it waits on the stack. */
+  startSide(id: string): boolean {
+    const m = this.sideList.find((x) => x.id === id);
+    if (!m || this.doneIds.has(id) || (this.active && this.active.m.id === id) || this.stack.some((r) => r.m.id === id)) return false;
+    if (this.active) this.stack.push(this.active);
+    this.beginMission(m); return true;
+  }
   onInteract: () => void = () => {};
   hasSave(): boolean { try { return !!localStorage.getItem(Game.SAVE_KEY); } catch { return false; } }
   clearSave() { try { localStorage.removeItem(Game.SAVE_KEY); } catch { /* ignore */ } }
@@ -1152,6 +1162,29 @@ export class Game {
   }
   stormT = 30;
   /** with the autodriller on, Dale now and then nudges a set point himself (and says so). They never wander on their own. */
+  /** notes that pop up when the rig needs something ordered, with the order button on the note itself */
+  private supplyEl: HTMLDivElement | null = null; private supplyT = 0; private ordering = new Set<string>();
+  private supplyNotes(dt: number) {
+    const s = this.sim.s; this.supplyT -= dt; if (this.supplyT > 0 && this.supplyEl) return; this.supplyT = 1;
+    const notes: { id: string; text: string; label: string; run: () => void }[] = [];
+    const order = (id: string, secs: number, say: string, done: () => void) => () => { if (this.ordering.has(id)) return; this.ordering.add(id); this.sfx.click(); this.radio("brent", say, 6000); setTimeout(() => { done(); this.ordering.delete(id); this.sfx.good(); }, secs * 1000); };
+    if (s.fuel < 1800 && !this.ordering.has("fuel")) notes.push({ id: "fuel", text: "Diesel is at " + Math.round((s.fuel / 5200) * 100) + "%.", label: "Order 4,000 gal ($14k)", run: order("fuel", 18, "Diesel is ordered. The truck is about twenty minutes out.", () => { s.fuel += 4000; this.sim.addCost(14000); this.radio("earl", "Fuel truck's here. Four thousand gallons.", 5000); }) });
+    if ((s.fracBbl < 150 || s.pit < 250) && !this.ordering.has("water")) notes.push({ id: "water", text: s.pit < 250 ? "The pits are low (" + Math.round(s.pit) + " bbl)." : "The frac tanks are nearly empty.", label: "Order 500 bbl of water ($4k)", run: order("water", 14, "Water is ordered. The hauler is on his way.", () => { s.fracBbl += 500; this.sim.addCost(4000); this.radio("earl", "Water truck's here. Five hundred barrels in the frac tanks.", 5000); }) });
+    if (this.ordering.has("fuel")) notes.push({ id: "fuelw", text: "Diesel truck is on the way…", label: "", run: () => {} });
+    if (this.ordering.has("water")) notes.push({ id: "waterw", text: "Water truck is on the way…", label: "", run: () => {} });
+    if (!this.supplyEl) {
+      const d = document.createElement("div"); d.id = "supply"; d.style.cssText = "position:fixed;right:16px;top:206px;z-index:6;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none";
+      document.body.appendChild(d); this.supplyEl = d;
+    }
+    const d = this.supplyEl, key = notes.map((n) => n.id).join(",") + this.ui.panelOpen;
+    if (d.dataset.k === key) return; d.dataset.k = key; d.innerHTML = "";
+    for (const n of notes) {
+      const c = document.createElement("div"); c.style.cssText = "background:rgba(10,16,24,.92);border:2px solid #f4c04a;padding:8px 12px;max-width:290px;font:700 13px system-ui,sans-serif;color:#fff;pointer-events:auto;box-shadow:3px 4px 0 rgba(0,0,0,.5)";
+      c.innerHTML = '<div style="font-size:10px;letter-spacing:2px;color:#f4c04a;margin-bottom:3px">SUPPLY NOTE</div>' + n.text;
+      if (n.label) { const b = document.createElement("button"); b.className = "b"; b.textContent = n.label; b.style.cssText = "display:block;margin-top:6px;font-size:12px;padding:6px 10px"; b.onclick = (ev) => { ev.stopPropagation(); n.run(); d.dataset.k = ""; this.supplyT = 0; }; c.appendChild(b); }
+      d.appendChild(c);
+    }
+  }
   private daleT = 100;
   private daleTweak(dt: number) {
     const s = this.sim.s, a = s.auto;
@@ -1251,8 +1284,10 @@ export class Game {
   }
   /** progress label: jobs finished so far, not the order they happened to start in (urgent ones interrupt the list) */
   jobLabel(m: Mission): string {
-    const done = this.doneIds.size, total = this.missionTotal;
-    return m.priority ? `URGENT · ${done} of ${total} jobs done` : `Job ${Math.min(total, done + 1)} of ${total}`;
+    const total = this.missionTotal;
+    if (m.side) return "SIDE JOB";
+    const story = [...this.doneIds].filter((id) => !this.sideList.some((s) => s.id === id)).length;
+    return m.priority ? `URGENT · ${story} of ${total} jobs done` : `Job ${Math.min(total, story + 1)} of ${total}`;
   }
   nextFromStack() {
     const r = this.stack.pop();
@@ -1266,6 +1301,7 @@ export class Game {
         this.queue.splice(this.queue.indexOf(m), 1); this.beginMission(m); break;
       }
     }
+    if (!this.active) { const s = this.sideList.find((m) => m.auto && !this.doneIds.has(m.id) && m.auto()); if (s) { this.beginMission(s); return; } }
     if (!this.active) {
       const head = this.queue.find((m) => !m.priority);
       const held = this.sim.s.depth > 8000 && !this.flags.chainDone;   // close to TD: the remaining jobs start straight away instead of waiting on their timers
@@ -1366,6 +1402,7 @@ export class Game {
       } else dn.rotation.y += Math.sin(this.realT * 0.7) * 0.003;
     }
     this.daleTweak(realDt);
+    if (this.started && !this.paused && !this.astMode && !this.flags.finish) this.supplyNotes(realDt); else if (this.supplyEl) this.supplyEl.innerHTML = "";
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);
     if (this.asteroid) {
       this.asteroidT += realDt;                                            // (the rock itself stays put: only the tail flickers)

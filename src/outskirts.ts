@@ -620,9 +620,14 @@ export class Outskirts {
       f.caught++; g.sfx.good();
       let sub: string;
       if (deep) {
-        const value = Math.round(val / 1000) * 1000; g.sim.addCost(-Math.round(value * 0.25)); g.gain(0, id === "rss" ? 6 : 3);
-        sub = `Est. value $${value.toLocaleString("en-US")}. Insurance recovery credits $${Math.round(value * 0.25).toLocaleString("en-US")} to the AFE.`;
-        if (id === "rss") g.radio("tex", "THAT'S THE WHOLE RSS! I'll never lose anything again. (I will. I'll lose it again.)", 7000);
+        const value = Math.round(val / 1000) * 1000;
+        if (id === "rss") {
+          // the whole tool: the vendor credits the lost-in-hole charge from the last well, and the credit lands on THIS well's AFE
+          const credit = 500000; g.sim.addCost(-credit); g.gain(0, 8);
+          sub = `LIH credit: $${credit.toLocaleString("en-US")} for the tool lost in hole on the last well, applied to THIS well's AFE.`;
+          g.radio("tex", "THAT'S THE WHOLE RSS! I'll never lose anything again. (I will. I'll lose it again.)", 7000);
+          setTimeout(() => g.radio("brent", "Accounting says the vendor reverses the lost-in-hole charge from the last run. It lands on this well. Don't ask how that works.", 9000), 3500);
+        } else { g.sim.addCost(-Math.round(value * 0.25)); g.gain(0, 3); sub = `Est. value $${value.toLocaleString("en-US")}. Insurance recovery credits $${Math.round(value * 0.25).toLocaleString("en-US")} to the AFE.`; }
       } else {
         if (val > f.best) f.best = val;
         if (id === "lunker") { g.gain(0, 5); g.radio("hank" as any, "THAT'S THE LUNKER! He's been in that pond since '94! Put him BACK, Company Man!", 7000); } else if (f.caught % 2 === 0) g.gain(0, 1);

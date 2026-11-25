@@ -18,6 +18,7 @@ export function defineMissions(g: Game) {
   const sy = (sp: Vector3) => () => sp;
   const gap = (n: number) => () => g.sinceDone() >= n;
   const M = (m: Mission) => g.queue.push(m);
+  const SD = (m: Mission) => { m.side = true; g.sideList.push(m); };
 
   // ================================================================ 1. gate sign-in — Simon says
   M({ id: "ppe", title: "Hard Hat Area", sub: "Check in at the gate shack. Safety first. Then second. Then also third.", trigger: () => true, a: 0.1, m: 0, steps: [
@@ -55,7 +56,7 @@ export function defineMissions(g: Game) {
     ], end: () => { g.holdPending = true; } });
 
   // ================================================================ 11. deer (world chase)
-  M({ id: "deer", title: "Deer on Location", sub: "A deer wandered onto the pad. Nobody has the number for wildlife control. It's now a Company Man issue.", trigger: gap(8), a: 0.3, m: 6,
+  SD({ id: "deer", auto: () => g.sinceDone() >= 10 && s.depth > 1500 && !g.flags.finish, side: true, title: "Deer on Location", sub: "A deer wandered onto the pad. Nobody has the number for wildlife control. It's now a Company Man issue.", trigger: gap(8), a: 0.3, m: 6,
     start: () => { g.rig.deerNode.setEnabled(true); g.rig.deerNode.position.set(34, 0, -48); g.deer = { target: null, shoo: 0 }; g.radio("marcus", "There's a deer by the tank battery. It's… looking at me. Do deer do that?"); },
     steps: [{ text: "Shoo the deer off location (3 times)", at: () => g.rig.deerNode.position.add(v3(0, 1.3, 0)), label: "Shoo deer", r: 5, act: () => {
       const d = g.deer; d.shoo++; const dp = g.rig.deerNode.position, pp = g.player.pos;
@@ -73,18 +74,6 @@ export function defineMissions(g: Game) {
       g.ui.toast("SHOO!", quips[Math.min(2, d.shoo - 1)]);
     }, watch: () => g.deer.shoo >= 3 && !!g.deer.target && g.rig.deerNode.position.subtract(g.deer.target).length() < 1.5 }],
     end: () => { g.rig.deerNode.setEnabled(false); g.radio("earl", "That deer has more seniority than you at this company, and it still left."); } });
-
-  // ================================================================ 17. windmill off location
-  M({ id: "windmill", title: "Windmill Shutdown", sub: "A wind turbine off the lease is shredding birds and the EPA has noticed. It's the company's windmill. Of course it is.", trigger: gap(5), a: 0.3, m: 4,
-    start: () => { g.radio("earl", "Environmental called. There's a wind turbine out west of the lease and the ground under it is… feathers. Take the pickup, drive out there, and shut it off. The truck's by the company man trailer.", 12000); },
-    steps: [
-      { text: "Drive out to the wind turbine west of the lease (use the pickup)", at: sy(S.windmill), label: "Shut off the windmill", r: 6, act: (done) => g.mini.mash({ eyebrow: "Wind Turbine 7", title: "Main Brake", intro: "The brake lever is stiff and the blades are still turning. Heave it over, alternating left and right, before the next bird flies in.", seconds: 10, label: "pull the brake lever" }, (r) => {
-        const off = () => { g.rig.setWindmill(false); };
-        if (r.skipped) { off(); g.shortcutToast("You hit the E-stop and walked away."); g.radio("earl", "You just slammed a 1.5 megawatt generator to a stop with the emergency button. Somebody will hear about that.", 9000); g.addDebt({ id: "wmgear", afterMin: 60, chance: 0.5, run: () => { g.radio("brent", "The turbine's gearbox is toast. Our name is on the work order.", 9000); sim.addCost(35000); } }); g.gain(-0.05, 0); }
-        else if (r.score > 0.35) { off(); g.gain(0.3, 5); g.radio("earl", "Blades are coasting down. Good. Nobody tell the birds, they're past caring.", 8000); }
-        else { off(); g.gain(0.05, 1); g.radio("earl", "It took you ten minutes and a lot of swearing, but it's stopped.", 7000); }
-        done(); }) },
-    ] });
 
   // ================================================================ 16. ARMAGEDDON (finale)
   M({ id: "armageddon", title: "Save the World", sub: "Drill to TD, then run casing and cement.", trigger: () => g.flags.chainDone === true, a: 1.0, m: 20,

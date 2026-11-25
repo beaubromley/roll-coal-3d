@@ -99,6 +99,21 @@ export function defineMissions(g: Game) {
       { text: "Watch the Freedom lift off", watch: () => !!g.flags.finish },
     ] });
 
+  // ================================================================ side: windmill shutdown (four turbines, each a lockout / tagout)
+  {
+    const lo = (title: string, what: () => void, done: () => void, i: number) => g.lockout(title, (mistakes) => {
+      what(); g.flags["wm" + i] = true; if (mistakes === 0) { g.gain(0.1, 2); g.radio("earl", "Clean lockout. Zero mistakes. I'd put that on a wall.", 6000); } else { g.sim.addCost(mistakes * 800); g.radio("earl", "You got there. With " + mistakes + " mistake" + (mistakes > 1 ? "s" : "") + ". The incident report is mostly blank.", 6000); }
+      done();
+    });
+    const turb = (i: number, label: string): any => ({ text: "Shut down " + label + " (lockout / tagout)", at: () => g.outskirts.turbinePos(i), label: "Lock out the turbine", r: 4, act: (done: () => void) => lo("Wind Turbine " + (i + 2), () => { g.outskirts.turbs[i].on = false; }, done, i), watch: () => !!g.flags["wm" + i] });
+    SD({ id: "windmill", title: "Windmill Shutdown", sub: "The EPA says the company's wind turbines are killing birds. They aren't the company's. Nobody can prove that. Lock them out, one by one.", trigger: () => false, auto: () => g.sinceDone() >= 6 && s.depth > 2200 && !g.flags.finish, a: 0.5, m: 6,
+      start: () => { g.radio("earl", "Environmental's on the phone. Four wind turbines across the lease country, all shredding birds, and the paperwork has our name on it. Take a truck. Lock them out. Do it right, they're 1.5 megawatts each.", 13000); },
+      steps: [
+        { text: "Shut down the turbine west of the lease (lockout / tagout)", at: sy(S.windmill), label: "Lock out the turbine", r: 6, act: (done: () => void) => lo("Wind Turbine 1", () => g.rig.setWindmill(false), done, 9), watch: () => !!g.flags.wm9 },
+        turb(0, "the turbine up in the northwest corner"), turb(1, "the turbine out in the southwest flats"), turb(2, "the turbine in the far southeast"),
+      ], end: () => { g.radio("brent", "The EPA closed the file. They didn't say why. I'd stop asking.", 8000); } });
+  }
+
   // ================================================================ side: the big catfish
   SD({ id: "sixty", title: "Old Sixty", sub: "Hank has been after a sixty-pound catfish for thirty years. Cast far over the dark water, sink the bait deep, and fight him.", trigger: () => false, auto: () => !!g.flags.hankFriend && g.sinceDone() >= 4 && !g.flags.finish, a: 0.4, m: 10,
     start: () => { g.flags.sixtyOn = true; g.radio("hank" as any, "There's a catfish in my pond. Sixty pounds. Name's Old Sixty. I've been after him thirty years. He lives in the deep water, past five meters. Cast far, and sink it. He'll hit hard.", 12000); },

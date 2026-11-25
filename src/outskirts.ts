@@ -29,7 +29,8 @@ const CELL_R = 1.525, CELL_D = 1.83, CELL_H = 6;
 const DEEP = { x: POND.x - 18, z: POND.z - 6, r: 17, extra: 6.5 };
 const FARM = { x: -64, z: 236 };                      // the house; its porch faces +x, toward the lease road
 const SILOS = { x: -93, z: 262 };
-const RIVAL = { x: -420, z: -300 };                   // Singularity Drilling
+const RIVAL = { x: -420, z: -300 };
+export const FOREST_CAMP = { x: -40, z: -330 };   // the hunters' camp in the forest to the south                   // Singularity Drilling
 const TACO = { x: -14, z: 192 };                      // up the lease road, well past the gate (you start outside its district)
 const PASTURE = { x0: 70, x1: 230, z0: 115, z1: 305 };
 
@@ -54,6 +55,70 @@ export class Outskirts {
   private nearCow = 0; private t = 0;
   private seen = new Set<string>();
   private cd: Record<string, number> = {};
+
+  /** more wind turbines scattered over the landscape (the company's own is west of the lease): they turn until somebody shuts them down */
+  turbs: { x: number; z: number; rot: TransformNode; on: boolean }[] = [];
+  turbinePos(i: number) { const t = this.turbs[i]; return new Vector3(t.x, 1.5, t.z + 2.5); }
+  private turbines(b: Builder) {
+    b.defMat("wtwhite", "#e8eaec", { spec: 0.3 });
+    for (const [x, z] of [[-290, 330], [-130, -210], [310, -340]] as [number, number][]) {
+      b.cyl("wtwhite", x, 17, z, 2.2, 34, { tess: 14, dia2: 1.1 }); b.box("wtwhite", x, 35.2, z, 4.2, 2.2, 2.4); b.cyl("rust", x, 34.2, z + 1.4, 1.3, 0.6, { axis: "z", tess: 10 });
+      b.blocker(x - 1.2, 0, z - 1.2, x + 1.2, 8, z + 1.2);
+      const rot = new TransformNode("turbrot", this.scene); rot.position.set(x, 35.2, z + 2.0);
+      const bm = new StandardMaterial("blade", this.scene); bm.diffuseColor = Color3.FromHexString("#f2f4f6"); bm.specularColor = Color3.Black();
+      for (let k = 0; k < 3; k++) { const arm = new TransformNode("arm", this.scene); arm.parent = rot; arm.rotation.z = (k / 3) * Math.PI * 2; const bl = MeshBuilder.CreateBox("blade", { width: 0.7, height: 15, depth: 0.2 }, this.scene); bl.material = bm; bl.parent = arm; bl.position.y = 7.8; bl.isPickable = false; }
+      const hub = MeshBuilder.CreateSphere("hub", { diameter: 1.6, segments: 8 }, this.scene); hub.material = bm; hub.parent = rot; hub.isPickable = false;
+      this.turbs.push({ x, z, rot, on: true });
+    }
+  }
+  /** "Bigfoot National Mesquite Forest" south of the lease: a thick stand of mesquite and oak, a hunters' camp, and something large that does not want to be seen */
+  private forest(b: Builder) {
+    for (const [k, c, o] of [["leaf", "#3d5a2a"], ["leaf2", "#2c4a22"], ["leaf3", "#55672f"], ["bark", "#4a3a28"], ["tent", "#c8a24a"], ["tentd", "#8a6a2a"], ["campfire", "#ff7a1a", { emissive: "#ff7a1a" }], ["flog", "#5a4128"], ["cooler", "#2c6fb5"]] as [string, string, { emissive?: string }?][]) b.defMat(k, c, o ?? {});
+    let seed = 91; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const C = FOREST_CAMP;
+    for (let gx = -340; gx < 340; gx += 13) for (let gz = -150; gz > -560; gz -= 13) {
+      const x = gx + (R() - 0.5) * 10, z = gz + (R() - 0.5) * 10, h = 3.5 + R() * 3.5, w = 0.35 + R() * 0.3, big = 2.6 + R() * 2.4, mat = ["leaf", "leaf2", "leaf3"][(R() * 3) | 0], extra = R() < 0.5;
+      if (R() < 0.38) continue;
+      if (x > 30 && z > -250) continue;                           // the hills' country
+      if (Math.hypot(x - RIVAL.x, z - RIVAL.z) < 150) continue;   // the rival's fence
+      if (Math.hypot(x - C.x, z - C.z) < 17) continue;            // the camp's clearing
+      if (Math.hypot(x, z) > 540) continue;                       // the cliffs
+      b.cyl("bark", x, h / 2, z, w, h, { tess: 6, dia2: w * 0.6 });
+      b.sphere(mat, x, h + big * 0.35, z, big, 8);
+      if (extra) b.sphere(mat, x + (R() - 0.5) * 1.8, h + big * 0.1, z + (R() - 0.5) * 1.8, big * 0.7, 7);
+      b.blocker(x - 0.3, 0, z - 0.3, x + 0.3, 4, z + 0.3);
+    }
+    // the hunters' camp: a tent, a fire ring with log seats, a cooler, and a sign
+    b.box("tent", C.x - 4, 0.9, C.z + 1, 3.2, 1.8, 2.6, true); b.beam("tentd", new Vector3(C.x - 4, 1.9, C.z - 0.4), new Vector3(C.x - 4, 1.9, C.z + 2.4), 0.12);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.cyl("rust", C.x + Math.cos(a) * 1.1, 0.14, C.z + Math.sin(a) * 1.1, 0.4, 0.28, { tess: 6 }); }
+    b.sphere("campfire", C.x, 0.35, C.z, 0.7, 6); for (const [dx, dz] of [[-2.2, 0.4], [2.0, -0.6], [0.4, 2.2]]) b.cyl("flog", C.x + dx, 0.22, C.z + dz, 0.45, 1.8, { axis: dx === 0.4 ? "x" : "z", tess: 7 });
+    b.box("cooler", C.x - 2.2, 0.3, C.z - 2.2, 0.9, 0.6, 0.55, true);
+    b.label("BIGFOOT NATIONAL\nMESQUITE FOREST", C.x + 4.5, 2.4, C.z - 3, 3.4, 1.0, 0, "#233a52", "#ffd24a", 44);
+    b.slab("dwood", C.x + 4.4, 0, C.z - 3.05, C.x + 4.6, 2.2, C.z - 2.95);
+    // something large, dark and hairy, standing a way off between the trees
+    const bf = new TransformNode("bigfoot", this.scene), mk = (m: Mesh, x: number, y: number, z: number) => { m.parent = bf; m.position.set(x, y, z); m.material = mat; m.isPickable = false; return m; };
+    const mat = new StandardMaterial("bigfootm", this.scene); mat.diffuseColor = Color3.FromHexString("#2b1f18"); mat.specularColor = Color3.Black();
+    for (const s of [-1, 1]) { mk(MeshBuilder.CreateCylinder("bfl", { diameterTop: 0.45, diameterBottom: 0.38, height: 1.3, tessellation: 7 }, this.scene), s * 0.3, 0.65, 0); mk(MeshBuilder.CreateCylinder("bfa", { diameterTop: 0.3, diameterBottom: 0.26, height: 1.7, tessellation: 7 }, this.scene), s * 0.78, 1.55, 0.1).rotation.z = s * 0.14; }
+    mk(MeshBuilder.CreateBox("bft", { width: 1.2, height: 1.5, depth: 0.7 }, this.scene), 0, 1.95, 0); mk(MeshBuilder.CreateSphere("bfh", { diameter: 0.62, segments: 8 }, this.scene), 0, 2.95, 0.05);
+    for (const s of [-1, 1]) mk(MeshBuilder.CreateSphere("bfe", { diameter: 0.07, segments: 4 }, this.scene), s * 0.12, 3.0, 0.32).material = this.bfEye();
+    bf.position.set(-120, 0, -430); this.bf = bf; this.bfPost = 0;
+  }
+  private bf: TransformNode | null = null; private bfPost = 0; private bfSeen = false; private bfRun = 0; private bfEyeMat: StandardMaterial | null = null;
+  private bfEye() { if (!this.bfEyeMat) { const m = new StandardMaterial("bfeye", this.scene); m.emissiveColor = new Color3(1, 0.85, 0.3); m.diffuseColor = Color3.Black(); m.disableLighting = true; this.bfEyeMat = m; } return this.bfEyeMat; }
+  /** Bigfoot keeps his distance: he stands about, and walks off when you get close, to turn up somewhere else a while later */
+  private bigfootStep(dt: number) {
+    const bf = this.bf; if (!bf) return; const g = this.g, p = g.player.pos, POSTS: [number, number][] = [[-120, -430], [70, -480], [-260, -190], [160, -420], [-20, -250], [-190, -440]];
+    const d = Math.hypot(p.x - bf.position.x, p.z - bf.position.z);
+    bf.position.y = Math.max(0, this.terrain(bf.position.x, bf.position.z));
+    if (d < 70 && !this.bfSeen) { this.bfSeen = true; g.ui.toast("DISCOVERED", "BIGFOOT? (Something big is watching you from the trees.)"); g.sfx.good(); g.gain(0, 6); }
+    if (this.bfRun > 0) {
+      this.bfRun -= dt; const dx = bf.position.x - p.x, dz = bf.position.z - p.z, l = Math.hypot(dx, dz) || 1; bf.position.x += (dx / l) * 11 * dt; bf.position.z += (dz / l) * 11 * dt; bf.rotation.y = Math.atan2(dx, dz); bf.position.x = Math.max(-460, Math.min(460, bf.position.x)); bf.position.z = Math.max(-520, Math.min(-130, bf.position.z));
+      if (this.bfRun <= 0 || l > 90) { this.bfRun = 0; bf.setEnabled(false); setTimeout(() => { this.bfPost = (this.bfPost + 1 + ((Math.random() * 4) | 0)) % POSTS.length; bf.position.x = POSTS[this.bfPost][0]; bf.position.z = POSTS[this.bfPost][1]; bf.setEnabled(true); }, 25000 + Math.random() * 20000); }
+    } else if (bf.isEnabled()) {
+      bf.rotation.y = Math.atan2(p.x - bf.position.x, p.z - bf.position.z);   // he watches you
+      if (d < 26) { this.bfRun = 6; if (Math.random() < 0.5) g.radio("hank" as any, "Did you see that? ...Nah. Probably a bear. A tall bear.", 5000); }
+    }
+  }
 
   /** the ground before anybody has dug: flat, except for the hills, the mesas and the pond basin */
   baseTerrain = (x: number, z: number): number => {
@@ -94,6 +159,7 @@ export class Outskirts {
     this.silos(b);
     this.rival(b);
     this.taco(b);
+    this.forest(b); this.turbines(b);
     this.merged = b.finish();
     this.colliders = b.colliders;
     this.cattle();
@@ -750,7 +816,7 @@ export class Outskirts {
     const g = this.g, p = g.player; this.t += dt;
     const px = p.pos.x, pz = p.pos.z;
     // discoveries
-    for (const [name, x, z, r] of [["PRIVATE POND: THERE IS A DEEP HOLE", POND.x, POND.z, 120], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["SINGULARITY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
+    for (const [name, x, z, r] of [["PRIVATE POND: THERE IS A DEEP HOLE", POND.x, POND.z, 120], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["SINGULARITY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["BIGFOOT NATIONAL MESQUITE FOREST", 0, -300, 90], ["THE HUNTERS' CAMP", FOREST_CAMP.x, FOREST_CAMP.z, 22], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
       if (!this.seen.has(name) && Math.hypot(px - x, pz - z) < r) { this.seen.add(name); g.ui.toast("DISCOVERED", name); g.sfx.good(); }
     }
     // near enough to bother with the animations
@@ -819,7 +885,9 @@ export class Outskirts {
       }
       f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
     }
+    for (const T of this.turbs) if (T.on) T.rot.rotation.z += dt * 1.3;
     this.updateFishing(dt);
+    this.bigfootStep(dt);
     { // the diggable ground follows the player (and a point ahead when going fast)
       const lp = this.lastP ?? { x: px, z: pz }, vx = (px - lp.x) / Math.max(dt, 1e-3), vz = (pz - lp.z) / Math.max(dt, 1e-3); this.lastP = { x: px, z: pz };
       const foc = [{ x: px, z: pz }], sp = Math.hypot(vx, vz); if (sp > 8) { const k = Math.min(60, sp * 1.2) / sp; foc.push({ x: px + vx * k, z: pz + vz * k }); }

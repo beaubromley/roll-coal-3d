@@ -1161,6 +1161,18 @@ export class Game {
     this.openCabin("all");
   }
   stormT = 30;
+  /** lockout / tagout: put the six steps of shutting a machine down safely in the right order */
+  lockout(title: string, done: (mistakes: number) => void) {
+    const steps = ["Call the control room", "Stop the rotor with the service brake", "Open the electrical disconnect", "Put your lock on the disconnect", "Hang your tag on the lock", "Try to start it, to prove it's dead"];
+    let next = 0, mistakes = 0; const order = steps.map((_, i) => i).sort(() => Math.random() - 0.5);
+    const p = this.open(`<div class="eyebrow">Lockout / Tagout</div><h2>${title}</h2><p>Put the six steps in the right order. A wrong move costs you, and a turbine that isn't locked out will take your head off.</p><div id="lo" class="btns" style="flex-direction:column;align-items:stretch;gap:6px"></div><div class="hint" id="lomsg">Step 1 of 6</div><div class="btns"><button class="b alt" data-close>Walk away</button></div>`);
+    this.closeBtn(p);
+    const box = p.querySelector<HTMLElement>("#lo")!, msg = p.querySelector<HTMLElement>("#lomsg")!, btns: HTMLButtonElement[] = [];
+    for (const i of order) { const b = document.createElement("button"); b.className = "b alt"; b.textContent = steps[i]; b.onclick = () => {
+      if (i === next) { b.disabled = true; b.className = "b green"; next++; this.sfx.good(); msg.textContent = next >= steps.length ? "Locked out." : "Step " + (next + 1) + " of 6"; if (next >= steps.length) setTimeout(() => { this.ui.closePanel(); done(mistakes); }, 500); }
+      else { mistakes++; this.sfx.bad(); msg.innerHTML = '<span style="color:#ff6a6a">Wrong order. That is how people get hurt. (' + mistakes + ' mistake' + (mistakes > 1 ? "s" : "") + ")</span>"; }
+    }; box.appendChild(b); btns.push(b); }
+  }
   /** with the autodriller on, Dale now and then nudges a set point himself (and says so). They never wander on their own. */
   /** notes that pop up when the rig needs something ordered, with the order button on the note itself */
   private supplyEl: HTMLDivElement | null = null; private supplyT = 0; private ordering = new Set<string>();

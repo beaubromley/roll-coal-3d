@@ -55,9 +55,9 @@ function noiseTex(scene: Scene, base: string, speck: string[], n: number, size =
   const t = new DynamicTexture("noise", size, scene, true);
   const c = t.getContext() as CanvasRenderingContext2D;
   c.fillStyle = base; c.fillRect(0, 0, size, size);
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < n * 0.4; i++) {
     c.fillStyle = speck[(Math.random() * speck.length) | 0];
-    const s = 1 + Math.random() * 3;
+    const s = 2.5 + Math.random() * 5;   // coarse speckle: fine white noise aliases into streaks at a grazing angle
     const px = Math.random() * size, py = Math.random() * size;
     // draw wrapped so the texture tiles seamlessly (clipped speckles left a faint grid line at every tile edge)
     for (const ox of [0, -size]) for (const oy of [0, -size]) c.fillRect(px + ox, py + oy, s, s);
@@ -105,7 +105,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   road.position.set(0, 0.08, 190);
   const rm = new StandardMaterial("roadm", scene);
   rm.diffuseTexture = noiseTex(scene, "#5a5650", ["#4a463f", "#6a665e", "#3d3a34"], 2500, 256, 8);
-  { const rt = rm.diffuseTexture as DynamicTexture; rt.uScale = 2; rt.vScale = 86; rt.anisotropicFilteringLevel = 1; }   // the road is 7 m x 300 m: tile the texture to match, or it streaks
+  { const rt = rm.diffuseTexture as DynamicTexture; rt.uScale = 1; rt.vScale = 43; rt.anisotropicFilteringLevel = 1; }   // the road is 7 m x 300 m: tile the texture to match, or it streaks
   rm.specularColor = Color3.Black(); rm.zOffset = -4; road.material = rm; road.receiveShadows = false;
 
   b.defMat("steel", "#7b8087"); b.defMat("dsteel", "#3a3f45"); b.defMat("black", "#16181a");

@@ -1,6 +1,6 @@
 import { Scene, DynamicTexture } from "@babylonjs/core";
 import { drawAutoBars, type AutoView } from "./recorder";
-import { formationAt } from "./sim";
+import { formationAt, WELL } from "./sim";
 import { drawDd } from "./ddscreens";
 import type { Dd } from "./dd";
 
@@ -209,7 +209,7 @@ function trip(d: ScreenData): { hook: number; block: number } {
     if (u < 0.88) return { hook: W, block: (u / 0.88) * STROKE };   // loaded: pipe on the hook, block travelling with it
     return { hook: BLOCKS, block: STROKE * (1 - (u - 0.88) / 0.12) };   // empty: block and top drive going back for the next stand
   }
-  return { hook: W - d.wob * (d.rotating ? 1 : 0), block: 20 + ((d.depth % STAND) / STAND) * 80 };
+  return { hook: W - d.wob * (d.rotating ? 1 : 0), block: 5 + (1 - ((((d.depth - WELL.startDepth) % STAND) + STAND) % STAND) / STAND) * (STROKE - 5) };   // starts at the top of a stand and comes down as the hole is made
 }
 const edrHist: number[][] = [];
 const edrState = { rop2: 0, wob2: 0 };

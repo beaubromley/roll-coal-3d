@@ -189,6 +189,15 @@ export class Sim {
     s.tripTotal = (s.depth * 2) / 2000 * 60 + 60; // minutes: round trip @ 2000 ft/hr + 1 hr bit change
   }
 
+  /** an LCM sweep: a pill of lost-circulation material pumped round from the driller's console. It lifts the LCM in the system by 30 lb/bbl for a while (it fades as it circulates out) and costs $5,000. */
+  sweep(): string | null {
+    const s = this.s;
+    if (s.mode !== "drilling" && s.mode !== "connection" && s.mode !== "idle") return "Not now. Circulate the pill when you are drilling or sitting on bottom.";
+    if (s.lcm > s.lcmTarget + 12) return "The last sweep is still going round.";
+    s.lcm = Math.min(80, s.lcm + 30); s.cost += 5000;
+    return null;
+  }
+
   startCasing() { const s = this.s; s.mode = "casing"; s.casing = { progress: 0, phase: "run" }; }
 
   step(dt: number) { // dt in game minutes

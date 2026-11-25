@@ -32,7 +32,7 @@ export interface Rig {
   /** the off-location windmill: spinning (true) or braked (false) */
   setWindmill(on: boolean): void;
   /** the live monitors (desk screens in the driller's cabin): what they show, and where they are in the world */
-  monitors: { kind: ScreenKind; tex: DynamicTexture; pos: Vector3; cabin: boolean; grp: "drill" | "dd" | "tv"; slot?: [number, number] }[];
+  monitors: { kind: ScreenKind; tex: DynamicTexture; pos: Vector3; cabin: boolean; grp: "drill" | "dd" | "tv"; slot?: [number, number]; span?: number }[];
   /** the safety trailer's "days since last incident" board */
   setDaysSince(n: number): void;
   /** the hydraulic catwalk's controls (the ground station and the rig-floor remote both drive these) */
@@ -285,9 +285,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const tvScreens = new Screens(scene);
   let tvT = 0, lastScr: import("./screens").ScreenData | undefined;
   const monitorList: Rig["monitors"] = [];
-  const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens, slot?: [number, number]) => {
+  const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens, slot?: [number, number], span?: number) => {
     const key = "scr" + scrN++, tex = scr.make(kind, false);
-    monitorList.push({ kind, tex, pos: rpos(v(cx + (face === "+x" ? 0.3 : -0.3), cy, cz)), cabin: scr === screens, grp: scr !== screens ? "tv" : face === "+x" ? "drill" : "dd", slot });
+    monitorList.push({ kind, tex, pos: rpos(v(cx + (face === "+x" ? 0.3 : -0.3), cy, cz)), cabin: scr === screens, grp: scr !== screens ? "tv" : face === "+x" ? "drill" : "dd", slot, span });
     tex.wAng = Math.PI / 2;   // the box side faces map the canvas turned a quarter turn
     const m = b.defMat(key, "#000000"); m.emissiveTexture = tex; m.diffuseTexture = tex; m.diffuseColor.set(0.4, 0.4, 0.4); m.emissiveColor.set(0.85, 0.85, 0.85); m.specularColor.set(0, 0, 0);
     b.slab("black", cx - 0.04, cy - h / 2 - 0.03, cz - w / 2 - 0.03, cx + 0.04, cy + h / 2 + 0.03, cz + w / 2 + 0.03);
@@ -302,7 +302,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("steel", 2.8, F + 0.95, -5.9, 3.6, F + 0.99, -0.5);
   // the wall of screens: four on the desk with a two-monitor gap in the middle to see the rotary through, six hung across the top
   (["params", "auto", "alarms", "pits"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k, screens, [1, [0, 1, 4, 5][i]]));
-  (["trends", "edr", "pumps", "hookload", "steer", "plan"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.0, F + 2.35, -5.45 + i * 0.9, 0.82, 0.5, k, screens, [0, i]));
+  monitor("+x", 3.0, F + 2.12, -5.0, 1.72, 0.84, "edr", screens, [0, 0], 2);   // the two top left monitors are one big EDR
+  (["pumps", "hookload", "steer", "plan"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.0, F + 2.35, -3.65 + i * 0.9, 0.82, 0.5, k, screens, [0, i + 2]));
   for (const mz of deskZ) b.slab("black", 3.55, F + 0.99, mz - 0.25, 3.85, F + 1.03, mz + 0.25);   // keyboards / panels under each monitor
   // driller's chair at (4.5, -3.2) facing west: joystick arms, throttle and brake
   b.cyl("black", 4.5, F + 0.25, -3.2, 0.14, 0.5, { tess: 8 }); b.slab("black", 4.1, F, -3.6, 4.9, F + 0.07, -2.8);

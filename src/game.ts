@@ -430,6 +430,8 @@ export class Game {
             <div class="cab-manual"><div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
             <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
             <div class="btns" style="margin:6px 0"><button class="b alt" id="wobDn" ${busy || a.on ? "disabled" : ""}>WOB ↓</button><button class="b" id="wobUp" ${busy || a.on ? "disabled" : ""}>WOB ↑</button></div>
+            <div class="row" style="margin-top:6px"><span>LCM in system</span><b id="c_lcm"></b></div>
+            <div class="btns" style="margin:4px 0"><button class="b alt" id="c_sweep">Send LCM sweep ($5,000)</button></div>
             <div class="hint" style="margin-top:6px">Pump rate: <b id="fv">${s.flowTarget}</b> gpm</div>
             <input type="range" id="flow" min="400" max="1000" step="50" value="${s.flowTarget}"/></div>
           </div>
@@ -440,7 +442,7 @@ export class Game {
     const bind = () => {
       const q = <T extends HTMLElement>(id: string) => p.querySelector<T>("#" + id)!;
       { const grid = p.querySelector<HTMLElement>("#scrgrid"); this.cabGrid = [];
-        if (grid) for (const m of this.rig.monitors.filter((x) => x.grp === "drill")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = String(m.slot![1] + 1); grid.appendChild(cv); this.cabGrid.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement }); } }
+        if (grid) for (const m of this.rig.monitors.filter((x) => x.grp === "drill")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); grid.appendChild(cv); this.cabGrid.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement }); } }
       const sl = (id: string, out: string, apply: (v: number) => void) => { const el = q<HTMLInputElement>(id); el.oninput = () => { apply(Number(el.value)); q(out).textContent = el.value; }; };
       sl("wob", "wv", (v) => { s.wobTarget = v; });
       sl("flow", "fv", (v) => { s.flowTarget = v; });
@@ -468,6 +470,7 @@ export class Game {
       };
       holdBtn("wobUp", 1); holdBtn("wobDn", -1);
       q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
+      q("c_sweep").onclick = () => { const r = this.sim.sweep(); if (r) { this.ui.toast("NO SWEEP", r); return; } this.sfx.click(); this.ui.toast("LCM SWEEP AWAY", "A 30 lb/bbl pill is going down the pipe. It will fade as it circulates out."); this.radio("marcus", "The pill is pumped. Watch the pits and the returns.", 6000); };
       q("a_toggle").onclick = () => {
         const a = s.auto;
         if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
@@ -505,7 +508,7 @@ export class Game {
       set("c_depth", fmt(s.depth) + " ft" + (s.mode === "tripping" ? "  ·  bit at " + fmt(this.sim.bitDepth) + " ft" : "")); set("c_form", formationAt(s.depth).name); set("c_rop", fmt(s.rop) + " ft/hr");
       set("c_dp", fmt(s.dp) + " psi" + (s.stallT > 0 ? " · STALLED" : ""), s.dp > STALL_DP * 0.9 || s.stallT > 0 ? "bad" : "");
       set("c_tq", fmt(s.torque) + " ft-lb", s.torque > TORQUE_MAX * 0.9 ? "bad" : "");
-      set("c_bit", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : ""); set("c_motor", Math.round(s.motor) + "%", s.motor < 30 ? "bad" : s.motor < 60 ? "warn" : ""); set("c_spp", fmt(s.spp) + " psi"); set("c_mw", s.mw.toFixed(2) + " ppg");
+      set("c_bit", Math.round(s.bit) + "%", s.bit < 25 ? "bad" : ""); set("c_lcm", s.lcm.toFixed(0) + " lb/bbl", s.lcm > 5 ? "ok" : ""); set("c_motor", Math.round(s.motor) + "%", s.motor < 30 ? "bad" : s.motor < 60 ? "warn" : ""); set("c_spp", fmt(s.spp) + " psi"); set("c_mw", s.mw.toFixed(2) + " ppg");
       set("c_pit", fmt(s.pit) + " bbl", s.kick.active ? "bad" : ""); set("c_mode", s.mode.toUpperCase());
       const lim = p.querySelector<HTMLElement>("#a_lim");
       if (lim) lim.innerHTML = s.auto.on ? `Holding <b>${s.wobTarget.toFixed(1)}</b> klbs — limited by <b class="${s.auto.limit === "WOB" ? "ok" : "warn"}">${s.auto.limit === "WOB" ? "your WOB set point" : s.auto.limit === "ROP" ? "the ROP limit" : s.auto.limit === "TORQUE" ? "the torque limit" : "the diff-pressure limit"}</b>` : "";

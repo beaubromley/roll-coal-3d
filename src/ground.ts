@@ -6,7 +6,7 @@ import { Scene, Mesh, VertexData, VertexBuffer, Material } from "@babylonjs/core
  *  - near: 32 m chunks on a 1 m grid, streamed in around the player; these are what you dig
  * Heights are base terrain (hills, mesas, the pond basin) plus a sparse map of edits made by the backhoe, on a 1 m vertex grid.
  */
-const FAR = 128, FAR_N = 64, NEAR = 32, NEAR_N = 32, HALF = 704, SK = 3;
+const FAR = 128, FAR_N = 64, NEAR = 32, NEAR_N = 32, HALF = 704, SK = 0.001;
 type Base = (x: number, z: number) => number;
 interface Tile { mesh: Mesh; x0: number; z0: number; step: number; n: number; mask: Uint8Array | null; h: Float32Array; dirty: boolean; ntris: number }
 interface Chunk { mesh: Mesh; cx: number; cz: number; h: Float32Array; active: boolean; dirty: boolean; lo: number; hi: number; loZ: number; hiZ: number; full: boolean }

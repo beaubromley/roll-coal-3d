@@ -23,6 +23,7 @@ const MESAS: [number, number, number, number, number, number][] = [[305, 12, 26,
 const POND = { x: -175, z: 165, rx: 68, rz: 52 };
 const POND_DEPTH = 6, WATER_Y = -0.3;
 /** the BOP cellar at the wellhead: 10 ft across, 6 ft deep */
+const DIGGING = false;
 const CELL_R = 1.525, CELL_D = 1.83, CELL_H = 6;
 /** the deep hole, out toward the middle of the pond: the rare catches live here */
 const DEEP = { x: POND.x - 18, z: POND.z - 6, r: 17, extra: 6.5 };
@@ -303,7 +304,9 @@ export class Outskirts {
     }
   }
   /** may the backhoe dig at this vertex? Not the pad, the lease road, the cellar, the water, anything solid, or past the cliffs */
+  readonly diggingOn = DIGGING;
   canDig(x: number, z: number): boolean {
+    if (!DIGGING) return false;   // digging is switched off (the ground is still the same height field, it just can't be changed)
     if (Math.abs(x) <= 62 && z >= -67 && z <= 67) return false;
     if (Math.abs(x) < 6 && z > 36) return false;
     if (((x - POND.x) / (POND.rx * 1.12)) ** 2 + ((z - POND.z) / (POND.rz * 1.12)) ** 2 < 1) return false;

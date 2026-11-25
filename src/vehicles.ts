@@ -497,6 +497,7 @@ export class Vehicles {
   slow(f: number) { if (this.active) this.active.speed *= f; }
   private poseHoe(v: Veh) {
     const h = v.bh; if (!h) return;
+    if (!this.game.outskirts.diggingOn) { this.game.ui.toast("NO DIGGING", "The landowner won't let anyone dig up the lease. The backhoe is just a backhoe."); return; }
     h.swing.rotation.y = h.swingA; h.boom.rotation.x = -h.boomA; h.stick.rotation.x = h.stickA; h.bucket.rotation.x = h.bucketA;
     h.stabs.forEach((s, i) => { s.rotation.z = (i ? -1 : 1) * (1 - h.stab) * 1.45; });   // 0 = folded up and in, 1 = planted
   }

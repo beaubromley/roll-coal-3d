@@ -40,7 +40,7 @@ interface Veh {
   wheelbase: number; maxFwd: number; maxRev: number; accel: number; radius: number; pts: number[];
   eye: { x: number; y: number; z: number }; camDist: number; camHeight: number;
   steerNodes: TransformNode[]; steerSign: number[]; spinNodes: TransformNode[]; wheelR: number[];
-  boxes: AABB[]; boxH: number; solid: boolean; prevTop?: number; vyG?: number; lockedBy?: string; gate?: TransformNode; gateA?: number; gateOpen?: boolean; gy?: number; air?: boolean; airT?: number; vyEst?: number; slope?: number; base?: { m: Mesh; s: Vector3; r: Vector3 }[]; px?: number; pz?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
+  boxes: AABB[]; boxH: number; solid: boolean; prevTop?: number; vyG?: number; lockedBy?: string; gate?: TransformNode; gateA?: number; gateOpen?: boolean; gy?: number; wasWet?: boolean; air?: boolean; airT?: number; vyEst?: number; slope?: number; base?: { m: Mesh; s: Vector3; r: Vector3 }[]; px?: number; pz?: number; dents?: number; dentCd: number; home?: { x: number; z: number; yaw: number };
   /** backhoe: either driving with the stabilizers up, or dug in with them down (no driving) and the hoe arm working */
   bh?: { tip: TransformNode; dirt: Mesh; load: number; swing: TransformNode; boom: TransformNode; stick: TransformNode; bucket: TransformNode; stabs: TransformNode[]; dig: boolean; stab: number; boomA: number; stickA: number; bucketA: number; swingA: number };
   lift: number;                       // 0..1 boom angle / basket height
@@ -869,17 +869,31 @@ export class Vehicles {
     }
     // and nobody drives out through the cliffs
     { const B = this.player.bound; if (B && v.kind !== "lift") { const r = Math.hypot(v.x, v.z); if (r > B) { v.x *= B / r; v.z *= B / r; v.speed *= -0.2; } } }
-    // trucks don't drive into the pond
-    if (this.terrain && v.px !== undefined && this.terrain(v.x, v.z) < -0.4) { v.x = v.px; v.z = v.pz!; v.speed *= -0.25; }
+    // trucks float: in the pond they ride the water, slow, rather than sinking to the bed
+    let wet = false;
+    if (this.terrain && v.kind !== "lift" && this.terrain(v.x, v.z) < -1.2) {
+      wet = true; v.speed *= Math.max(0, 1 - 1.4 * dt); const cap = 8; if (Math.abs(v.speed) > cap) v.speed = Math.sign(v.speed) * cap;
+      if (!v.wasWet && Math.abs(v.speed) > 1) this.game.ui.toast("SPLASH", "The truck floats. Mostly. It is not a boat.");
+    }
+    v.wasWet = wet;
     // drive-over ramps: ride up whatever drivable surface is underfoot
     if (v.kind !== "lift") {
-      let top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
+      let top = this.terrain ? Math.max(this.terrain(v.x, v.z), -1.2) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
       let gy0 = v.gy ?? 0;
       const stepDist = v.px === undefined ? 0 : Math.hypot(v.x - v.px, v.z - (v.pz ?? v.z));
-      if (v.px !== undefined && top - gy0 > 0.3 + stepDist * 0.7) {
+      // too steep to climb, at any speed (a crawl must not get up a wall one small step at a time): look at the slope under and just ahead of the truck, and refuse it if the way on is uphill
+      let steepUp = false;
+      if (this.terrain && v.px !== undefined && !v.air) {
+        const mx = v.x - v.px, mz = v.z - (v.pz ?? v.z), ml = Math.hypot(mx, mz);
+        if (ml > 1e-5) {
+          const T = this.terrain, ux = mx / ml, uz = mz / ml;
+          for (const k of [0, 1.8]) { const px = v.x + ux * k, pz = v.z + uz * k, gx = (T(px + 1, pz) - T(px - 1, pz)) / 2, gz = (T(px, pz + 1) - T(px, pz - 1)) / 2; if (Math.hypot(gx, gz) > 0.75 && gx * ux + gz * uz > 0.2 * Math.hypot(gx, gz)) steepUp = true; }
+        }
+      }
+      if (v.px !== undefined && (steepUp || top - gy0 > 0.12 + stepDist * 0.7)) {
         // the ground ahead is a wall (a cliff, a mesa side): the truck stops against it instead of driving up it
         v.x = v.px; v.z = v.pz!; if (Math.abs(v.speed) > 6) this.game.propertyDamage(Math.abs(v.speed) * 0.4); v.speed *= -0.25; v.vyG = 0;
-        top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
+        top = this.terrain ? Math.max(this.terrain(v.x, v.z), -1.2) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
         gy0 = v.gy ?? 0;
       }
       if (v.air) {

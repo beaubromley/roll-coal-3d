@@ -99,6 +99,8 @@ export class Sim {
   /** diff-pressure spike multiplier (the original game's DP spikes near the motor limit); decays back to 1 */
   spike = 1;
   private dist = 0;
+  /** bit bounce (0..1): too much weight for the rock sets the string and the motor hammering; shows on the recorder and in the diff pressure and torque */
+  bounce = 0; private bph = 0;
   hold: number | null = null;
   accumDead = false;
   private lastForm = "";
@@ -263,8 +265,11 @@ export class Sim {
         // near the motor limit the pressure throws spikes, like the original; each decays back in a second or two
         if (baseDp >= 1850 && Math.random() < 1 - Math.exp(-(0.15 + (baseDp - 1850) / 220) * dt)) { this.spike = 1.12 + Math.random() * 0.2; this.events.push({ type: "dpSpike" }); }
         this.spike = 1 + (this.spike - 1) * Math.exp(-1.3 * dt);
-        s.dp = baseDp * (1 + (Math.random() * 0.15 - 0.075)) * this.spike;   // ±7.5 % bounce every frame
-        s.torque = torqueFor(s.wob, f, s.depth) * (1 + (Math.random() * 0.1 - 0.05));
+        // bounce: past the weight this rock wants, and the harder the rock the worse, the bit starts to hop
+        this.bounce = Math.max(0, Math.min(1, (s.wob / woptFor(f) - 0.95) * (0.4 + f.hardness) * 1.4)); this.bph += dt * (7 + this.bounce * 5);
+        const hop = this.bounce * Math.sin(this.bph) + this.bounce * 0.4 * Math.sin(this.bph * 2.3 + 1);
+        s.dp = baseDp * (1 + (Math.random() * 0.15 - 0.075) + hop * 0.22) * this.spike;   // ±7.5 % noise every frame, plus the hop
+        s.torque = torqueFor(s.wob, f, s.depth) * (1 + (Math.random() * 0.1 - 0.05) + hop * 0.18);
         if ((s.dp >= STALL_DP && s.wob > 0) || (s.torque > TORQUE_MAX && Math.random() < 1 - Math.exp(-0.5 * dt))) {
           s.stallT = 12; s.stats.stalls++; s.cost += 8000; this.events.push({ type: "stall" });
         }

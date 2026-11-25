@@ -15,6 +15,7 @@ import { CharKit } from "./chars";
 import { Tutorial } from "./tutorial";
 import { Story } from "./story";
 import { Human } from "./npcs";
+import { recTick } from "./recorder";
 
 const isTouch = detectTouch();
 document.body.classList.toggle("touch", isTouch);
@@ -180,6 +181,7 @@ engine.runRenderLoop(() => {
       kicking: s.kick.active, dd: game.veh.dd, t: clock },
   };
   if (fx.running) Object.assign(frame, fx.frameOverride());
+  recTick(dt, { depth: s.depth, wob: s.wob * (1 + sim.bounce * 0.3 * Math.sin(clock * 11)), rop: s.rop, dp: s.dp, torque: s.torque, bounce: s.mode === "drilling" ? sim.bounce : 0, stalled: s.stallT > 0, drilling: s.mode === "drilling" });
   rig.update(dt, frame);
   game.update(dt, dt);
   fx.update(dt);                       // after game.update so the storm owns sky, fog and light while the title is up

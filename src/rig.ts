@@ -1332,7 +1332,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   addR("derrickman", 0.0, FB + 0.12, 3.8, Math.PI, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
   addH("mudeng", -6, 2.78, -22.8, 1.2, { shirt: "#1d6fb5", pants: "#3a3a3a", hat: "#f2f2f2", skin: "#e0b48f" });
   addH("pusher", -40, 0, 39.5, -1.6 + RYAW, { shirt: "#3a5a3a", pants: "#4a3a2a", hat: "#d9d9d9", skin: "#b9805a" });
-  addR("hand3", 2.1, 0, 20, 0, { shirt: "#c4561a", pants: "#2c3e50", hat: "#e8b923", skin: "#d9a77f" });
+  addR("hand3", 2.1, 0, 20, 0, { shirt: "#c4561a", pants: "#2c3e50", hat: "#2fa84f", skin: "#d9a77f" });
   addH("guard", 6.0, 0, 96.0, -Math.PI / 2, { shirt: "#2d3a4a", pants: "#2d3a4a", hat: "#2d3a4a", skin: "#b9805a" });
   addH("vp", 63, 0, 61, 0, { shirt: "#e9eef3", pants: "#1a1f2a", hat: null, skin: "#e0b48f" });
   humans.vp.root.setEnabled(false);

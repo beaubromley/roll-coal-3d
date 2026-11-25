@@ -1,4 +1,5 @@
 import { Scene, DynamicTexture } from "@babylonjs/core";
+import { drawRecorder } from "./recorder";
 
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
@@ -69,12 +70,7 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
       bar(c, 8, 140, 112, 8, d.flow, 1000, CY, "FLOW", "gpm"); bar(c, 136, 140, 112, 8, d.rotating ? 9 : 0, 20, GR, "TORQ", "kft-lb");
       break;
     }
-    case "trends": {
-      frame(c, "REAL-TIME TRENDS");
-      trace(c, hist.rop, 8, 26, 240, 34, 380, GR); trace(c, hist.wob, 8, 68, 240, 34, 60, CY); trace(c, hist.spp, 8, 110, 240, 34, 4000, AM);
-      c.font = "9px monospace"; c.textAlign = "right"; c.fillStyle = GR; c.fillText("ROP", W - 8, 32); c.fillStyle = CY; c.fillText("WOB", W - 8, 74); c.fillStyle = AM; c.fillText("SPP", W - 8, 116);
-      break;
-    }
+    case "trends": { drawRecorder(c, W, H); break; }
     case "pits": {
       frame(c, "PIT VOLUMES");
       for (let i = 0; i < 4; i++) { const x = 16 + i * 60, lv = Math.max(0.1, Math.min(0.95, (d.pit + [0, -40, -90, -140][i]) / 760));

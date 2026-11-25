@@ -2,6 +2,7 @@ import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, Di
 import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
+import { drawRecorder } from "./recorder";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
 import { UI, Who, Choice, $ } from "./ui";
@@ -356,6 +357,7 @@ export class Game {
       const k = s.kick, a = s.auto;
       const busy = s.mode === "tripping" || s.mode === "casing";
       return `<div class="eyebrow">Driller's Cabin</div><h2>${{ all: "Driller's Console", params: "Drilling screen", trends: "Trends screen", pits: "Pits screen", alarms: "Alarms & well control" }[view]}</h2>
+        ${view === "pits" || view === "alarms" ? "" : `<div class="recwrap"><canvas id="rec" width="880" height="300"></canvas></div>`}
         <div class="cabview" data-view="${view}"><canvas id="tvmirror" width="512" height="320"></canvas></div>
         <div class="grid2 cabgrid">
           <div class="cab-left">
@@ -435,6 +437,7 @@ export class Game {
     let sig0 = "";
     const mirror = view === "all" ? null : this.rig.monitors.find((m) => m.cabin && m.kind === view);
     (this.ui as any).panelTick = () => {
+      { const rc = p.querySelector<HTMLCanvasElement>("#rec"); const rx = rc?.getContext("2d"); if (rc && rx) drawRecorder(rx, rc.width, rc.height); }
       { const cv = p.querySelector<HTMLCanvasElement>("#tvmirror"); const src = mirror?.tex.getContext().canvas as HTMLCanvasElement | undefined; if (cv && src) cv.getContext("2d")?.drawImage(src, 0, 0, cv.width, cv.height); }
       const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
       if (sig !== sig0) { sig0 = sig; this.rerenderCabin(p, render, bind); }

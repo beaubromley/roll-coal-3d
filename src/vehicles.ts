@@ -93,7 +93,7 @@ export class Vehicles {
     this.dash = document.createElement("div");
     this.dash.style.cssText = "position:fixed;right:22px;bottom:22px;z-index:30;display:none;width:290px;padding:10px 12px 8px;background:rgba(10,16,24,.84);border:2px solid #f4c04a;color:#fff;font:700 12px/1.4 system-ui,sans-serif;letter-spacing:.4px;pointer-events:none";
     document.body.appendChild(this.dash);
-    const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "KeyT" && this.chair.on && this.chair.idx === 0 && !e.repeat) this.toggleAuto(); if (e.code === "KeyC" && this.chair.on && this.chair.idx === 0 && !e.repeat && !this.game.ui.panelOpen) this.game.openCabin(); };
+    const down = (e: KeyboardEvent) => { this.pressed.add(e.code); if (this.riding && ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault(); if (e.code === "Tab" && this.chair.on) { e.preventDefault(); if (!e.repeat) this.game.flipSeat(); } if (e.code === "KeyT" && this.chair.on && this.chair.idx === 0 && !e.repeat) this.toggleAuto(); if (e.code === "KeyC" && this.chair.on && this.chair.idx === 0 && !e.repeat && !this.game.ui.panelOpen) this.game.openCabin(); };
     const up = (e: KeyboardEvent) => this.pressed.delete(e.code);
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", () => this.pressed.clear());
     this.build();
@@ -680,7 +680,7 @@ export class Vehicles {
   inChair() { return this.chair.on; }
   isSeated(i = 0) { return this.chair.on && this.chair.idx === i; }
   /** the driller's chair and the console are one thing: sitting down puts the console in front of you (C opens the panel again) */
-  sit(i = 0) {
+  sit(i = 0, quiet = false) {
     if (this.riding) return;
     const st = this.seats[i], npc = this.game.rig.humans[st.npc];
     this.chair.on = true; this.chair.idx = i; this.chair.hidden = npc.root.isEnabled(); npc.root.setEnabled(false);
@@ -688,9 +688,11 @@ export class Vehicles {
     this.player.yaw = st.yaw; this.player.pitch = 0.12;
     this.player.pos.set(st.pos.x, st.pos.y, st.pos.z);
     this.hud.style.display = "block";
-    if (i === 0 && !this.dalePing) { this.dalePing = true; this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000); }
+    if (quiet) { /* flipping seats: no commentary */ } else if (i === 0 && !this.dalePing) { this.dalePing = true; this.game.radio("dale", "Uh… that's my chair, boss. Fine. Don't touch the brake unless you mean it.", 7000); }
     else this.game.radio("tex", "That's the steering seat. Small corrections, boss. Toolface is not a suggestion.", 7000);
   }
+  /** flip between the driller's chair and the directional driller's seat */
+  flipSeat() { if (!this.chair.on) return; const to = this.chair.idx === 0 ? 1 : 0; this.stand(); this.sit(to, true); }
   private stand() {
     const st = this.seats[this.chair.idx];
     this.chair.on = false;
@@ -1084,7 +1086,7 @@ export class Vehicles {
       if (side) s.flowTarget = Math.max(400, Math.min(1000, s.flowTarget + side * 150 * dt));
       this.hud.textContent = `DRILLER'S CHAIR — ${s.mode.toUpperCase()}   DEPTH ${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr\n`
         + `WOB ${s.wob.toFixed(1)} → ${s.wobTarget.toFixed(0)} klbs   PUMP ${Math.round(s.flowTarget)} gpm   SPP ${Math.round(s.spp)} psi   AUTO ${s.auto.on ? "ON" : "OFF"}\n`
-        + `W/S weight on bit  ·  A/D pump rate  ·  SPACE brake  ·  T autodriller  ·  C console panel  ·  E stand up`;
+        + `W/S weight on bit  ·  A/D pump rate  ·  SPACE brake  ·  T autodriller  ·  C console panel  ·  TAB to the DD seat  ·  E stand up`;
       return;
     }
     // directional driller / MWD seat: A/D turn the toolface, 1 / 2 / 3 (or S / W) pick rotate / slide / oscillating slide, K shoots a check shot; clicking a screen opens the full console
@@ -1096,6 +1098,6 @@ export class Vehicles {
     const sv = d.lastSurvey, tp = d.toPlan;
     this.hud.textContent = `${st.name.toUpperCase()} — ${d.mode === "rotate" ? "ROTATING" : d.mode === "slide" ? "SLIDING" : "OSCILLATING SLIDE"}   INC ${d.inc.toFixed(1)}°   AZI ${sv.azi.toFixed(0)}° (survey)   TOOLFACE set ${d.tfSet.toFixed(0)}° / ${d.tf.toFixed(0)}°\n`
       + `${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr   ${tp.dist.toFixed(0)} ft off plan   SF ${Math.min(...d.acNow.map((a) => a.sf)).toFixed(2)}   ${drilling ? "" : "(drill to see the well respond)"}\n`
-      + `A/D toolface  ·  1 rotate · 2 slide · 3 oscillate  ·  K check shot  ·  click a screen for the console  ·  E stand up`;
+      + `A/D toolface  ·  1 rotate · 2 slide · 3 oscillate  ·  K check shot  ·  click a screen for the console  ·  TAB to the driller's chair  ·  E stand up`;
   }
 }

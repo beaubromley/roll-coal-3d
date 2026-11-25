@@ -56,6 +56,8 @@ export class Dd {
   ac: AcRow[][] = [[], []];
   acNow: AcRow[] = [{ ctc: 99, sf: 9, md: 0 }, { ctc: 99, sf: 9, md: 0 }];
   planCtc: number[][] = [[], []];
+  /** with nobody in the seat the DD picks his own slides: about 6 % of the footage in the vertical hole, a lot more once the plan is building angle */
+  private autoFt = 0; private autoNext = 120; private autoLen = 10; private wasSeated = false;
   warned = 0; acWarn = [0, 0]; collided = false; lastDepth = WELL.startDepth; wasConn = false; interference = 0;
   constructor(private g: Game) {
     this.takeSurvey(true);
@@ -122,8 +124,32 @@ export class Dd {
     if (s.mode === "connection" && !this.wasConn) { const sv = this.takeSurvey(true); void sv; }
     this.wasConn = s.mode === "connection";
     const dft = s.depth - this.lastDepth; this.lastDepth = s.depth;
+    const seated = this.g.veh.isSeated(1) || this.g.veh.isSeated(2);
+    if (this.wasSeated && !seated) { this.mode = "rotate"; this.autoFt = 0; this.autoNext = this.nextRot(); }
+    this.wasSeated = seated;
+    if (!seated && drilling && dft > 0 && dft < 60) this.autoDd(dft);
     if (dft > 0 && dft < 60 && drilling) this.advance(dft);
     this.warnings(dt);
+  }
+  private slideFrac() { return Math.max(0.06, Math.min(0.9, 0.06 + (this.bit.md >= PLAN.kop ? PLAN.bur / 3.2 : 0))); }
+  private nextRot() { const f = this.slideFrac(), len = this.autoLen; return len * (1 - f) / f * (0.7 + Math.random() * 0.6); }
+  /** the toolface that corrects the hole back toward the plan (and away from a close offset well) */
+  private wantedTf(): number {
+    const b = this.bit, p = planAt(b.md), tp = this.toPlan;
+    let da = PLAN.azi - this.azi; if (da > 180) da -= 360; if (da < -180) da += 360;
+    let build = (p.inc - this.inc) + (b.md >= PLAN.kop ? PLAN.bur * 0.6 : 0) - tp.high / 25, turn = da * Math.sin(Math.max(this.inc, 3) * RAD) * 3 - tp.right / 12;
+    if (this.acNow[0] && this.acNow[0].sf < 1.5) turn -= 4;   // 502H is to the north: turn left, away from it
+    if (Math.abs(build) < 0.05 && Math.abs(turn) < 0.05) build = 0.1;
+    return (Math.atan2(turn, build) / RAD + 360) % 360;
+  }
+  private autoDd(dft: number) {
+    this.autoFt += dft;
+    if (this.mode === "rotate") {
+      if (this.autoFt >= this.autoNext) { this.autoFt = 0; this.autoLen = this.slideFrac() > 0.3 ? 30 + Math.random() * 20 : 6 + Math.random() * 8; this.mode = "slide"; this.tfSet = this.wantedTf(); }
+    } else {
+      this.tfSet = this.wantedTf();
+      if (this.autoFt >= this.autoLen) { this.autoFt = 0; this.mode = "rotate"; this.autoNext = this.nextRot(); }
+    }
   }
   private advance(dft: number) {
     const f = formationAt(this.g.sim.s.depth), s = this.g.sim.s;

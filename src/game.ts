@@ -351,13 +351,30 @@ export class Game {
   statRow(k: string, v: string, cls = "") { return `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`; }
 
   scrData?: ScreenData;
-  private cabGrid: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
+  private cabSel = -1;
+  private cabGrid: { cv: HTMLCanvasElement; src: HTMLCanvasElement; kind: string }[] = [];
+  /** the main view of a console: the EDR is drawn live at full size, any other screen is the monitor's own picture scaled up to fit */
+  private drawMain(rc: HTMLCanvasElement | null, sel: { src: HTMLCanvasElement; kind: string } | undefined) {
+    const rx = rc?.getContext("2d"); if (!rc || !rx || !sel) return;
+    if (sel.kind === "edr" && this.scrData) { drawEdr(rx, this.scrData, rc.width, rc.height); return; }
+    rx.fillStyle = "#06090d"; rx.fillRect(0, 0, rc.width, rc.height);
+    const k = Math.min(rc.width / sel.src.width, rc.height / sel.src.height), w = sel.src.width * k, h = sel.src.height * k;
+    rx.drawImage(sel.src, (rc.width - w) / 2, (rc.height - h) / 2, w, h);
+  }
+  /** move between the driller's chair and the directional driller's seat (Tab), with the right console open */
+  flipSeat(withPanel = false) {
+    if (!this.veh.inChair()) return;
+    const toDd = this.veh.isSeated(0);
+    this.ui.closePanel(); this.veh.flipSeat();
+    if (withPanel) { if (toDd) this.openDdScreens(); else this.openCabin("all"); }
+  }
   /** the directional drillers' screens and controls, from either of their seats: mode, toolface, check shots, the plan, surveys and anti-collision */
   openDdScreens() {
     const dd = this.dd;
     const p = this.open(`<div class="eyebrow">Directional Driller</div><h2>Directional Console</h2>
       <div class="cabwide"><div class="cabl">
       <div class="scrgrid" id="ddgrid" style="grid-template-columns:repeat(4,1fr)"></div>
+        <div class="recwrap"><canvas id="ddmain" width="960" height="400"></canvas></div>
         <div class="cab-left" style="display:block">
           <div class="row"><span>Inclination</span><b id="d_inc"></b></div>
           <div class="row"><span>Azimuth (last survey)</span><b id="d_azi"></b></div>
@@ -378,18 +395,21 @@ export class Game {
           <div class="btns"><button class="b green" id="dcs">Take a check shot</button></div>
           <div class="hint" style="margin-top:6px">A check shot costs two minutes of rig time. The survey is also taken at every connection.</div>
         </div></div>
-      <div class="btns"><button class="b alt" data-close>Close</button></div>`, { wide: true, live: true });
+      <div class="btns"><button class="b alt" id="ddflip">Move to the driller's chair (Tab)</button><button class="b alt" data-close>Close</button></div>`, { wide: true, live: true });
     this.closeBtn(p);
     const q = <T extends HTMLElement>(id: string) => p.querySelector<T>("#" + id)!;
-    const grid = q("ddgrid"), list: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
-    for (const m of this.rig.monitors.filter((x) => x.grp === "dd")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = String(m.slot![1] + 1); grid.appendChild(cv); list.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement }); }
+    q("ddflip").onclick = () => this.flipSeat(true);
+    let ddSel = 0;
+    const grid = q("ddgrid"), list: { cv: HTMLCanvasElement; src: HTMLCanvasElement; kind: string }[] = [];
+    for (const m of this.rig.monitors.filter((x) => x.grp === "dd")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); cv.style.cursor = "pointer"; const idx = list.length; cv.onclick = () => { ddSel = idx; this.sfx.click(); }; grid.appendChild(cv); list.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement, kind: m.kind }); }
     q("dm_rotate").onclick = () => dd.setMode("rotate"); q("dm_slide").onclick = () => dd.setMode("slide"); q("dm_osc").onclick = () => dd.setMode("osc");
     q<HTMLInputElement>("dtf").oninput = (ev) => dd.setTf(Number((ev.target as HTMLInputElement).value));
     p.querySelectorAll<HTMLButtonElement>("[data-tf]").forEach((b) => b.onclick = () => { dd.setTf(dd.tfSet + Number(b.dataset.tf)); this.sfx.click(); });
     p.querySelectorAll<HTMLButtonElement>("[data-tfa]").forEach((b) => b.onclick = () => { dd.setTf(Number(b.dataset.tfa)); this.sfx.click(); });
     q("dcs").onclick = () => dd.checkShot();
     (this.ui as any).panelTick = () => {
-      for (const g of list) g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height);
+      list.forEach((g, i) => { g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height); g.cv.style.outline = i === ddSel ? "2px solid #f4c04a" : "none"; });
+      this.drawMain(q<HTMLCanvasElement>("ddmain"), list[ddSel]);
       const set = (id: string, v: string, cls = "") => { const e = q(id); e.textContent = v; e.className = cls; };
       const sv = dd.lastSurvey, tp = dd.toPlan;
       for (const m of ["rotate", "slide", "osc"] as const) q("dm_" + m).className = "b" + (dd.mode === m ? " green" : " alt");
@@ -442,7 +462,8 @@ export class Game {
     const bind = () => {
       const q = <T extends HTMLElement>(id: string) => p.querySelector<T>("#" + id)!;
       { const grid = p.querySelector<HTMLElement>("#scrgrid"); this.cabGrid = [];
-        if (grid) for (const m of this.rig.monitors.filter((x) => x.grp === "drill")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); grid.appendChild(cv); this.cabGrid.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement }); } }
+        if (grid) for (const m of this.rig.monitors.filter((x) => x.grp === "drill")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = (m.slot![1] + 1) + " / span " + (m.span ?? 1); cv.style.cursor = "pointer"; const idx = this.cabGrid.length; cv.onclick = () => { this.cabSel = idx; this.sfx.click(); }; grid.appendChild(cv); this.cabGrid.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement, kind: m.kind }); }
+        if (this.cabSel < 0 || this.cabSel >= this.cabGrid.length) this.cabSel = Math.max(0, this.cabGrid.findIndex((g) => g.kind === "edr")); }
       const sl = (id: string, out: string, apply: (v: number) => void) => { const el = q<HTMLInputElement>(id); el.oninput = () => { apply(Number(el.value)); q(out).textContent = el.value; }; };
       sl("wob", "wv", (v) => { s.wobTarget = v; });
       sl("flow", "fv", (v) => { s.flowTarget = v; });
@@ -489,6 +510,7 @@ export class Game {
       if (s.kill.stage === "flowcheck") btns.push(`<button class="b green" data-a="open">Flow check OK — open BOP & resume</button>`);
       if ((s.mode === "drilling" || s.mode === "connection") && !s.kick.active) btns.push(`<button class="b alt" data-a="trip">Trip for a new bit</button>`);
       if (s.depth >= WELL.td - 0.5 && s.mode === "idle") btns.push(`<button class="b green" data-a="casing">Run 9⅝″ casing & cement</button>`);
+      btns.push(`<button class="b alt" data-a="flip">Move to the DD seat (Tab)</button>`);
       btns.push(`<button class="b alt" data-close>Close</button>`);
       const box = q("cbtn"); box.innerHTML = btns.join("");
       this.closeBtn(p);
@@ -499,8 +521,8 @@ export class Game {
     const mirror = view === "all" ? null : this.rig.monitors.find((m) => m.cabin && m.kind === view);
     (this.ui as any).panelTick = () => {
       { const ac = p.querySelector<HTMLCanvasElement>("#abars"); if (ac) { const a = s.auto; drawAutoBars(ac.getContext("2d")!, ac.width, ac.height, { on: a.on, limit: a.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: a.rop, wob: a.wob, dp: a.dp, tq: a.torque ?? 10000 } }); } }
-      for (const g of this.cabGrid) g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height);
-      { const rc = p.querySelector<HTMLCanvasElement>("#rec"); const rx = rc?.getContext("2d"); if (rc && rx && this.scrData) drawEdr(rx, this.scrData, rc.width, rc.height); }
+      this.cabGrid.forEach((g, i) => { g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height); g.cv.style.outline = i === this.cabSel ? "2px solid #f4c04a" : "none"; });
+      this.drawMain(p.querySelector<HTMLCanvasElement>("#rec"), this.cabGrid[this.cabSel]);
       { const cv = p.querySelector<HTMLCanvasElement>("#tvmirror"); const src = mirror?.tex.getContext().canvas as HTMLCanvasElement | undefined; if (cv && src) cv.getContext("2d")?.drawImage(src, 0, 0, cv.width, cv.height); }
       const sig = s.mode + s.kick.active + s.kick.shut + s.kill.stage + (s.depth >= WELL.td) + s.auto.on;
       if (sig !== sig0) { sig0 = sig; this.rerenderCabin(p, render, bind); }
@@ -518,6 +540,7 @@ export class Game {
     const ky = p.scrollTop; p.innerHTML = render(); bind(); p.scrollTop = ky;
   }
   cabinAction(a: string) {
+    if (a === "flip") { this.flipSeat(true); return; }
     const s = this.sim.s;
     if (a === "shut") {
       if (!this.sim.shutIn(false)) {

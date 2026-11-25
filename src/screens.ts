@@ -10,7 +10,7 @@ export interface ScreenData {
   rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; bitDepth?: number; casing?: "run" | "cement" | "done" | "none";
 }
 
-export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac";
+export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac" | "systems" | "dirq" | "ddq";
 
 const W = 256, H = 160;
 const BG = "#0b0e12", GRID = "rgba(120,140,160,0.22)", CY = "#2fd0d0", GR = "#22c06a", AM = "#e8d34a", RD = "#ff6a7a", TX = "#e6ebf0", DIM = "#8d98a5";
@@ -24,8 +24,8 @@ export class Screens {
   private list: { kind: ScreenKind; mirror: boolean; tex: DynamicTexture; ctx: CanvasRenderingContext2D; w: number; h: number }[] = [];
   constructor(private scene: Scene) {}
 
-  make(kind: ScreenKind, mirror = false): DynamicTexture {
-    const w = kind === "edr" || kind === "trends" ? 640 : W, h = kind === "edr" || kind === "trends" ? 364 : H;   // the EDR wall TV is big enough to deserve real resolution
+  make(kind: ScreenKind, mirror = false, size?: [number, number]): DynamicTexture {
+    const w = size ? size[0] : kind === "edr" || kind === "trends" ? 640 : W, h = size ? size[1] : kind === "edr" || kind === "trends" ? 364 : H;   // the EDR wall TV is big enough to deserve real resolution
     const tex = new DynamicTexture("scr_" + kind + this.list.length, { width: w, height: h }, this.scene, true);
     tex.anisotropicFilteringLevel = 8;
     const ctx = tex.getContext() as CanvasRenderingContext2D;
@@ -41,7 +41,7 @@ export class Screens {
       push(hist.res, 8 + 5 * Math.sin(d.depth / 130 + 1) + (Math.random() - 0.5) * 2);
       pushEdr(d);
     }
-    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(s.w, 0); c.scale(-1, 1); } if (s.kind === "edr" || s.kind === "trends") drawEdr(c, d, s.w, s.h); else draw(s.kind, c, d); c.restore(); s.tex.update(); }
+    for (const s of this.list) { const c = s.ctx; c.save(); if (s.mirror) { c.translate(s.w, 0); c.scale(-1, 1); } if (s.kind === "edr" || s.kind === "trends") drawEdr(c, d, s.w, s.h); else { if (s.w !== W || s.h !== H) c.scale(s.w / W, s.h / H); draw(s.kind, c, d); } c.restore(); s.tex.update(); }
   }
 }
 
@@ -63,8 +63,17 @@ function trace(c: CanvasRenderingContext2D, a: number[], x: number, y: number, w
   a.forEach((v, i) => { const px = x + (i / 89) * w, py = y + h - ((v - min) / (max - min)) * h; i ? c.lineTo(px, Math.max(y, Math.min(y + h, py))) : c.moveTo(px, Math.max(y, Math.min(y + h, py))); }); c.stroke();
 }
 
+/** four screens in one view: each drawn at half size in its own quadrant */
+function quad(c: CanvasRenderingContext2D, d: ScreenData, kinds: ScreenKind[]) {
+  kinds.forEach((k, i) => { c.save(); c.translate((i % 2) * (W / 2), (i >> 1) * (H / 2)); c.beginPath(); c.rect(0, 0, W / 2, H / 2); c.clip(); c.scale(0.5, 0.5); draw(k, c, d); c.restore(); });
+  c.strokeStyle = "#252c35"; c.lineWidth = 1; c.beginPath(); c.moveTo(W / 2 + 0.5, 0); c.lineTo(W / 2 + 0.5, H); c.moveTo(0, H / 2 + 0.5); c.lineTo(W, H / 2 + 0.5); c.stroke();
+}
+
 function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
   c.lineWidth = 1; c.textBaseline = "middle";
+  if (kind === "systems") { quad(c, d, ["pits", "pumps", "hookload", "alarms"]); return; }
+  if (kind === "dirq") { quad(c, d, ["steer", "plan", "geo", "ac"]); return; }
+  if (kind === "ddq") { quad(c, d, ["toolface", "steer", "gamma", "mwd"]); return; }
   if (drawDd(kind, c, d.dd, d.t)) return;
   switch (kind) {
     case "params": {
@@ -222,9 +231,11 @@ function trip(d: ScreenData): { hook: number; block: number } {
   return { hook: W - d.wob * (d.rotating ? 1 : 0), block: 5 + (1 - ((((d.depth - WELL.startDepth) % STAND) + STAND) % STAND) / STAND) * (STROKE - 5) };   // starts at the top of a stand and comes down as the hole is made
 }
 const edrHist: number[][] = [];
+const edrMode: number[] = [];   // 0 rotating, 1 sliding, 2 oscillating slide, 3 not drilling
 const edrState = { rop2: 0, wob2: 0 };
 function pushEdr(d: ScreenData) {
   edrState.rop2 += (d.rop - edrState.rop2) * 0.12; edrState.wob2 += (d.wob * 0.95 - edrState.wob2) * 0.2;
+  { const code = d.mode === "drilling" && d.rop > 0 ? (d.dd.mode === "slide" ? 1 : d.dd.mode === "osc" ? 2 : 0) : 3; edrMode.push(code); if (edrMode.length > EDR_N) edrMode.shift(); }
   const first = edrHist.length === 0;
   if (first) for (let i = 0; i < EDR.length * 2; i++) edrHist.push([]);
   EDR.forEach((pair, ti) => pair.forEach((ch, ci) => {
@@ -241,13 +252,15 @@ export function drawEdr(c: CanvasRenderingContext2D, d: ScreenData, w: number, h
   c.font = "11px monospace"; c.fillStyle = "#8d98a5"; c.fillText("COMPANY MAN 1H", 118, 15);
   c.fillStyle = "#8d98a5"; c.fillText("HOLE", 250, 15); c.fillStyle = "#e6ebf0"; c.font = "bold 13px monospace"; c.fillText(Math.round(d.depth).toLocaleString("en-US") + " ft", 288, 15);
   c.fillStyle = "#8d98a5"; c.font = "11px monospace"; c.fillText("BIT", 374, 15); c.fillStyle = "#3ddc84"; c.font = "bold 13px monospace"; c.fillText(Math.round(d.depth).toLocaleString("en-US") + " ft", 400, 15);
-  c.fillStyle = "#8d98a5"; c.font = "11px monospace"; c.fillText("STATE", 490, 15); c.fillStyle = d.rotating ? "#3ddc84" : "#ffb02a"; c.font = "bold 13px monospace"; c.fillText(d.mode, 532, 15);
+  c.fillStyle = "#8d98a5"; c.font = "11px monospace"; c.fillText("STATE", 490, 15); const drilling = d.mode === "drilling" && d.rop > 0, slid = drilling && d.dd.mode !== "rotate"; c.fillStyle = slid ? "#ffb02a" : d.rotating ? "#3ddc84" : "#8d98a5"; c.font = "bold 13px monospace"; c.fillText(d.tripping ? "Tripping" : drilling ? (d.dd.mode === "slide" ? "Slide Drill" : d.dd.mode === "osc" ? "Oscillating Slide" : "Rotary Drill") : d.mode, 532, 15);
   const live = Math.floor(d.t * 1.5) % 2 === 0; c.fillStyle = "#3ddc84"; c.font = "bold 10px monospace"; c.textAlign = "right"; c.fillText("LIVE", w - 8, 15); c.fillStyle = live ? "#3ddc84" : "#1b5a38"; c.beginPath(); c.arc(w - 40, 15, 3, 0, 6.3); c.fill();
   // layout
   const top = 34, tl = 36, bottom = 52, gap = 3, tw = (w - tl - gap * (EDR.length + 1)) / EDR.length, ph = h - top - bottom;
   c.fillStyle = "#8d98a5"; c.font = "9px monospace"; c.textAlign = "left";
   const mins0 = 11 * 60 + 5 + d.t / 60;
   for (let k = 0; k < 5; k++) { const y = top + 8 + (k / 4) * (ph - 16), m = mins0 - (4 - k) * 12, hh = Math.floor(m / 60) % 24, mm = Math.floor(m % 60); c.fillText(String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0"), 3, y); }
+  // drilling-mode strip down the left: green rotating, amber sliding, cyan oscillating, grey when not drilling
+  { const sx = tl - 10, ph2 = ph; edrMode.forEach((m, i) => { c.fillStyle = m === 0 ? "#22c06a" : m === 1 ? "#ffb02a" : m === 2 ? "#4fd6ff" : "#2a313a"; c.fillRect(sx, top + (i / EDR_N) * ph2, 7, ph2 / EDR_N + 1); }); c.fillStyle = "#8d98a5"; c.font = "7px monospace"; c.textAlign = "left"; c.fillText("MODE", sx - 6, top - 5); }
   EDR.forEach((pair, ti) => {
     const x = tl + gap + ti * (tw + gap);
     c.fillStyle = "#0e1217"; c.fillRect(x, top, tw, ph); c.strokeStyle = "#252c35"; c.strokeRect(x + 0.5, top + 0.5, tw - 1, ph - 1);

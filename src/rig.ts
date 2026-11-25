@@ -285,8 +285,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const tvScreens = new Screens(scene);
   let tvT = 0, lastScr: import("./screens").ScreenData | undefined;
   const monitorList: Rig["monitors"] = [];
-  const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens, slot?: [number, number], span?: number) => {
-    const key = "scr" + scrN++, tex = scr.make(kind, false);
+  const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens, slot?: [number, number], span?: number, size?: [number, number]) => {
+    const key = "scr" + scrN++, tex = scr.make(kind, false, size);
     monitorList.push({ kind, tex, pos: rpos(v(cx + (face === "+x" ? 0.3 : -0.3), cy, cz)), cabin: scr === screens, grp: scr !== screens ? "tv" : face === "+x" ? "drill" : "dd", slot, span });
     tex.wAng = Math.PI / 2;   // the box side faces map the canvas turned a quarter turn
     const m = b.defMat(key, "#000000"); m.emissiveTexture = tex; m.diffuseTexture = tex; m.diffuseColor.set(0.4, 0.4, 0.4); m.emissiveColor.set(0.85, 0.85, 0.85); m.specularColor.set(0, 0, 0);
@@ -301,9 +301,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("dsteel", 2.8, F, -5.9, 3.6, F + 0.95, -0.5, true);
   b.slab("steel", 2.8, F + 0.95, -5.9, 3.6, F + 0.99, -0.5);
   // the wall of screens: four on the desk with a two-monitor gap in the middle to see the rotary through, six hung across the top
-  (["params", "auto", "alarms", "pits"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k, screens, [1, [0, 1, 4, 5][i]]));
-  monitor("+x", 3.0, F + 2.12, -5.0, 1.72, 0.84, "edr", screens, [0, 0], 2);   // the two top left monitors are one big EDR
-  (["pumps", "hookload", "steer", "plan"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.0, F + 2.35, -3.65 + i * 0.9, 0.82, 0.5, k, screens, [0, i + 2]));
+  // four on the desk (EDR, autodriller, and two screens that each combine four), with a two-monitor gap in the middle; two big ones hung above
+  (["edr", "auto", "systems", "dirq"] as ScreenKind[]).forEach((k, i) => monitor("+x", 3.25, F + 1.32, deskZ[i], 0.85, 0.54, k, screens, [1, [0, 1, 4, 5][i]], 1, [640, 400]));
+  monitor("+x", 3.0, F + 2.3, -5.0, 1.28, 0.8, "params", screens, [0, 0], 2, [640, 400]);
+  monitor("+x", 3.0, F + 2.3, -1.4, 1.28, 0.8, "survey", screens, [0, 4], 2, [640, 400]);
   for (const mz of deskZ) b.slab("black", 3.55, F + 0.99, mz - 0.25, 3.85, F + 1.03, mz + 0.25);   // keyboards / panels under each monitor
   // driller's chair at (4.5, -3.2) facing west: joystick arms, throttle and brake
   b.cyl("black", 4.5, F + 0.25, -3.2, 0.14, 0.5, { tess: 8 }); b.slab("black", 4.1, F, -3.6, 4.9, F + 0.07, -2.8);
@@ -314,8 +315,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // ---- directional driller / MWD desk along the east wall: they face east, back to the driller ----
   b.slab("dsteel", 6.0, F, -5.7, 6.8, F + 0.95, -1.6, true);
   b.slab("steel", 6.0, F + 0.95, -5.7, 6.8, F + 0.99, -1.6);
-  ([["survey", -5.2], ["toolface", -4.45], ["steer", -3.7], ["gamma", -2.95]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.45, F + 1.32, z, 0.7, 0.5, k, screens, [1, i]));
-  ([["plan", -5.0], ["geo", -4.0], ["ac", -3.0], ["mwd", -2.0]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k, screens, [0, i]));
+  // the directional driller's wall: four big ones (plan, geosteering, anti-collision, survey) with a combined steering screen and the EDR above
+  ([["plan", -5.2], ["geo", -4.2], ["ac", -3.2], ["survey", -2.2]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.45, F + 1.32, z, 0.92, 0.575, k, screens, [1, i], 1, [640, 400]));
+  monitor("-x", 6.6, F + 2.3, -4.7, 1.28, 0.8, "ddq", screens, [0, 0], 2, [640, 400]);
+  monitor("-x", 6.6, F + 2.3, -2.7, 1.28, 0.8, "edr", screens, [0, 2], 2, [640, 400]);
   for (const z of [-5.0, -4.0, -3.0]) b.slab("black", 6.15, F + 0.99, z - 0.25, 6.4, F + 1.03, z + 0.25);
   for (const cz of [-4.7]) {                                                     // the directional driller's chair, facing the desk
     b.cyl("black", 5.4, F + 0.25, cz, 0.12, 0.5, { tess: 8 }); b.slab("black", 5.0, F, cz - 0.4, 5.8, F + 0.07, cz + 0.4);
@@ -870,6 +873,9 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   }
   b.slab("wood", 26.5, 0, -23.3, 31.5, 0.15, -20.5);
   spots.hopper = v(23.5, 2.0, -21.2);
+  // a big EDR on posts at the hopper, so the mud man can watch the well from where he works
+  b.slab("dsteel", 20.05, 0, -21.95, 20.2, 2.25, -21.8, true); b.slab("dsteel", 20.05, 0, -20.2, 20.2, 2.25, -20.05, true);
+  monitor("+x", 20.3, 2.85, -21.0, 1.9, 1.1, "edr", tvScreens);
   b.label("MUD HOPPER\nBARITE / LCM", 23.5, 3.1, -21.9, 2.6, 1.0, Math.PI, "#233a52", "#ffd24a", 46);
 
   // ================= MUD PRODUCT YARD + FRAC TANKS (behind the pits) =================

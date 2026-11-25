@@ -797,6 +797,7 @@ export class Vehicles {
   // ---------------------------------------------------------------------------------------------- simulation
   update(dt: number) {
     dt = Math.min(dt, 0.05);
+    if (this.riding) this.hud.style.display = this.game.ui.panelOpen ? "none" : "block";   // the key hints sit under a console, not on top of it
     // the basket gate swings open and shut, and a pending jump goes once the gate is open
     for (const gv of this.list) if (gv.gate) { gv.gateA = (gv.gateA ?? 0) + ((gv.gateOpen ? 1 : 0) - (gv.gateA ?? 0)) * Math.min(1, dt * 7); gv.gate.rotation.y = (gv.gateA ?? 0) * 1.25; }
     if (this.pendingJump) { this.pendingJump.t -= dt; if (this.pendingJump.t <= 0) { const pj = this.pendingJump; this.pendingJump = null; if (this.active === pj.v) this.jumpOut(pj.v); } }

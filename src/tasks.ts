@@ -61,7 +61,15 @@ export function defineMissions(g: Game) {
     steps: [{ text: "Shoo the deer off location (3 times)", at: () => g.rig.deerNode.position.add(v3(0, 1.3, 0)), label: "Shoo deer", r: 5, act: () => {
       const d = g.deer; d.shoo++; const dp = g.rig.deerNode.position, pp = g.player.pos;
       const away = dp.subtract(pp); away.y = 0; away.normalize();
-      d.target = dp.add(away.scale(14 + d.shoo * 6)); g.sfx.click();
+      // a short hop away from you (9, 12, then 15 m), turning aside from anything too steep to climb or too wet to wade
+      const T = g.outskirts.terrain, base = Math.atan2(away.x, away.z), dist = 6 + d.shoo * 3;
+      let best: Vector3 | null = null;
+      for (const da of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4]) {
+        const ang = base + da; let ok = true, py = T(dp.x, dp.z);
+        for (let k = 1; k <= 6; k++) { const x = dp.x + Math.sin(ang) * dist * k / 6, z = dp.z + Math.cos(ang) * dist * k / 6, y = T(x, z); if (y - py > 0.5 * dist / 6 || y < -0.3 || Math.abs(x) > 60 && Math.abs(x) < 62) { ok = false; break; } py = y; }
+        if (ok) { best = v3(dp.x + Math.sin(ang) * dist, 0, dp.z + Math.cos(ang) * dist); break; }
+      }
+      d.target = best ?? dp.clone(); g.sfx.click();
       const quips = ["You wave your hands. The deer stares.", "You yell 'HYAH!' It takes two steps.", "You throw your hard hat. Not the best idea."];
       g.ui.toast("SHOO!", quips[Math.min(2, d.shoo - 1)]);
     }, watch: () => g.deer.shoo >= 3 && !!g.deer.target && g.rig.deerNode.position.subtract(g.deer.target).length() < 1.5 }],

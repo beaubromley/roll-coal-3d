@@ -338,7 +338,6 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   void wrapBg; void wrapFg;
   b.art((c, w, h) => drawBigAlBand(c, w, h), 4.8, F + 0.52, -5.98, 4.0, 0.78, 0);
   b.art((c, w, h) => drawBigAlBand(c, w, h), 6.98, F + 0.52, -2.2, 7.0, 0.78, Math.PI / 2);
-  b.art((c, w, h) => drawBigAlLogo(c, w, h, { rig: true, motto: false }), 3.6, F + 0.52, 1.58, 1.9, 0.78, Math.PI);
 
   // ---- doghouse (enterable) ----
   b.room({ x0: -6.0, z0: -5.8, x1: -2.6, z1: -2.4, y0: F + 0.025, h: 2.575, wall: "tan", roof: "dsteel", floor: "dsteel",
@@ -489,7 +488,20 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.box("lamp", -2.3, y, 1.6, 0.5, 0.2, 0.2); b.box("lamp", 2.3, y, 1.6, 0.5, 0.2, 0.2);
   }
   // standpipe up the right back leg + mud line from pumps
-  b.beam("steel", v(2.7, 0.0, -3.2), v(2.7, F + 31, -3.2), 0.22);
+  // the standpipe climbs the right back leg of the mast, clamped to it, and ends in a gooseneck (a U) that turns over and points down; the black rotary hose hangs from it
+  const hoseTop = (() => {
+    const leg = (u: number) => Vector3.Lerp(base[1], top[1], u).add(v(0.45, 0, -0.45));
+    b.beam("steel", v(2.7, 0.0, -3.2), leg(0), 0.24, 8);
+    const U1 = 0.64, T = leg(U1);
+    b.beam("steel", leg(0), T, 0.24, 8);
+    for (const u of [0.12, 0.3, 0.48]) { const p = leg(u); b.cyl("dsteel", p.x, p.y, p.z, 0.4, 0.18, { tess: 10 }); b.beam("dsteel", p, Vector3.Lerp(base[1], top[1], u), 0.07); }   // clamps back to the leg
+    const dirH = new Vector3(0 - T.x, 0, -0.3 - T.z).normalize(), R = 0.95, c0 = T.add(v(0, 0.55, 0)).add(dirH.scale(R));
+    b.beam("steel", T, T.add(v(0, 0.55, 0)), 0.24, 8);
+    let last = T.add(v(0, 0.55, 0));
+    for (let i = 1; i <= 12; i++) { const th = (i / 12) * Math.PI, p = c0.add(dirH.scale(-R * Math.cos(th))).add(v(0, R * Math.sin(th), 0)); b.beam("steel", last, p, 0.26, 8); last = p; }
+    b.beam("steel", last, last.add(v(0, -0.7, 0)), 0.26, 8); b.cyl("dsteel", last.x, last.y - 0.7, last.z, 0.42, 0.16, { tess: 12 });   // the outlet and its flange
+    return last.add(v(0, -0.78, 0));
+  })();
   {   // pump discharge header, then the mud line across to the foot of the standpipe (which feeds the kelly hose and the top drive)
     b.beam("steel", v(9.0, 1.1, -14.0), v(9.0, 1.1, -10.0), 0.2);
     b.beam("steel", v(9.0, 1.1, -12.0), v(2.7, 1.1, -12.0), 0.2); b.beam("steel", v(2.7, 1.1, -12.0), v(2.7, 1.1, -3.2), 0.2);
@@ -567,7 +579,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     }
     return pts;
   };
-  let hose = MeshBuilder.CreateTube("hose", { path: hosePath(v(2.7, F + 29, -3.2), v(0, F + 26, -0.3)), radius: 0.1, tessellation: 8, updatable: true }, scene);
+  let hose = MeshBuilder.CreateTube("hose", { path: hosePath(hoseTop, v(0, F + 26, -0.3)), radius: 0.1, tessellation: 8, updatable: true }, scene);
   hose.material = b.getMat("black"); hose.parent = rigRoot;
   // drill pipe tool-joint ring that shows on the string
   const joint = MeshBuilder.CreateCylinder("tj", { diameter: 0.27, height: 0.4, tessellation: 8 }, scene);
@@ -635,6 +647,51 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // out near the pad edge, end to end in one line: two full stacks, then (to the right, looking out from the rig) two empty racks
   fullStack(-8.2, 56); fullStack(8.2, 56);
   fullStack(23.8, 56, false); fullStack(39.4, 56, false);
+  // BHA components waiting on the two empty racks: mud motors with bent housings, an agitator, a rotary steerable (RSS) and stabilizers
+  {
+    for (const [k, c] of [["bhao", "#d9731a"], ["bhab", "#2c5d8a"], ["bhag", "#8a9099"], ["bhat", "#1f8a8a"], ["bhay", "#e8b923"], ["bhad", "#222428"], ["bhar", "#a8221c"]] as [string, string][]) b.defMat(k, c, { spec: 0.3 });
+    const Y0 = 0.5;
+    const tube = (mat: string, x0: number, x1: number, z: number, dia: number) => b.cyl(mat, (x0 + x1) / 2, Y0 + dia / 2 + 0.02, z, dia, Math.abs(x1 - x0), { axis: "x", tess: 12 });
+    const ring = (mat: string, x: number, z: number, dia: number, len = 0.1) => b.cyl(mat, x, Y0 + dia / 2 + 0.02, z, dia, len, { axis: "x", tess: 12 });
+    const cradle = (x: number, z: number, h = 0.12) => b.slab("dsteel", x - 0.15, Y0, z - 0.14, x + 0.15, Y0 + h, z + 0.14);
+    // a positive-displacement mud motor: top sub, a long power section, the adjustable bent housing, an angled bearing section and a bit box
+    const motor = (xs: number, z: number, mat: string) => {
+      tube("bhad", xs, xs + 0.7, z, 0.19); tube(mat, xs + 0.7, xs + 6.2, z, 0.23);
+      for (const dx of [1.4, 3.4, 5.6]) ring("bhad", xs + dx, z, 0.25);
+      tube("bhag", xs + 6.2, xs + 6.9, z, 0.215); ring("bhar", xs + 6.55, z, 0.235, 0.12);                                     // the adjustable bend
+      const ang = 0.075, L = 2.6, bx = xs + 6.9, by = Y0 + 0.125;                                                              // (exaggerated: a real bend is 1 to 2 degrees)
+      b.beam("bhag", v(bx, by, z), v(bx + Math.cos(ang) * L, by + Math.sin(ang) * L, z), 0.215, 12);
+      b.cyl("bhad", bx + Math.cos(ang) * (L + 0.12), by + Math.sin(ang) * (L + 0.12), z, 0.2, 0.26, { axis: "x", tess: 12 });
+      for (const dx of [0.4, 2.2, 4.6]) cradle(xs + dx, z);
+    };
+    // an agitator: a short tool with a fat valve housing and flow-sleeve rings
+    const agitator = (xs: number, z: number) => {
+      tube("bhay", xs, xs + 3.2, z, 0.2); tube("bhad", xs + 1.0, xs + 1.9, z, 0.27);
+      for (const dx of [0.3, 0.6, 2.3, 2.6, 2.9]) ring("bhad", xs + dx, z, 0.22, 0.07);
+      for (const dx of [0.3, 2.6]) cradle(xs + dx, z);
+    };
+    // a rotary steerable: a slimmer, smoother tool with three steering pads near the bit end
+    const rss = (xs: number, z: number) => {
+      tube("bhat", xs, xs + 4.5, z, 0.215); tube("bhag", xs + 3.2, xs + 4.6, z, 0.225);
+      for (const dx of [3.4, 3.9, 4.35]) for (const s of [-1, 1]) b.box("bhad", xs + dx, Y0 + 0.215 + 0.02, z + s * 0.1, 0.42, 0.07, 0.07);
+      b.box("bhad", xs + 3.7, Y0 + 0.215 + 0.06, z, 0.5, 0.08, 0.08);
+      ring("bhay", xs + 0.09, z, 0.23, 0.12); ring("bhay", xs + 2.9, z, 0.23, 0.1); b.cyl("bhad", xs + 4.72, Y0 + 0.125, z, 0.2, 0.25, { axis: "x", tess: 12 });
+      for (const dx of [0.5, 2.2, 4.0]) cradle(xs + dx, z);
+    };
+    // a stabilizer: a short collar with four straight blades (a cross), and a gauge ring either end
+    const stab = (xs: number, z: number, len: number, dia = 0.2) => {
+      tube("bhag", xs, xs + len, z, dia); const cy = Y0 + dia / 2 + 0.02, bl = len * 0.6, bx = xs + len / 2;
+      b.box("bhao", bx, cy, z, bl, dia + 0.2, 0.07); b.box("bhao", bx, cy, z, bl, 0.07, dia + 0.2);
+      ring("bhad", xs + 0.09, z, dia + 0.04, 0.12); ring("bhad", xs + len - 0.09, z, dia + 0.04, 0.12); cradle(xs + len / 2, z, 0.1);
+    };
+    const R1 = { x: 23.8, z: 56 }, R2 = { x: 39.4, z: 56 };
+    motor(R1.x - 7.0, R1.z - 2.3, "bhao"); motor(R1.x - 6.3, R1.z - 0.7, "bhab");
+    agitator(R1.x - 6.5, R1.z + 0.9); stab(R1.x - 6.0, R1.z + 2.3, 1.9); stab(R1.x - 3.4, R1.z + 2.3, 2.3, 0.22); stab(R1.x - 0.6, R1.z + 2.3, 1.5);
+    rss(R2.x - 7.0, R2.z - 2.2); agitator(R2.x - 6.5, R2.z - 0.6);
+    spots.bhaMotor = rpos(v(R1.x - 3.5, 0.9, R1.z - 2.3)); spots.bhaMotor2 = rpos(v(R1.x - 2.8, 0.9, R1.z - 0.7)); spots.bhaAgit1 = rpos(v(R1.x - 4.9, 0.9, R1.z + 0.9)); spots.bhaStabA = rpos(v(R1.x - 4.6, 0.9, R1.z + 2.3));
+    spots.bhaRss = rpos(v(R2.x - 4.7, 0.9, R2.z - 2.2)); spots.bhaAgit2 = rpos(v(R2.x - 4.9, 0.9, R2.z - 0.6)); spots.bhaStabB = rpos(v(R2.x - 5.0, 0.9, R2.z + 1.4));
+    stab(R2.x - 7.0, R2.z + 0.7, 2.1); stab(R2.x - 4.2, R2.z + 0.7, 1.7, 0.22); stab(R2.x - 1.8, R2.z + 0.7, 2.4); stab(R2.x - 6.5, R2.z + 2.3, 1.4, 0.24); stab(R2.x - 4.4, R2.z + 2.3, 1.9);
+  }
   kit?.instances(["pipe_pipe", "band_band"], pipePos, false, RYAW + Math.PI / 2);   // (the stacks lie across the line of the catwalk)
   // the catwalk skid: a long steel base with a rear trough fixed to it, a hydraulic power unit, and the ground control station
   b.slab("dsteel", -1.1, 0, 18, 1.1, 0.45, 34, true);
@@ -1498,7 +1555,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     stringMesh.position.z = 0; stringMesh.position.x = 0;
     joint.position.set(0, F + 0.9, 0); joint.isVisible = f.connecting || f.tripping;
     // rotary hose from standpipe to gooseneck
-    const a = v(2.7, F + 29, -3.2), c2 = v(0, tdY + 1.2, -0.3);
+    const a = hoseTop, c2 = v(0, tdY + 1.2, -0.3);
     hose = MeshBuilder.CreateTube("hose", { path: hosePath(a, c2), radius: 0.1, instance: hose } as any, scene) as typeof hose;
     wmSpin += (wmTarget - wmSpin) * Math.min(1, dt * (wmTarget ? 0.5 : 0.35));   // spins down slowly after the brake is pulled
     wmRotor.rotation.z += wmSpin * dt;

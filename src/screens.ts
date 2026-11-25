@@ -97,8 +97,36 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
     case "auto": { if (d.auto) drawAutoBars(c, W, H, d.auto); else { frame(c, "AUTODRILLER"); } break; }
     case "edr": break;   // drawn by drawEdr (it has its own, bigger canvas)
     case "news": {
-      const heads = ["MAN WINS ARGUMENT WITH GPS, GPS DEMANDS RECOUNT", "BIGFOOT SPOTTED IN PERMIAN WALMART, BUYS ONLY ICE", "SENATOR CHALLENGES THE MOON TO A DEBATE", "GOAT ELECTED MAYOR; VOTER TURNOUT UP 400%", "SCIENTISTS CONFIRM MONDAY STILL MONDAY", "LOCAL TRUCK 'JUST NEEDS A LITTLE FREON'", "TOWN BANS SUNDAY AFTER 'TOO MANY MONDAYS'", "EXPERT: PROBABLY FINE. ANOTHER EXPERT: PROBABLY NOT",
-        "TAXES: STILL EVIL, EXPERTS CONFIRM", "BREAKING: TAXES FOUND TO BE THE DEVIL'S ARITHMETIC", "WHY ARE TAXES EVIL? 'JUST ARE,' SAYS PANEL", "NEW STUDY: ALL EVIL TRACES BACK TO THE TAX CODE", "TAX MAN SEEN CACKLING NEAR PERMIAN ROYALTY CHECK", "TAXES: THEY TAKE YOUR MONEY AND NEVER EVEN SAY THANKS"];
+      const heads = [
+        "PROPERTY TAX UP AGAIN: MAN LEARNS THE COUNTY OWNS HIS HOUSE",
+        "INCOME TAX NOW RISING FASTER THAN THE PRICE OF A TACO",
+        "SALES TAX ON SALES TAX? OFFICIALS: 'WE'RE STUDYING IT'",
+        "NEW TAX ON TAXES: YOU PAY EXTRA FOR READING ABOUT THEM",
+        "ESTATE TAX: GOVERNMENT WANTS DAD'S PICKUP TOO",
+        "GAS TAX FIXES ROAD; ROAD STILL A POTHOLE; EXPERTS BAFFLED",
+        "CAPITAL GAINS TAX ON GAINS YOU PLAN TO HAVE: THE 'HOPE TAX'",
+        "SIN TAX EXPANDS TO INCLUDE CHEESE DIP",
+        "SHADE TREE TAX PROPOSED: 'YOU'RE ENJOYING THAT, AREN'T YOU?'",
+        "BREATHING TAX DEBUNKED; 'EXHALE SURCHARGE' STILL ON THE TABLE",
+        "MAN FILES TAXES ON HIS TAX REFUND ON HIS TAX REFUND",
+        "TOLL ROAD TO THE TOLL BOOTH GETS ITS OWN TOLL",
+        "NEW WEEKEND TAX HITS SATURDAYS AND, FOR SOME REASON, KAYAKS",
+        "ACCOUNTANT RUNS FOR OFFICE ON PLATFORM OF 'MORE FORMS'",
+        "CORN TAX, WHEAT TAX, CORNBREAD TAX: 'FOR THE CHILDREN'",
+        "DEATH TAX, BIRTH TAX, MID-LIFE CRISIS TAX: 'ALL OF THE ABOVE'",
+        "DRILLING TAX ON THE TAX ON DRILLING: 'DRILL, BABY, DRILL (PAY)'",
+        "TRUCK NUTS NOW TAXED AS 'CHROME'; OWNER: 'THEY'RE FOR FREEDOM'",
+        "PUNDIT: THE WAR ON CHRISTMAS NOW COVERS ITCHY CHRISTMAS SWEATERS",
+        "LOCAL MAN FINDS FREEDOM: REFUSES SEATBELT, SEAT, AND CAR",
+        "'GET OFF MY LAWN' ACT PASSES; LAWN STILL NOT MOWED",
+        "BIG GOVERNMENT TAXING SMALL GOVERNMENT TO FUND MEDIUM GOVERNMENT",
+        "TOWN HALL: 'WHY IS THE GOVERNMENT SO BIG AND NEVER ANSWERS THE PHONE?'",
+        "REGULATION TO REGULATE REGULATORS: ELEVEN FORMS TO FILE THE TWELFTH",
+        "CABLE SPECIAL: 'IS YOUR LAWN MOWER LIBERAL? THE BLADES MAY KNOW'",
+        "BOOTSTRAP PRICES SOAR; ECONOMISTS ADVISE PULLING HARDER",
+        "MAN CELEBRATES INDEPENDENCE BY GRILLING AND SUING THE GRILL",
+        "THE FREE MARKET FIXES EVERYTHING, SAYS MAN SELLING THE MARKET",
+      ];
       const i = Math.floor(d.t / 7) % heads.length;
       c.fillStyle = "#0a1a3a"; c.fillRect(0, 0, W, H);
       c.fillStyle = "#5a7ab8"; c.fillRect(150, 30, 90, 90); c.fillStyle = "#e0b48f"; c.beginPath(); c.arc(195, 56, 14, 0, 6.3); c.fill(); c.fillStyle = "#1a1a2a"; c.fillRect(173, 72, 44, 48);
@@ -189,18 +217,18 @@ function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
 
 // ---------------------------------------------------------------------------------------------------- the EDR: seven tracks of strip charts, time running down the screen, newest at the bottom
 const EDR_N = 240;
-interface Chan { name: string; unit: string; col: string; max: number; get: (d: ScreenData, s: { rop2: number; wob2: number }) => number; }
+interface Chan { name: string; unit: string; col: string; max: number; sp?: boolean; get: (d: ScreenData, s: { rop2: number; wob2: number }) => number; }
 const EDR: [Chan, Chan][] = [
   [{ name: "Hookload", unit: "klb", col: "#6cb4ff", max: 750, get: (d) => trip(d).hook },
    { name: "Block Height", unit: "ft", col: "#d8dde3", max: 150, get: (d) => trip(d).block }],
   [{ name: "Inst ROP", unit: "ft/hr", col: "#22c06a", max: 500, get: (d) => d.rop },
-   { name: "ROP Set Pt", unit: "ft/hr", col: "#ff6a7a", max: 500, get: (d) => d.auto?.sp.rop ?? 0 }],
+   { name: "ROP Set Pt", unit: "ft/hr", col: "#ff6a7a", max: 500, sp: true, get: (d) => d.auto?.sp.rop ?? 0 }],
   [{ name: "WOB", unit: "klb", col: "#ffeb3b", max: 100, get: (d) => d.wob },
-   { name: "WOB Set Pt", unit: "klb", col: "#2fd0d0", max: 100, get: (d) => d.wobSet ?? d.wob }],
+   { name: "WOB Set Pt", unit: "klb", col: "#2fd0d0", max: 100, sp: true, get: (d) => d.wobSet ?? d.wob }],
   [{ name: "Diff Press", unit: "psi", col: "#ff4dff", max: 2400, get: (d) => d.dp ?? 0 },
-   { name: "Diff Limit", unit: "psi", col: "#2fd0d0", max: 2400, get: (d) => d.auto?.sp.dp ?? 0 }],
+   { name: "Diff Limit", unit: "psi", col: "#2fd0d0", max: 2400, sp: true, get: (d) => d.auto?.sp.dp ?? 0 }],
   [{ name: "Torque", unit: "ft-lb", col: "#6cb4ff", max: 20000, get: (d) => d.torque ?? 0 },
-   { name: "Torque Limit", unit: "ft-lb", col: "#f0922b", max: 20000, get: (d) => d.auto?.sp.tq ?? 0 }],
+   { name: "Torque Limit", unit: "ft-lb", col: "#f0922b", max: 20000, sp: true, get: (d) => d.auto?.sp.tq ?? 0 }],
   [{ name: "Rock Strength", unit: "psi", col: "#d8b96a", max: 15000, get: (d) => formationAt(d.depth).hardness * 11000 },
    { name: "Motor Life", unit: "%", col: "#22c06a", max: 100, get: (d) => d.motor ?? 100 }],
   [{ name: "Flow In", unit: "gpm", col: "#2fd0d0", max: 1000, get: (d) => d.flow },
@@ -256,7 +284,7 @@ function pushEdr(d: ScreenData) {
   const first = edrHist.length === 0;
   if (first) for (let i = 0; i < EDR.length * 2; i++) edrHist.push([]);
   EDR.forEach((pair, ti) => pair.forEach((ch, ci) => {
-    const a = edrHist[ti * 2 + ci], v = Math.max(0, ch.get(d, edrState) + (Math.random() - 0.5) * ch.max * 0.012);
+    const a = edrHist[ti * 2 + ci], v = Math.max(0, ch.get(d, edrState) + (ch.sp ? 0 : (Math.random() - 0.5) * ch.max * 0.012));   // set points do not jitter
     if (first) for (let i = 0; i < EDR_N; i++) a.push(v); else { a.push(v); if (a.length > EDR_N) a.shift(); }
   }));
 }

@@ -1,6 +1,6 @@
 // The directional driller's wall of screens, drawn in the EDR's style on the small cabin monitors.
-import { Dd, OFFSETS, PLAN, PLAN_PTS, REF, TOL, planAt, vsOf } from "./dd";
-import { FORMATIONS, WELL } from "./sim";
+import { Dd, OFFSETS, PLAN, PLAN_PTS, REF, TOL, planAt, vsOf, planFromWaypoints, planStats } from "./dd";
+import { FORMATIONS, WELL, formationAt } from "./sim";
 
 const W = 256, H = 160;
 const BG = "#0b0e12", PANEL = "#0e1217", EDGE = "#252c35", GRID = "#1a2028", TX = "#e6ebf0", DIM = "#8d98a5";
@@ -101,20 +101,52 @@ export function drawDd(kind: string, c: CanvasRenderingContext2D, dd: Dd, t: num
       return true;
     }
     case "geo": {
-      head(c, "GEOSTEERING", "formation · TVD");
-      const b = dd.bit, top = 24, bot = 150, tv0 = Math.max(WELL.startDepth, b.tvd - 700), tv1 = tv0 + 1100, ty = (tvd: number) => top + ((tvd - tv0) / (tv1 - tv0)) * (bot - top);
-      // formation column
-      let prev = 0; FORMATIONS.forEach((f) => { const a = Math.max(prev, tv0), z = Math.min(f.limit, tv1); prev = f.limit; if (z <= a) return; c.fillStyle = f.color + "55"; c.fillRect(6, ty(a), 70, ty(z) - ty(a)); c.strokeStyle = EDGE; c.strokeRect(6.5, ty(a) + 0.5, 69, ty(z) - ty(a)); if (ty(z) - ty(a) > 10) { c.fillStyle = TX; c.font = "8px monospace"; c.textAlign = "left"; c.fillText(f.name.slice(0, 11), 9, ty(a) + 7); } });
-      // target window: the plan's TVD ahead of the bit is the corridor; the landing zone is Avalon A
-      const landTop = FORMATIONS[FORMATIONS.length - 2].limit; c.fillStyle = "rgba(61,220,132,0.12)"; c.fillRect(80, ty(landTop), 90, ty(tv1) - ty(landTop)); c.strokeStyle = GRN; c.setLineDash([3, 2]); c.beginPath(); c.moveTo(80, ty(landTop)); c.lineTo(170, ty(landTop)); c.stroke(); c.setLineDash([]);
-      c.fillStyle = GRN; c.font = "8px monospace"; c.textAlign = "left"; c.fillText("LANDING TARGET", 84, ty(landTop) + 8);
-      // plan tvd vs actual at the bit, and the bit
-      const p = planAt(b.md); c.strokeStyle = "#5b6672"; c.beginPath(); c.moveTo(80, ty(p.tvd)); c.lineTo(170, ty(p.tvd)); c.stroke(); c.fillStyle = DIM; c.fillText("plan", 144, ty(p.tvd) - 4);
-      c.fillStyle = TX; c.beginPath(); c.moveTo(80, ty(b.tvd)); c.lineTo(92, ty(b.tvd) - 5); c.lineTo(92, ty(b.tvd) + 5); c.closePath(); c.fill(); c.fillStyle = TX; c.fillText("BIT", 95, ty(b.tvd) + 3);
-      // gamma along the way
-      c.strokeStyle = AMB; c.lineWidth = 1.2; c.beginPath(); dd.path.forEach((q, k) => { if (q.tvd < tv0) return; const gr = 70 + 35 * Math.sin(q.tvd / 90) + 14 * Math.sin(q.tvd / 17), x = 178 + (gr / 160) * 68, y = ty(q.tvd); k ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke();
-      c.fillStyle = DIM; c.font = "8px monospace"; c.textAlign = "left"; c.fillText("GR", 178, 30);
-      const tp = dd.toPlan; c.font = "bold 9px monospace"; c.fillStyle = Math.abs(tp.high) > 30 ? RED : GRN; c.textAlign = "right"; c.fillText(`${Math.abs(tp.high).toFixed(0)} ft ${tp.high >= 0 ? "HIGH" : "LOW"} TO PLAN`, W - 6, 154);
+      // a geosteering section, in the style of the commercial tools: GR and rock-strength strips along the top, the section (TVD against vertical section) with the formation tops,
+      // the target window and the plan and actual wellpaths, and a GR type log down the right with the zone shaded and the bit marked
+      const bt = dd.bit, vsB = vsOf(bt), pl = planAt(bt.md);
+      head(c, "GEOSTEERING", "TVD " + fmt(bt.tvd) + "  VS " + fmt(vsB) + " ft");
+      const S = { x: 26, y: 40, w: 160, h: 108 }, T1 = { x: 26, y: 21, w: 160, h: 8 }, T2 = { x: 26, y: 30, w: 160, h: 8 }, L = { x: 192, y: 21, w: 58, h: 127 };
+      const tv0 = bt.tvd - 230, tv1 = bt.tvd + 150, vs0 = vsB - 320, vs1 = vsB + 320;
+      const sx = (vs: number) => S.x + ((vs - vs0) / (vs1 - vs0)) * S.w, sy = (tvd: number) => S.y + ((tvd - tv0) / (tv1 - tv0)) * S.h;
+      const gr = (tvd: number) => 70 + 35 * Math.sin(tvd / 90) + 14 * Math.sin(tvd / 17) + 6 * Math.sin(tvd / 5.3);
+      const grCol = (v: number) => { const k = Math.max(0, Math.min(1, (v - 35) / 110)); return `rgb(${Math.round(70 + 185 * k)},${Math.round(210 - 90 * k)},${Math.round(70 - 30 * k)})`; };
+      // top strips along measured depth: GR and rock strength
+      c.fillStyle = PANEL; c.fillRect(T1.x, T1.y, T1.w, T1.h + T2.h + 1);
+      for (let i = 0; i < 80; i++) { const md = bt.md - 2000 + (i / 80) * 2000, p2 = planAt(Math.max(WELL.startDepth, md)); c.fillStyle = grCol(gr(p2.tvd)); c.fillRect(T1.x + (i / 80) * T1.w, T1.y, T1.w / 80 + 0.6, T1.h); const hd = formationAt(p2.tvd).hardness; c.fillStyle = `hsl(${Math.round(50 - 40 * Math.min(1, hd / 1.4))},85%,55%)`; c.fillRect(T1.x + (i / 80) * T2.w, T2.y, T2.w / 80 + 0.6, T2.h); }
+      c.fillStyle = DIM; c.font = "6px monospace"; c.textAlign = "right"; c.fillText("GR", T1.x - 3, T1.y + 4); c.fillText("ROCK", T2.x - 3, T2.y + 4);
+      // the section
+      c.fillStyle = "#0a0d11"; c.fillRect(S.x, S.y, S.w, S.h); c.save(); c.beginPath(); c.rect(S.x, S.y, S.w, S.h); c.clip();
+      c.strokeStyle = GRID; c.lineWidth = 1; for (let tv = Math.ceil(tv0 / 100) * 100; tv < tv1; tv += 100) { c.beginPath(); c.moveTo(S.x, sy(tv)); c.lineTo(S.x + S.w, sy(tv)); c.stroke(); }
+      for (let v = Math.ceil(vs0 / 200) * 200; v < vs1; v += 200) { c.beginPath(); c.moveTo(sx(v), S.y); c.lineTo(sx(v), S.y + S.h); c.stroke(); }
+      // the target window: plan TVD plus and minus 40 ft, shaded green, with dashed blue limits (it follows the plan)
+      const pts: { x: number; y: number }[] = [];
+      for (let md = Math.max(WELL.startDepth, bt.md - 1500); md < bt.md + 1800; md += 20) { const q = planAt(md); pts.push({ x: sx(vsOf(q)), y: sy(q.tvd) }); }
+      if (pts.length > 1) {
+        c.fillStyle = "rgba(61,220,132,0.16)"; c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q.x, q.y - 40 * (S.h / (tv1 - tv0))) : c.moveTo(q.x, q.y - 40 * (S.h / (tv1 - tv0))))); for (let i = pts.length - 1; i >= 0; i--) c.lineTo(pts[i].x, pts[i].y + 40 * (S.h / (tv1 - tv0))); c.closePath(); c.fill();
+        c.strokeStyle = "#3d7fff"; c.setLineDash([4, 2]); c.lineWidth = 1; for (const off of [-40, 40]) { c.beginPath(); pts.forEach((q, i) => { const yy = q.y + off * (S.h / (tv1 - tv0)); i ? c.lineTo(q.x, yy) : c.moveTo(q.x, yy); }); c.stroke(); } c.setLineDash([]);
+        c.strokeStyle = "#8a9098"; c.setLineDash([2, 2]); c.beginPath(); pts.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y))); c.stroke(); c.setLineDash([]);
+      }
+      // formation tops, dipping gently with vertical section, each labelled at the right in its own colour
+      let prev = 0; const labels: [number, string, string][] = [];
+      FORMATIONS.forEach((f, i) => { const next = FORMATIONS[i + 1]; if (!next) return; prev = f.limit; const yA = sy(prev + (vs0 - vsB) * 0.04), yB = sy(prev + (vs1 - vsB) * 0.04); if (Math.max(yA, yB) < S.y - 4 || Math.min(yA, yB) > S.y + S.h + 4) return; c.strokeStyle = next.color; c.lineWidth = 1.2; c.beginPath(); c.moveTo(S.x, yA); c.lineTo(S.x + S.w, yB); c.stroke(); labels.push([yB, next.name.toUpperCase(), next.color]); });
+      // the wellpaths: the actual hole in black-and-white, the bit, and the plan ahead
+      c.strokeStyle = TX; c.lineWidth = 2; c.beginPath(); dd.path.forEach((q, i) => { const x = sx(vsOf(q)), y = sy(q.tvd); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke();
+      c.fillStyle = "#ffffff"; c.beginPath(); c.arc(sx(vsB), sy(bt.tvd), 2.8, 0, 6.3); c.fill(); c.strokeStyle = "#ff4a3a"; c.lineWidth = 1; c.stroke();
+      c.restore(); c.strokeStyle = EDGE; c.strokeRect(S.x + 0.5, S.y + 0.5, S.w - 1, S.h - 1);
+      c.font = "5.5px monospace"; c.textAlign = "left"; for (const [yy, name, col] of labels) if (yy > S.y + 3 && yy < S.y + S.h - 2) { c.fillStyle = "#0a0d11"; c.fillRect(S.x + S.w - 56, yy - 5, 56, 7); c.fillStyle = col; c.fillText(name.slice(0, 16), S.x + S.w - 55, yy - 1); }
+      // axis ticks
+      c.fillStyle = DIM; c.font = "6px monospace"; c.textAlign = "right"; for (let tv = Math.ceil(tv0 / 100) * 100; tv < tv1; tv += 100) c.fillText(String(tv), S.x - 3, sy(tv) + 2);
+      c.textAlign = "center"; for (let v = Math.ceil(vs0 / 200) * 200; v < vs1; v += 200) c.fillText(String(v), sx(v), S.y + S.h + 7);
+      c.textAlign = "left"; c.fillText("TVD", 2, S.y + 4); c.fillText("VS", S.x + S.w - 8, S.y + S.h + 7);
+      // the type log: GR against TVD, the target zone shaded, the bit marked
+      c.fillStyle = "#0a0d11"; c.fillRect(L.x, L.y, L.w, L.h); c.strokeStyle = EDGE; c.strokeRect(L.x + 0.5, L.y + 0.5, L.w - 1, L.h - 1);
+      c.fillStyle = PANEL; c.fillRect(L.x + 1, L.y + 1, L.w - 2, 8); c.fillStyle = GRN; c.font = "bold 6px monospace"; c.textAlign = "center"; c.fillText("TYPE LOG  GR", L.x + L.w / 2, L.y + 5);
+      const ty = (tvd: number) => L.y + 10 + ((tvd - tv0) / (tv1 - tv0)) * (L.h - 11);
+      c.fillStyle = "rgba(61,220,132,0.2)"; c.fillRect(L.x + 1, ty(pl.tvd - 40), L.w - 2, ty(pl.tvd + 40) - ty(pl.tvd - 40));
+      c.strokeStyle = "#3d7fff"; c.setLineDash([3, 2]); for (const off of [-40, 40]) { c.beginPath(); c.moveTo(L.x + 1, ty(pl.tvd + off)); c.lineTo(L.x + L.w - 1, ty(pl.tvd + off)); c.stroke(); } c.setLineDash([]);
+      c.strokeStyle = "#e8d34a"; c.lineWidth = 1.2; c.beginPath(); for (let tv = tv0; tv <= tv1; tv += 2) { const x = L.x + 3 + (gr(tv) / 160) * (L.w - 6), y = ty(tv); tv === tv0 ? c.moveTo(x, y) : c.lineTo(x, y); } c.stroke();
+      c.fillStyle = TX; c.beginPath(); c.moveTo(L.x + L.w - 1, ty(bt.tvd)); c.lineTo(L.x + L.w - 8, ty(bt.tvd) - 3.5); c.lineTo(L.x + L.w - 8, ty(bt.tvd) + 3.5); c.closePath(); c.fill();
+      const tp = dd.toPlan; c.font = "bold 7px monospace"; c.textAlign = "left"; c.fillStyle = Math.abs(tp.high) > 30 ? RED : GRN; c.fillText(Math.abs(tp.high).toFixed(0) + " ft " + (tp.high >= 0 ? "HIGH" : "LOW") + " TO PLAN", S.x + 3, S.y + S.h - 3);
       return true;
     }
     case "ac": {
@@ -140,4 +172,35 @@ export function drawDd(kind: string, c: CanvasRenderingContext2D, dd: Dd, t: num
     }
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------------------------------- the plan editor (drawn on the console's main canvas)
+export function planEditorMap(w: number, h: number) {
+  const L = { x: 64, y: 28, w: w - 84, h: h - 52 }, vs0 = -100, vs1 = 1500, tv0 = 700, tv1 = 8900;
+  return { L, X: (vs: number) => L.x + ((vs - vs0) / (vs1 - vs0)) * L.w, Y: (tvd: number) => L.y + ((tvd - tv0) / (tv1 - tv0)) * L.h, VS: (x: number) => vs0 + ((x - L.x) / L.w) * (vs1 - vs0), TV: (y: number) => tv0 + ((y - L.y) / L.h) * (tv1 - tv0), vs0, vs1, tv0, tv1 };
+}
+export function drawPlanEditor(c: CanvasRenderingContext2D, w: number, h: number, dd: Dd, wps: [number, number][], drag: number) {
+  const m = planEditorMap(w, h), { L, X, Y } = m, st = planFromWaypoints(wps), ps = planStats(st);
+  c.save(); c.textBaseline = "middle"; c.fillStyle = "#0b0e12"; c.fillRect(0, 0, w, h);
+  c.fillStyle = "#14181e"; c.fillRect(0, 0, w, 24); c.fillStyle = TX; c.font = "bold 13px monospace"; c.textAlign = "left"; c.fillText("DIRECTIONAL PLAN EDITOR", 10, 12);
+  c.fillStyle = DIM; c.font = "11px monospace"; c.textAlign = "right"; c.fillText("click: add a point · drag: move it · right-click: delete · then Apply plan", w - 10, 12);
+  c.save(); c.beginPath(); c.rect(L.x, L.y, L.w, L.h); c.clip();
+  let prev = 0; for (const f of FORMATIONS) { const a = Math.max(prev, m.tv0), z = Math.min(f.limit, m.tv1); prev = f.limit; if (z <= a) continue; c.fillStyle = f.color + "22"; c.fillRect(L.x, Y(a), L.w, Y(z) - Y(a)); c.strokeStyle = f.color + "88"; c.lineWidth = 1; c.beginPath(); c.moveTo(L.x, Y(z)); c.lineTo(L.x + L.w, Y(z)); c.stroke(); c.fillStyle = f.color; c.font = "10px monospace"; c.textAlign = "left"; if (Y(z) - Y(a) > 12) c.fillText(f.name, L.x + 4, Y(a) + 7); }
+  c.strokeStyle = GRID; c.lineWidth = 1; for (let tv = 1000; tv < m.tv1; tv += 1000) { c.beginPath(); c.moveTo(L.x, Y(tv)); c.lineTo(L.x + L.w, Y(tv)); c.stroke(); } for (let v = 0; v <= m.vs1; v += 250) { c.beginPath(); c.moveTo(X(v), L.y); c.lineTo(X(v), L.y + L.h); c.stroke(); }
+  // the hole so far, and the bit
+  c.strokeStyle = GRN; c.lineWidth = 3; c.beginPath(); dd.path.forEach((q, i) => { const x = X(vsOf(q)), y = Y(q.tvd); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke();
+  const bt = dd.bit; c.fillStyle = "#fff"; c.beginPath(); c.arc(X(vsOf(bt)), Y(bt.tvd), 5, 0, 6.3); c.fill();
+  // the plan being drawn: white where it is gentle, amber past 3.5 degrees per 100 ft, red past 5
+  c.lineWidth = 3; for (let i = 10; i < st.length; i += 5) { const dls = Math.abs(st[i].inc - st[i - 10].inc); c.strokeStyle = dls > 5 ? RED : dls > 3.5 ? AMB : "#e6ebf0"; c.beginPath(); c.moveTo(X(vsOf(st[i - 5])), Y(st[i - 5].tvd)); c.lineTo(X(vsOf(st[i])), Y(st[i].tvd)); c.stroke(); }
+  c.restore(); c.strokeStyle = EDGE; c.strokeRect(L.x + 0.5, L.y + 0.5, L.w - 1, L.h - 1);
+  wps.forEach((p, i) => { c.fillStyle = i === drag ? AMB : i === 0 ? "#8d98a5" : "#6cb4ff"; c.strokeStyle = "#0b0e12"; c.lineWidth = 2; c.beginPath(); c.arc(X(p[0]), Y(p[1]), 6, 0, 6.3); c.fill(); c.stroke(); c.fillStyle = TX; c.font = "bold 10px monospace"; c.textAlign = "left"; c.fillText(String(i + 1), X(p[0]) + 9, Y(p[1]) - 7); });
+  c.fillStyle = DIM; c.font = "10px monospace"; c.textAlign = "right"; for (let tv = 1000; tv < m.tv1; tv += 1000) c.fillText(String(tv), L.x - 5, Y(tv)); c.textAlign = "center"; for (let v = 0; v <= m.vs1; v += 250) c.fillText(String(v), X(v), L.y + L.h + 10);
+  c.textAlign = "left"; c.fillText("TVD ft", 6, L.y + 6); c.textAlign = "right"; c.fillText("vertical section, ft (west)", L.x + L.w, L.y + L.h + 22);
+  // how the plan fares: build rate, kickoff, where it ends up, and how close it passes the offset wells
+  let sf0 = 99, sf1 = 99; for (let k = 0; k < st.length; k += 5) { const p = st[k], r = 2 * 0.003 * p.md; sf0 = Math.min(sf0, dd.dist(p, OFFSETS[0]) / r); sf1 = Math.min(sf1, dd.dist(p, OFFSETS[1]) / r); }
+  c.font = "bold 11px monospace"; c.textAlign = "left"; const bad = ps.maxDls > 5;
+  c.fillStyle = bad ? RED : ps.maxDls > 3.5 ? AMB : GRN; c.fillText("MAX DLS " + ps.maxDls.toFixed(1) + "°/100 ft" + (bad ? " — too hard to build" : ""), L.x + 8, L.y + L.h - 40);
+  c.fillStyle = TX; c.fillText("KOP " + (Number.isFinite(ps.kop) ? Math.round(ps.kop).toLocaleString("en-US") + " ft" : "none") + "   ends TVD " + Math.round(ps.tvdEnd).toLocaleString("en-US") + "  VS " + Math.round(ps.vsEnd) + "  INC " + ps.incEnd.toFixed(0) + "°", L.x + 8, L.y + L.h - 24);
+  c.fillStyle = Math.min(sf0, sf1) < 1.5 ? (Math.min(sf0, sf1) < 1 ? RED : AMB) : GRN; c.fillText("closest to 502H: SF " + sf0.toFixed(2) + "   504H: SF " + sf1.toFixed(2), L.x + 8, L.y + L.h - 8);
+  c.restore();
 }

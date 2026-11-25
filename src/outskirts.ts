@@ -30,7 +30,7 @@ const DEEP = { x: POND.x - 18, z: POND.z - 6, r: 17, extra: 6.5 };
 const FARM = { x: -64, z: 236 };                      // the house; its porch faces +x, toward the lease road
 const SILOS = { x: -93, z: 262 };
 const RIVAL = { x: -420, z: -300 };                   // Singularity Drilling
-const TACO = { x: -14, z: 118 };                      // by the gate
+const TACO = { x: -14, z: 192 };                      // up the lease road, well past the gate (you start outside its district)
 const PASTURE = { x0: 70, x1: 230, z0: 115, z1: 305 };
 
 export class Outskirts {

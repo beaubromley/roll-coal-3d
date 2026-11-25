@@ -5,7 +5,8 @@ import { Player } from "./player";
 import { drawAutoBars } from "./recorder";
 import { setupBoard } from "./scores";
 import { drawEdr, Screens, type ScreenData } from "./screens";
-import { Dd, OFFSETS } from "./dd";
+import { Dd, OFFSETS, DEFAULT_WPS, presetWps, planStats } from "./dd";
+import { drawPlanEditor, planEditorMap } from "./ddscreens";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
 import { UI, Who, Choice, $ } from "./ui";
@@ -302,6 +303,15 @@ export class Game {
     // (E only sits in a chair or stands up; while seated, clicking any screen opens them all)
     for (const m of this.rig.monitors) if (m.grp === "drill") this.interacts.push({ pos: () => m.pos, label: () => "Click: all screens  ·  E: stand up", r: 4.4, act: () => this.openCabin("all"), tv: true, ok: () => this.veh.isSeated(0) });
     for (const m of this.rig.monitors) if (m.grp === "dd") this.interacts.push({ pos: () => m.pos, label: () => "Click: the directional screens  ·  E: stand up", r: 4.4, act: () => this.openDdScreens(), tv: true, ok: () => this.veh.isSeated(1) || this.veh.isSeated(2) });
+    // the BHA on the racks: a label when you look, and a comment when you use them
+    const bha = (key: string, label: string, title: string, lines: string[]) => { let n = 0; add(() => S[key], label, 2.8, () => { this.sfx.click(); this.ui.toast(title, lines[n++ % lines.length]); }, () => !!S[key]); };
+    const motorLines = ["A 6¾-inch positive-displacement mud motor. The bent housing is set at 1.5 degrees, and the guy who set it said 'close enough.'", "The motor steers the well, and it also teaches you what 'stall' means."];
+    bha("bhaMotor", "Mud motor · bent housing", "MUD MOTOR", motorLines); bha("bhaMotor2", "Mud motor · bent housing", "MUD MOTOR", motorLines);
+    const agLines = ["A drilling agitator: it shakes the string so you can slide farther. Everybody is sure it helps. Nobody can prove it.", "It rattles. That's the whole product."];
+    bha("bhaAgit1", "Agitator", "AGITATOR", agLines); bha("bhaAgit2", "Agitator", "AGITATOR", agLines);
+    const stabLines = ["A stabilizer: a collar with blades that keeps the BHA off the wall. It's holding up better than the budget.", "Four blades, one job, and a cradle that has seen things."];
+    bha("bhaStabA", "Stabilizers", "STABILIZER", stabLines); bha("bhaStabB", "Stabilizers", "STABILIZER", stabLines);
+    bha("bhaRss", "RSS · rotary steerable", "ROTARY STEERABLE", ["The RSS: smooth hole, fast ROP, and it always looks so promising. The rep says the failure rate is 'trending the right way.'", "Last run it lost communication after thirty feet. The vendor calls that 'a learning.'", "It costs more per day than the rig. It steers like a dream, right up until it doesn't talk to you."]);
     add(() => S.hopper, "Mud hopper", 3.4, () => this.openHopper());
     add(() => S.frac, "Frac tanks: transfer to the pits", 4.2, () => this.openFrac());
     add(() => S.desk, "Computer — AFE & orders", 2.8, () => this.openDesk());
@@ -380,16 +390,7 @@ export class Game {
       <div class="cabwide"><div class="cabl">
       <div class="scrgrid" id="ddgrid" style="grid-template-columns:repeat(4,1fr)"></div>
         <div class="recwrap"><canvas id="ddmain" width="960" height="400"></canvas></div>
-        <div class="cab-left" style="display:block">
-          <div class="row"><span>Inclination</span><b id="d_inc"></b></div>
-          <div class="row"><span>Azimuth (last survey)</span><b id="d_azi"></b></div>
-          <div class="row"><span>Off the plan</span><b id="d_dev"></b></div>
-          <div class="row"><span>Gtotal</span><b id="d_g"></b></div>
-          <div class="row"><span>Btotal</span><b id="d_b"></b></div>
-          <div class="row"><span>Dip</span><b id="d_dip"></b></div>
-          <div class="row"><span id="d_n0"></span><b id="d_sf0"></b></div>
-          <div class="row"><span id="d_n1"></span><b id="d_sf1"></b></div>
-        </div></div>
+        </div>
         <div class="cab-right">
           <div class="hint">Drilling mode <span style="color:var(--dim)">(keys 1 · 2 · 3)</span></div>
           <div class="btns" style="margin:4px 0 10px"><button class="b" id="dm_rotate">Rotate</button><button class="b" id="dm_slide">Slide</button><button class="b" id="dm_osc">Oscillating slide</button></div>
@@ -399,6 +400,20 @@ export class Game {
           <div class="btns" style="margin:4px 0 10px"><button class="b" data-tfa="0">High side (build)</button><button class="b" data-tfa="90">Right</button><button class="b" data-tfa="180">Low side (drop)</button><button class="b" data-tfa="270">Left</button></div>
           <div class="btns"><button class="b green" id="dcs">Take a check shot</button></div>
           <div class="hint" style="margin-top:6px">A check shot costs two minutes of rig time. The survey is also taken at every connection.</div>
+          <div class="hint" style="margin-top:12px">Directional plan <span style="color:var(--dim)">(draw your own, then apply it)</span></div>
+          <div class="btns" style="margin:4px 0"><button class="b" id="pl_edit">Draw plan</button><button class="b green" id="pl_apply">Apply plan</button><button class="b alt" id="pl_reset">Reset</button></div>
+          <div class="btns" style="margin:4px 0"><button class="b alt" id="pl_early">Early kickoff</button><button class="b alt" id="pl_straight">Straight hole</button></div>
+          <div class="hint" id="pl_info"></div>
+          <div style="margin-top:10px">
+            <div class="row"><span>Inclination</span><b id="d_inc"></b></div>
+            <div class="row"><span>Azimuth (last survey)</span><b id="d_azi"></b></div>
+            <div class="row"><span>Off the plan</span><b id="d_dev"></b></div>
+            <div class="row"><span>Gtotal</span><b id="d_g"></b></div>
+            <div class="row"><span>Btotal</span><b id="d_b"></b></div>
+            <div class="row"><span>Dip</span><b id="d_dip"></b></div>
+            <div class="row"><span id="d_n0"></span><b id="d_sf0"></b></div>
+            <div class="row"><span id="d_n1"></span><b id="d_sf1"></b></div>
+            </div>
         </div></div>
       <div class="btns"><button class="b alt" id="ddflip">Move to the driller's chair (Tab)</button><button class="b alt" data-close>Close</button></div>`, { wide: true, live: true });
     this.closeBtn(p);
@@ -412,10 +427,36 @@ export class Game {
     p.querySelectorAll<HTMLButtonElement>("[data-tf]").forEach((b) => b.onclick = () => { dd.setTf(dd.tfSet + Number(b.dataset.tf)); this.sfx.click(); });
     p.querySelectorAll<HTMLButtonElement>("[data-tfa]").forEach((b) => b.onclick = () => { dd.setTf(Number(b.dataset.tfa)); this.sfx.click(); });
     q("dcs").onclick = () => dd.checkShot();
+    // drawing a plan: click to add a waypoint, drag one to move it, right-click to delete; Apply makes it the plan the whole rig steers to
+    let editing = false, drag = -1, wps: [number, number][] = dd.wps.map((p) => [p[0], p[1]] as [number, number]);
+    const mainCv = q<HTMLCanvasElement>("ddmain");
+    const pt = (ev: PointerEvent) => { const r = mainCv.getBoundingClientRect(); return { x: ((ev.clientX - r.left) * mainCv.width) / r.width, y: ((ev.clientY - r.top) * mainCv.height) / r.height }; };
+    mainCv.onpointerdown = (ev) => {
+      if (!editing) return; ev.preventDefault();
+      const m = planEditorMap(mainCv.width, mainCv.height), p = pt(ev); let hit = -1, best = 14;
+      wps.forEach((w, i) => { const d = Math.hypot(m.X(w[0]) - p.x, m.Y(w[1]) - p.y); if (d < best) { best = d; hit = i; } });
+      if (ev.button === 2) { if (hit > 0) wps.splice(hit, 1); return; }
+      if (hit >= 0) drag = hit;
+      else { const vs = m.VS(p.x), tv = m.TV(p.y); if (tv > 780 && tv < 8900) { wps.push([Math.round(Math.max(-100, Math.min(1500, vs))), Math.round(tv)]); wps.sort((a, b) => a[1] - b[1]); drag = wps.findIndex((q2) => q2[1] === Math.round(tv)); } }
+      mainCv.setPointerCapture(ev.pointerId);
+    };
+    mainCv.onpointermove = (ev) => {
+      if (!editing || drag <= 0) return; const m = planEditorMap(mainCv.width, mainCv.height), p = pt(ev);
+      const lo = wps[drag - 1][1] + 60, hi = (wps[drag + 1] ? wps[drag + 1][1] : 8900) - 60;
+      wps[drag] = [Math.round(Math.max(-100, Math.min(1500, m.VS(p.x)))), Math.round(Math.max(lo, Math.min(hi, m.TV(p.y))))];
+    };
+    mainCv.onpointerup = () => { drag = -1; }; mainCv.oncontextmenu = (ev) => { if (editing) ev.preventDefault(); };
+    q("pl_edit").onclick = () => { editing = !editing; this.sfx.click(); };
+    q("pl_apply").onclick = () => { const s = dd.replan(wps); this.sfx.good(); this.ui.toast("NEW PLAN", "KOP " + (Number.isFinite(s.kop) ? Math.round(s.kop).toLocaleString("en-US") + " ft" : "none") + " · max " + s.maxDls.toFixed(1) + "°/100 ft" + (s.maxDls > 5 ? " (the motor can't build that fast)" : "")); this.radio("tex", s.maxDls > 5 ? "That's a hard curve, boss. I'll do what I can with three degrees a hundred." : "New plan's in. I'll steer to it.", 6500); };
+    q("pl_reset").onclick = () => { wps = DEFAULT_WPS.map((p) => [p[0], p[1]] as [number, number]); this.sfx.click(); };
+    q("pl_early").onclick = () => { wps = presetWps("early"); editing = true; this.sfx.click(); };
+    q("pl_straight").onclick = () => { wps = presetWps("straight"); editing = true; this.sfx.click(); };
     (this.ui as any).panelTick = () => {
       list.forEach((g, i) => { g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height); g.cv.style.outline = i === ddSel ? "2px solid #f4c04a" : "none"; });
-      this.drawMain(q<HTMLCanvasElement>("ddmain"), list[ddSel]);
+      if (editing) { const rx = mainCv.getContext("2d"); if (rx) drawPlanEditor(rx, mainCv.width, mainCv.height, dd, wps, drag); } else this.drawMain(mainCv, list[ddSel]);
       const set = (id: string, v: string, cls = "") => { const e = q(id); e.textContent = v; e.className = cls; };
+      q("pl_edit").textContent = editing ? "Back to screens" : "Draw plan";
+      { const ps = planStats(); set("pl_info", "Active plan: KOP " + (Number.isFinite(ps.kop) ? Math.round(ps.kop).toLocaleString("en-US") + " ft" : "none") + " · max " + ps.maxDls.toFixed(1) + "°/100 ft"); }
       const sv = dd.lastSurvey, tp = dd.toPlan;
       for (const m of ["rotate", "slide", "osc"] as const) q("dm_" + m).className = "b" + (dd.mode === m ? " green" : " alt");
       set("d_tfs", Math.round(dd.tfSet) + "°"); set("d_tfa", Math.round(dd.tf) + "°"); q<HTMLInputElement>("dtf").value = String(Math.round(dd.tfSet));
@@ -1105,6 +1146,18 @@ export class Game {
     this.openCabin("all");
   }
   stormT = 30;
+  /** with the autodriller on, Dale now and then nudges a set point himself (and says so). They never wander on their own. */
+  private daleT = 100;
+  private daleTweak(dt: number) {
+    const s = this.sim.s, a = s.auto;
+    if (!this.started || this.paused || this.astMode || this.ui.panelOpen || !a.on || s.mode !== "drilling") { return; }
+    this.daleT -= dt; if (this.daleT > 0) return;
+    this.daleT = 120 + Math.random() * 120;
+    const pick = (Math.random() * 3) | 0, step = (v: number, d: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v + d));
+    if (pick === 0) { const n = step(a.wob, Math.random() < 0.5 ? -2 : 2, 5, 60); if (n !== a.wob) { a.wob = n; this.radio("dale", "Bumped the WOB set point to " + n + ", boss.", 5000); } }
+    else if (pick === 1) { const n = step(a.rop, Math.random() < 0.5 ? -20 : 20, 40, 380); if (n !== a.rop) { a.rop = n; this.radio("dale", "Moved the ROP limit to " + n + " feet an hour.", 5000); } }
+    else { const n = step(a.dp, Math.random() < 0.5 ? -100 : 100, 300, 2400); if (n !== a.dp) { a.dp = n; this.radio("dale", "Reset the diff limit to " + n + " psi. Just keeping the motor honest.", 5000); } }
+  }
   armUpdate(dt: number) {
     const a = this.arm, s = this.sim.s;
     if (!this.astMode) return;
@@ -1298,9 +1351,16 @@ export class Game {
     if (dn.isEnabled()) {
       if (this.deer.target) {
         const d = this.deer.target.subtract(dn.position); d.y = 0; const l = d.length();
-        if (l > 0.4) { dn.position.addInPlace(d.scale((7 * realDt) / l)); pushOutXZ(this.player.colliders, dn.position, 0, 0.8); dn.rotation.y = Math.atan2(d.x, d.z); }
+        if (l > 0.4) {
+          // it follows the ground, and stops rather than run into a hill
+          const T = this.outskirts.terrain, stepLen = 7 * realDt, nx = dn.position.x + (d.x / l) * stepLen, nz = dn.position.z + (d.z / l) * stepLen;
+          if (T(nx, nz) - T(dn.position.x, dn.position.z) > 0.7 * stepLen || T(nx, nz) < -0.3) this.deer.target = dn.position.clone();
+          else { dn.position.x = nx; dn.position.z = nz; pushOutXZ(this.player.colliders, dn.position, 0, 0.8); dn.rotation.y = Math.atan2(d.x, d.z); }
+        }
+        dn.position.y = Math.max(0, this.outskirts.terrain(dn.position.x, dn.position.z));
       } else dn.rotation.y += Math.sin(this.realT * 0.7) * 0.003;
     }
+    this.daleTweak(realDt);
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);
     if (this.asteroid) {
       this.asteroidT += realDt;                                            // (the rock itself stays put: only the tail flickers)

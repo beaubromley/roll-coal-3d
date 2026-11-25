@@ -35,6 +35,35 @@ export const planAt = (md: number): Station => PLAN_PTS[Math.max(0, Math.min(PLA
 /** vertical section: distance along the plan azimuth (west) */
 export const vsOf = (s: { n: number; e: number }) => s.n * Math.cos(PLAN.azi * RAD) + s.e * Math.sin(PLAN.azi * RAD);
 
+/** the plan can be redrawn: waypoints (vertical section, TVD) become a smooth table of stations every 10 ft of measured depth, on the plan azimuth */
+export function planFromWaypoints(w: [number, number][]): Station[] {
+  const pts = w.slice().sort((a, b) => a[1] - b[1]); if (!pts.length || pts[0][1] > WELL.startDepth) pts.unshift([0, WELL.startDepth]);
+  const segs: { s0: number; len: number; inc: number }[] = []; let total = 0;
+  for (let i = 1; i < pts.length; i++) { const dv = pts[i][0] - pts[i - 1][0], dt = Math.max(1, pts[i][1] - pts[i - 1][1]), len = Math.hypot(dv, dt); segs.push({ s0: total, len, inc: Math.max(0, Math.min(88, Math.atan2(dv, dt) / RAD)) }); total += len; }
+  if (!segs.length) segs.push({ s0: 0, len: 1, inc: 0 });
+  const n = Math.ceil((8700 - WELL.startDepth) / 10) + 1, raw: number[] = [];
+  for (let k = 0; k < n; k++) { const s = k * 10; let seg = segs[segs.length - 1]; for (const sg of segs) if (s < sg.s0 + sg.len) { seg = sg; break; } raw.push(seg.inc); }
+  let inc = raw; for (let pass = 0; pass < 3; pass++) inc = inc.map((_, i) => { let a = 0, c = 0; for (let j = -6; j <= 6; j++) { const q = inc[Math.max(0, Math.min(n - 1, i + j))]; a += q; c++; } return a / c; });
+  const out: Station[] = [{ md: WELL.startDepth, inc: inc[0], azi: PLAN.azi, n: 0, e: 0, tvd: WELL.startDepth }];
+  for (let k = 1; k < n; k++) out.push(mc(out[k - 1], WELL.startDepth + k * 10, inc[k], PLAN.azi));
+  return out;
+}
+export function planStats(st: Station[] = PLAN_PTS) {
+  let maxDls = 0; for (let i = 10; i < st.length; i++) maxDls = Math.max(maxDls, Math.abs(st[i].inc - st[i - 10].inc));
+  const inc0 = st[0].inc; const k = st.findIndex((s) => s.inc - inc0 > 3);
+  const last = st[st.length - 1];
+  return { maxDls, kop: k < 0 ? Infinity : st[k].md, tvdEnd: last.tvd, vsEnd: vsOf(last), incEnd: last.inc };
+}
+/** sample a station table into a few editable waypoints */
+export function wpsOf(st: Station[], mds: number[] = [750, 3000, 6000, 7200, 7500, 7900, 8300, 8700]): [number, number][] { return mds.map((md) => { const p = st[Math.max(0, Math.min(st.length - 1, Math.round((md - WELL.startDepth) / 10)))]; return [Math.round(vsOf(p)), Math.round(p.tvd)] as [number, number]; }); }
+export const DEFAULT_WPS = wpsOf(PLAN_PTS);
+export function presetWps(kind: "early" | "straight"): [number, number][] {
+  if (kind === "straight") return [[0, WELL.startDepth], [30, 4000], [60, 8800]];
+  const st: Station[] = [{ md: WELL.startDepth, inc: 2, azi: PLAN.azi, n: 0, e: 0, tvd: WELL.startDepth }];
+  for (let md = WELL.startDepth + 10; md <= 8700; md += 10) st.push(mc(st[st.length - 1], md, md < 5500 ? 2 : 2 + ((md - 5500) * 2.5) / 100, PLAN.azi));
+  return wpsOf(st, [750, 3000, 5200, 5500, 6200, 7000, 7800, 8700]);
+}
+
 function offsetWell(name: string, short: string, shiftN: (md: number) => number): Offset {
   return { name, short, pts: PLAN_PTS.map((p) => ({ ...p, n: p.n + shiftN(p.md) })) };
 }
@@ -59,9 +88,19 @@ export class Dd {
   /** with nobody in the seat the DD picks his own slides: about 6 % of the footage in the vertical hole, a lot more once the plan is building angle */
   private autoFt = 0; private autoNext = 120; private autoLen = 10; private wasSeated = false;
   warned = 0; acWarn = [0, 0]; collided = false; lastDepth = WELL.startDepth; wasConn = false; interference = 0;
+  /** the waypoints of the plan as drawn (the editor starts from these) */
+  wps: [number, number][] = DEFAULT_WPS.map((p) => [p[0], p[1]] as [number, number]);
   constructor(private g: Game) {
     this.takeSurvey(true);
-    OFFSETS.forEach((o, i) => { for (let k = 0; k < PLAN_PTS.length; k += 5) this.planCtc[i].push(this.dist(PLAN_PTS[k], o)); });
+    this.rebuildPlanCtc();
+  }
+  private rebuildPlanCtc() { this.planCtc = [[], []]; OFFSETS.forEach((o, i) => { for (let k = 0; k < PLAN_PTS.length; k += 5) this.planCtc[i].push(this.dist(PLAN_PTS[k], o)); }); }
+  /** use a redrawn plan: the station table, the kickoff and the build rate all follow it */
+  replan(w: [number, number][]) {
+    const st = planFromWaypoints(w); PLAN_PTS.length = 0; PLAN_PTS.push(...st);
+    const s = planStats(st); PLAN.inc = st[0].inc; PLAN.bur = Math.max(0.2, s.maxDls); PLAN.kop = Number.isFinite(s.kop) ? s.kop : 99999;
+    this.wps = w.map((p) => [p[0], p[1]] as [number, number]); this.rebuildPlanCtc();
+    return s;
   }
   get sliding() { return this.mode !== "rotate"; }
   get bit(): Station { return this.path[this.path.length - 1]; }

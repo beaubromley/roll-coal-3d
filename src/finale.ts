@@ -18,7 +18,7 @@ export class Finale {
   /** small kickers along the run-up: each is a wedge up, then a drop */
   private readonly KICKERS: [number, number, number][] = [[70, 84, 1.2], [118, 134, 1.6], [166, 184, 2.0]];
   built = false; arrived = false; drawDone = false;
-  mode: "off" | "launch" | "walk" | "drive" | "site" = "off";
+  mode: "off" | "launch" | "walk" | "drive" | "site" | "run" = "off";
   armPos = v3(4000, 1.2, 4018);
   private arm!: TransformNode; private wheels: TransformNode[] = []; private thrustFlames: Mesh[] = [];
   private d = { x: 0, z: 0, y: 0, yaw: 0, speed: 0, vy: 0, fuel: 1, thrusting: false, onRamp: false };
@@ -37,6 +37,12 @@ export class Finale {
   earth: Mesh | null = null;
   private derrick: Mesh[] = [];
   private bear: Human | null = null; private lev: Human | null = null;
+  // the run
+  runOn = false; runDone = false; private runT = 0; private blastT = 0; private stun = 0; private blasts: { x: number; z: number; t: number; mark: Mesh; ball: Mesh | null; mat: StandardMaterial | null; boomed: boolean }[] = []; private cracks = false;
+  get harryRunning() { return this.runOn; }
+  get harryHuman() { return this.harry; }
+  holePos(): Vector3 { return v3(this.O.x, 1, this.O.z + this.SITE_Z); }
+  shipPos(): Vector3 { return this.freedom ? this.freedom.position.clone() : v3(this.O.x + 92, 0, this.O.z + this.SITE_Z - 100); }
 
   constructor(g: any) {
     this.g = g;
@@ -88,9 +94,8 @@ export class Finale {
     $("fade").style.background = "#000"; $("fade").style.opacity = "0"; g.player.enabled = true; g.player.lock();
     g.ui.toast("THE DEBRIS FIELD", "Independence is down, miles short of the target");
     g.radio("nasa", "Independence, Independence, do you copy? You came down twenty-six miles from the site. We've lost the others.", 9000);
-    setTimeout(() => g.radio("bear", "A.J., we're alive. Me, you, and Lev. The Armadillo made it. It's right there in the wreck.", 9000), 5000);
-    setTimeout(() => g.radio("lev", "Is good. Is very good. Is only a little on fire.", 8000), 13000);
-    setTimeout(() => g.radio("harry", "A.J., it's iron under us, not ferrite. My rig's cooked. You've got the other Armadillo. Get over here, son.", 10000), 22000);
+    setTimeout(() => g.radio("harry", "A.J., you alive, son? It's iron under us, not ferrite, and I'm the only one of us who came down in one piece. The Armadillo made it. It's right there in the wreck.", 11000), 6000);
+    setTimeout(() => g.radio("harry", "My rig's cooked. You've got the other Armadillo. Get over here, son. Just you and me now.", 9000), 18000);
     done();
   }
 
@@ -140,7 +145,7 @@ export class Finale {
     // Harry's site, past the canyon, with the Freedom standing next to it
     g.buildAsteroidSite(ox, oz + this.SITE_Z);
     g.arm.console = v3(ox + 4, 1.8, oz + this.SITE_Z + 4.6);
-    const fr = g.rig.shuttleState.node.clone("freedom", null)!; fr.setEnabled(true); fr.position.set(ox + 34, 0.2, oz + this.SITE_Z - 12); fr.rotation.set(0, 0, 0); this.freedom = fr;
+    const fr = g.rig.shuttleState.node.clone("freedom", null)!; fr.setEnabled(true); fr.position.set(ox + 92, 0.2, oz + this.SITE_Z - 100); fr.rotation.set(0, 0, 0); this.freedom = fr;
     const hh = new Human(sc, { shirt: "#e07010", pants: "#d0d0d0", hat: null, skin: "#d9a77f", scale: 1.04 });
     hh.root.position.set(ox + 2.5, 0.5, oz + this.SITE_Z + 5.5); hh.root.rotation.y = Math.PI; g.armCrew.push(hh); this.harry = hh;
     for (const h of g.armCrew as Human[]) h.setSuit(true);
@@ -225,10 +230,8 @@ export class Finale {
     // A.J. takes the wheel (front left), Bear rides shotgun, Lev squeezes in the back: all seated inside the cab
     const seat = (h: Human, x: number, z: number) => { h.root.parent = this.arm; h.root.position.set(x, 1.6, z); h.root.rotation.set(0, 0, 0); h.seated = true; h.root.setEnabled(true); };
     seat(g.player.body, -0.62, 2.35); g.player.bodyHold = true; g.player.body.root.setEnabled(true);
-    if (this.bear) seat(this.bear, 0.62, 2.35); if (this.lev) seat(this.lev, 0, 0.9);
     g.ui.toast("ARMADILLO", "W gas · A/D steer · SPACE thrusters, on the ground for a boost or in the air for lift");
-    g.radio("bear", "Get in, Lev! A.J., there's a canyon up ahead. Hit the ramp as fast as she'll go and light the thrusters!", 9000);
-    g.radio("lev", "In Russia, canyon jumps YOU.", 7000);
+    g.radio("harry", "There's a canyon between us, A.J. Hit that ramp as fast as she'll go and light the thrusters!", 9000);
   }
 
   private driveStep(dt: number) {
@@ -320,38 +323,110 @@ export class Finale {
     setTimeout(() => { $("fade").style.transition = "opacity .6s"; $("fade").style.opacity = "0"; $("fade").style.background = "#000"; }, 260);
     g.radio("max", "HARRY! The rig's going up! The gas, it's — I can't hold her —", 6000);
     setTimeout(() => g.radio("harry", "Max! MAX! …Oh, God. Keep drilling, boys. Keep drilling.", 8000), 4200);
-    g.arm.bit = Math.max(10, g.arm.bit - 35); g.arm.pauseT = 4;
+    g.sim.hit(25); g.sim.s.bit = Math.max(25, g.sim.s.bit - 30); g.sim.s.stallT = Math.max(g.sim.s.stallT, 6);
   }
 
-  /** at 800 ft: the storm smashes the remote detonator, someone must stay behind, and the straws are rigged */
+  /** debris from the storm: a thump, a pressure spike and a bit of motor damage */
+  debrisHit() {
+    const g = this.g;
+    this.shakeAmt = Math.max(this.shakeAmt, 0.55); g.sfx.thud();
+    g.sim.hit(6);
+    g.radio("harry", ["Debris! Check your motor, A.J.!", "That one rang the whole rig. Watch your pressure.", "Rock's coming down on the site. Keep her turning.", "Storm's on us. Stay on the console, son."][(Math.random() * 4) | 0], 5000);
+  }
+
+  /** at 800 ft the storm smashes the remote detonator: the bomb goes down by hand, and then it is a run for the ship */
   detonatorFails() {
     const g = this.g;
     this.shakeAmt = 0.7; g.sfx.horn();
     g.ui.toast("ASTEROID STORM", "Debris is hitting the site");
-    g.radio("nasa", "Harry, you've hit eight hundred! But the storm — we've lost the remote detonator signal.", 8000);
-    setTimeout(() => this.say("harry", "The circuit's smashed. Somebody has to stay behind and trigger the bomb by hand. Nobody likes it. We draw straws.", [
-      { label: "Take the left straw", run: () => this.straw() }, { label: "Take the middle straw", run: () => this.straw() }, { label: "Take the right straw", cls: "alt", run: () => this.straw() },
-    ], "The Straw Draw"), 3200);
+    g.radio("nasa", "Harry, you've hit eight hundred! But the storm has smashed the remote detonator signal.", 8000);
+    setTimeout(() => g.radio("harry", "Then we do it the old way, A.J. The bomb goes down the hole by hand, and the second it does, we run for the Freedom. Get over to the hole!", 11000), 3200);
   }
-  private straw() {
+  /** the bomb is down: sprint for the Freedom while the asteroid comes apart round you */
+  startRun() {
     const g = this.g;
-    this.say("chick", "Short straw. It's A.J.'s. …Kid, I'm sorry.", [{ label: "…Okay.", run: () => {
-      this.say("harry", "Hold on. I'll take A.J. down and help him set it. He's never done this by hand.", [{ label: "Follow Harry to the airlock", run: () => this.airlock() }], "Harry");
-    } }], "The Straw Draw");
+    this.mode = "run"; this.runOn = true; this.runDone = false; this.runT = 42; this.blastT = 1.2; this.stun = 0; this.clearBlasts();
+    g.player.speedMul = 1; this.hud.style.display = "block"; this.shakeAmt = 0.8; g.sfx.horn(); g.sfx.thud();
+    if (this.harry) { this.harry.root.setEnabled(true); this.harry.root.position.set(this.O.x + 2.5, 0.5, this.O.z + this.SITE_Z + 4); }
+    g.ui.toast("BOMB ARMED", "Run for the Freedom");
+    g.radio("harry", "Bomb's down and the timer's live! RUN, A.J.! Straight at the ship, don't stop for anything!", 8000);
+    if (!this.cracks) { this.cracks = true; this.buildCracks(); }
   }
-  private airlock() {
+  private buildCracks() {
+    const g = this.g, sc = g.scene, a = this.holePos(), b = this.shipPos(), m = new StandardMaterial("crackm", sc); m.emissiveColor = Color3.FromHexString("#ff5a14"); m.diffuseColor = Color3.Black(); m.disableLighting = true;
+    for (let i = 0; i < 26; i++) {
+      const t = 0.06 + (i / 26) * 0.9, cx = a.x + (b.x - a.x) * t + (Math.random() - 0.5) * 30, cz = a.z + (b.z - a.z) * t + (Math.random() - 0.5) * 30;
+      const c = MeshBuilder.CreateBox("crack", { width: 0.35 + Math.random() * 0.4, height: 0.04, depth: 6 + Math.random() * 10 }, sc); c.material = m; c.position.set(cx, 0.05, cz); c.rotation.y = Math.random() * 3; c.isPickable = false;
+    }
+  }
+  private clearBlasts() { for (const bl of this.blasts) { bl.mark.dispose(); bl.ball?.dispose(); bl.mat?.dispose(); } this.blasts = []; }
+  private spawnBlast(x: number, z: number) {
+    const sc = this.g.scene, mark = MeshBuilder.CreateDisc("bmark", { radius: 5, tessellation: 28 }, sc), mat = new StandardMaterial("bmm", sc);
+    mat.emissiveColor = Color3.FromHexString("#ff2a10"); mat.diffuseColor = Color3.Black(); mat.disableLighting = true; mat.alpha = 0.5; mark.material = mat;
+    mark.rotation.x = Math.PI / 2; mark.position.set(x, 0.08, z); mark.isPickable = false;
+    this.blasts.push({ x, z, t: 0, mark, ball: null, mat, boomed: false });
+  }
+  private runStep(dt: number) {
+    const g = this.g, p = g.player, ship = this.shipPos(), px = p.pos.x, pz = p.pos.z;
+    let dx = ship.x - px, dz = ship.z - pz; const dist = Math.hypot(dx, dz) || 1; dx /= dist; dz /= dist;
+    this.runT -= dt; this.stun = Math.max(0, this.stun - dt); p.speedMul = this.stun > 0 ? 0.3 : 1;
+    this.shakeAmt = Math.max(this.shakeAmt, 0.12);
+    // blasts: marked on the ground first, then they go off
+    this.blastT -= dt;
+    if (this.blastT <= 0 && dist > 16) {
+      this.blastT = 0.65 + Math.random() * 0.7;
+      const ahead = 8 + Math.random() * 20, side = (Math.random() - 0.5) * 18;
+      this.spawnBlast(px + dx * ahead - dz * side, pz + dz * ahead + dx * side);
+    }
+    for (const bl of this.blasts) {
+      bl.t += dt;
+      if (!bl.boomed) {
+        bl.mark.visibility = 0.35 + 0.4 * Math.abs(Math.sin(bl.t * 16));
+        if (bl.t >= 0.95) {
+          bl.boomed = true; bl.mark.visibility = 0;
+          const ball = MeshBuilder.CreateSphere("bball", { diameter: 2, segments: 10 }, g.scene), bm = new StandardMaterial("bbm", g.scene); bm.emissiveColor = Color3.FromHexString("#ff9a30"); bm.diffuseColor = Color3.Black(); bm.disableLighting = true; bm.alpha = 0.9;
+          ball.material = bm; ball.position.set(bl.x, 1.2, bl.z); ball.isPickable = false; bl.ball = ball; bl.mat = bm;
+          const d = Math.hypot(px - bl.x, pz - bl.z);
+          this.shakeAmt = Math.max(this.shakeAmt, Math.min(0.9, 0.2 + 22 / (d + 6)));
+          if (d < 40) g.sfx.thud();
+          if (d < 5.2) { this.stun = 1.3; p.vel.y = 5; g.sfx.bad(); if (Math.random() < 0.5) g.radio("harry", ["A.J.! Get up! GET UP!", "Keep moving, son! Keep moving!", "Don't look back! RUN!"][(Math.random() * 3) | 0], 3500); $("fade").style.transition = "opacity .05s"; $("fade").style.background = "#ffb060"; $("fade").style.opacity = "0.7"; setTimeout(() => { $("fade").style.transition = "opacity .5s"; $("fade").style.opacity = "0"; $("fade").style.background = "#000"; }, 120); }
+        }
+      } else if (bl.ball && bl.mat) {
+        const k = Math.min(1, (bl.t - 0.95) / 0.55); bl.ball.scaling.setAll(1 + k * 4.2); bl.mat.alpha = 0.9 * (1 - k);
+        if (k >= 1) { bl.ball.dispose(); bl.mat.dispose(); bl.mark.dispose(); bl.ball = null; bl.mat = null; bl.t = -999; }
+      }
+    }
+    this.blasts = this.blasts.filter((b) => b.t > -900);
+    // Harry runs just ahead of you, a little to the side
+    if (this.harry) {
+      const tx = px + dx * 5 - dz * 2.6, tz = pz + dz * 5 + dx * 2.6, hx = this.harry.root.position.x, hz = this.harry.root.position.z, hl = Math.hypot(tx - hx, tz - hz) || 1, sp = Math.min(hl, 11 * dt);
+      this.harry.root.position.x += ((tx - hx) / hl) * sp; this.harry.root.position.z += ((tz - hz) / hl) * sp; this.harry.root.rotation.y = Math.atan2(dx, dz);
+    }
+    const left = Math.max(0, this.runT);
+    this.hud.innerHTML = `<div style="color:#ff6a3d;font-size:15px">THE ASTEROID IS COMING APART</div><div style="font-size:26px">T-MINUS ${left.toFixed(0).padStart(2, "0")} <small style="font-size:12px;color:#9fb4c8">s</small></div>`
+      + `<div style="font-size:12px;color:#9fb4c8;font-weight:600;margin-top:4px">SHIFT sprint · SPACE jump · ${Math.round(dist)} m to the Freedom · stay out of the red circles</div>`;
+    if (dist < 7) { this.runWin(); return; }
+    if (this.runT <= 0) { this.runFail(); }
+  }
+  private runFail() {
     const g = this.g;
-    $("fade").style.transition = "opacity .8s"; $("fade").style.background = "#000"; $("fade").style.opacity = "1";
-    setTimeout(() => {
-      this.say("harry", "A.J. — look at me. You take care of my little girl. You're the son I never had.", [{ label: "Harry, what are you —", run: () => {
-        this.say("aj", "HARRY! HARRY, NO! Open the hatch! HARRY!", [{ label: "Watch Freedom lift off", run: () => this.liftoff() }], "The Airlock");
-      } }], "The Surface");
-    }, 900);
+    this.clearBlasts(); this.runT = 42; this.stun = 0; g.player.speedMul = 1;
+    g.ui.toast("TOO SLOW", "The timer rolled back. Run again, A.J.");
+    g.radio("harry", "The Freedom's engines are still hot. We got lucky, kid. Go again, and GO!", 7000);
+    g.player.teleport(this.O.x, 0.6, this.O.z + this.SITE_Z - 8, Math.atan2(this.shipPos().x - this.O.x, this.shipPos().z - (this.O.z + this.SITE_Z)));
+    if (this.harry) this.harry.root.position.set(this.O.x + 3, 0.5, this.O.z + this.SITE_Z - 4);
   }
+  private runWin() {
+    const g = this.g;
+    this.runOn = false; this.runDone = true; this.mode = "site"; this.hud.style.display = "none"; this.clearBlasts(); g.player.speedMul = 1; this.shakeAmt = 0.4;
+    g.player.enabled = false; g.player.unlock();
+    this.say("harry", "Go on, A.J. The timer's stuck on the manual trigger. Somebody's got to hold the button. You take care of my little girl. You're the son I never had.", [{ label: "HARRY! NO!", run: () => this.liftoff() }], "The Freedom");
+  }
+
   private liftoff() {
     const g = this.g, fr = this.freedom!;
     // you are on the Freedom as it climbs away; Harry is left beside the drill
-    g.player.teleport(this.O.x + 40, 0.6, this.O.z + this.SITE_Z - 50, Math.atan2(-6, 38)); g.player.third = false; g.player.pitch = -0.2;
+    g.player.teleport(fr.position.x - 40, 0.6, fr.position.z + 22, Math.atan2(40, -22)); g.player.third = false; g.player.pitch = -0.2; g.player.speedMul = 1;
     $("fade").style.transition = "opacity 1.2s"; $("fade").style.opacity = "0";
     if (this.harry) { this.harry.root.position.set(this.O.x + 6, 0.5, this.O.z + this.SITE_Z + 6); this.harry.root.setEnabled(true); }
     this.freedomUp = true; this.freedomV = 0; g.sfx.thud(); this.shakeAmt = 0.35;
@@ -383,6 +458,7 @@ export class Finale {
     const g = this.g;
     if (this.mode === "off") return;
     if (this.mode === "drive") this.driveStep(dt);
+    if (this.mode === "run") this.runStep(dt);
     // camera
     const p = g.player, cam = p.cam;
     if (this.mode === "drive") {

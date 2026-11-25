@@ -114,6 +114,7 @@ export class Dd {
 
   /** run every frame (real seconds): the hole grows with the feet drilled */
   update(dt: number) {
+    if (this.g.astMode) return;   // on the asteroid nobody is steering
     const sim = this.g.sim, s = sim.s, drilling = s.mode === "drilling" && s.rop > 0;
     sim.ropMul = drilling ? (this.mode === "slide" ? 0.6 : this.mode === "osc" ? 0.8 : 1) : 1;
     // the tool face follows what the driller asked for, wandering with the weight on the bit (an oscillating slide keeps it steadier)

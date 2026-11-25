@@ -27,7 +27,16 @@ export const WELL = {
   gasPocket: { start: 7380, end: 7440, pore: 12.3 },
 };
 
-export const formationAt = (d: number) => FORMATIONS.find((f) => d < f.limit) ?? FORMATIONS[FORMATIONS.length - 1];
+let formOverride: ((d: number) => Formation) | null = null;
+/** the rock under the bit: the Delaware Basin, or (in the finale) the asteroid */
+export const formationAt = (d: number): Formation => (formOverride ? formOverride(d) : FORMATIONS.find((f) => d < f.limit) ?? FORMATIONS[FORMATIONS.length - 1]);
+const ASTEROID: Formation[] = [
+  { name: "Asteroid Crust", limit: 150, color: "#6b5d52", hardness: 0.5, abrasiveness: 0.2 },
+  { name: "Solid Iron Plate", limit: 400, color: "#8a8f98", hardness: 1.1, abrasiveness: 0.5 },
+  { name: "Iron-Nickel Vein", limit: 460, color: "#c9a14a", hardness: 1.9, abrasiveness: 0.8 },
+  { name: "Iron Plate", limit: 560, color: "#8a8f98", hardness: 1.2, abrasiveness: 0.6 },
+  { name: "Vibranium", limit: 99999, color: "#7a4fd0", hardness: 1.5, abrasiveness: 0.9 },
+];
 
 export function poreAt(d: number): number {
   if (d >= WELL.gasPocket.start && d < WELL.gasPocket.end) return WELL.gasPocket.pore;
@@ -103,6 +112,9 @@ export class Sim {
   private dist = 0;
   /** ROP multiplier from the directional driller: sliding and oscillating cost penetration rate */
   ropMul = 1;
+  /** the finale: the same well engine, drilling 800 ft of asteroid */
+  astMode = false; private ropBase = 1;
+  private get td() { return this.astMode ? 800 : WELL.td; }
   private ropN = 0;
   private killClock = 0; private dppQ: { t: number; v: number }[] = [];   // a slow random wobble on the penetration rate
   /** bit bounce (0..1): too much weight for the rock sets the string and the motor hammering; shows on the recorder and in the diff pressure and torque */
@@ -198,6 +210,15 @@ export class Sim {
     return null;
   }
 
+  /** start the asteroid hole: surface, a fresh bit and motor, and the rock changes with depth */
+  beginAsteroid() {
+    const s = this.s; this.astMode = true; formOverride = (d) => ASTEROID.find((f) => d < f.limit) ?? ASTEROID[ASTEROID.length - 1];
+    this.ropBase = 5; s.depth = 0.1; s.mode = "drilling"; s.paused = false; s.wob = 0; s.wobTarget = 18; s.bit = 100; s.motor = 100; s.stallT = 0; s.needTrip = false;
+    s.kick.active = false; s.kick.shut = false; s.kick.alarm = false; s.kick.gain = 0; s.fuel = 1e9; s.flow = s.flowTarget = 700; s.mw = s.mwTarget = 9; s.pit = 600; s.auto.on = false; this.dist = 0; this.hold = null;
+  }
+  /** debris hits the rig: a pressure spike and some motor damage */
+  hit(motor: number) { this.spike = 1.35; this.s.motor = Math.max(0, this.s.motor - motor); }
+
   startCasing() { const s = this.s; s.mode = "casing"; s.casing = { progress: 0, phase: "run" }; }
 
   step(dt: number) { // dt in game minutes
@@ -206,7 +227,7 @@ export class Sim {
     s.t += dt;
     // spread cost
     s.cost += (WELL.spreadPerDay / 1440) * dt;
-    if (s.fuel > 0) s.fuel -= (s.mode === "idle" ? 1.2 : 2.6) * dt;
+    if (s.fuel > 0 && !this.astMode) s.fuel -= (s.mode === "idle" ? 1.2 : 2.6) * dt;
     if (s.fuel <= 0 && s.mode !== "idle") { s.fuel = 0; this.events.push({ type: "blackout" }); }
     if (!this.accumDead && s.accum < 3000) s.accum = Math.min(3000, s.accum + 15 * dt);
 
@@ -220,7 +241,7 @@ export class Sim {
     if (f.name !== this.lastForm) { this.lastForm = f.name; this.events.push({ type: "formation", name: f.name }); }
 
     // ---- pressure window ----
-    const circulating = s.mode === "drilling" || s.mode === "connection";
+    const circulating = (s.mode === "drilling" || s.mode === "connection") && !this.astMode;
     if (circulating) {
       const eff = this.mwEff, pore = this.pore;
       if (!s.kick.active && eff < pore) {
@@ -300,20 +321,20 @@ export class Sim {
         s.motor = Math.max(0, s.motor - (s.dp < 1000 ? 0 : s.dp >= 1850 ? 0.25 : s.dp >= 1350 ? 0.05 : 0.01) * dt);
         if (s.motor <= 0 && !s.needTrip) { s.needTrip = true; this.events.push({ type: "motorDead" }); }
         let rop = eff > 0 ? (eff * 6) / f.hardness : 0;
-        rop = Math.min(600, rop * fac * this.ropMul);
+        rop = Math.min(600, rop * fac * this.ropMul * this.ropBase);
         this.ropN = this.ropN * 0.93 + (Math.random() - 0.5) * 0.11;
         if (s.auto.on && s.auto.limit === "ROP") rop = Math.min(rop, s.auto.rop);   // held at the limit: dead flat
         else rop *= 1 + this.ropN * (1 + this.bounce);                                 // otherwise it wanders around with the rock and the bit
         if (s.needTrip || s.fuel <= 0) rop = 0;
         s.rop = rop;
         const dd = (rop / 60) * dt;
-        s.depth = Math.min(this.hold ?? WELL.td, s.depth + dd); s.stats.feetDrilled += dd;
+        s.depth = Math.min(this.hold ?? this.td, s.depth + dd); s.stats.feetDrilled += dd;
         this.dist += dd;
         const wear = 2.4 * Math.pow(Math.max(s.wob, 0) / 20, 2.2) * f.abrasiveness * (dd > 0 ? 1 : 0);
         s.bit = Math.max(0, s.bit - wear * (dt / 60) * (rop > 0 ? 1 : 0));
         if (s.bit < 8 && !s.needTrip) { s.needTrip = true; this.events.push({ type: "bitDead" }); }
         if (this.dist >= WELL.stand) { this.dist = 0; s.mode = "connection"; s.connTimer = 3; s.stats.connections++; this.events.push({ type: "connection" }); }
-        if (s.depth >= WELL.td) { s.mode = "idle"; s.rop = 0; this.events.push({ type: "td" }); }
+        if (s.depth >= this.td) { s.mode = "idle"; s.rop = 0; if (!this.astMode) this.events.push({ type: "td" }); }
         s.spp = 1500 + s.flow * 0.9 + s.wob * 8 + (s.depth / 8500) * 400;
         break;
       }

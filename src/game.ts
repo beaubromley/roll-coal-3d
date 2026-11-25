@@ -3,7 +3,7 @@ import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
 import { drawAutoBars } from "./recorder";
-import { drawEdr, type ScreenData } from "./screens";
+import { drawEdr, Screens, type ScreenData } from "./screens";
 import { Dd, OFFSETS } from "./dd";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
@@ -204,7 +204,11 @@ export class Game {
   inc(n = 1, why = "") { this.incidents += n; this.flags.lastIncDay = clockString(this.sim.s.t).day; this.rig.setDaysSince(0); this.approval = clamp(this.approval - 0.3 * n, 0, 5); this.sfx.bad(); if (why) this.ui.toast("INCIDENT", why); }
   gain(a = 0, m = 0) { this.approval = clamp(this.approval + a, 0, 5); this.morale = clamp(this.morale + m, 0, 100); }
   say(who: Who, text: string, choices?: Choice[], eyebrow?: string, opts?: { closable?: boolean }) { this.player.enabled = false; this.player.unlock(); this.ui.say(who, text, choices, eyebrow, opts); this.sfx.radio(); }
-  radio(who: Who, text: string, ms?: number) { this.ui.radio(who, text, ms); this.sfx.radio(); }
+  radio(who: Who, text: string, ms?: number) {
+    // on the asteroid it is just you and Harry on the radio (and Houston)
+    if (this.astMode && !["harry", "nasa"].includes(who as string)) who = "harry" as Who;
+    this.ui.radio(who, text, ms); this.sfx.radio();
+  }
   open(html: string, o: { wide?: boolean; live?: boolean; tick?: () => void } = {}) {
     this.player.enabled = false; this.player.unlock(); this.live = !!o.live;
     const p = this.ui.panel(html, { wide: o.wide, tick: o.tick });
@@ -422,7 +426,7 @@ export class Game {
   }
   openCabin(view: "all" | "params" | "trends" | "pits" | "alarms" = "all") {
     // the chair and the console are the same thing: opening the console sits you in the driller's chair
-    if (!this.veh.isSeated(0) && !this.veh.riding) this.veh.sit(0);
+    if (!this.astMode && !this.veh.isSeated(0) && !this.veh.riding) this.veh.sit(0);
     const s = this.sim.s;
     const render = () => {
       const k = s.kick, a = s.auto;
@@ -510,7 +514,7 @@ export class Game {
       if (s.kill.stage === "flowcheck") btns.push(`<button class="b green" data-a="open">Flow check OK — open BOP & resume</button>`);
       if ((s.mode === "drilling" || s.mode === "connection") && !s.kick.active) btns.push(`<button class="b alt" data-a="trip">Trip for a new bit</button>`);
       if (s.depth >= WELL.td - 0.5 && s.mode === "idle") btns.push(`<button class="b green" data-a="casing">Run 9⅝″ casing & cement</button>`);
-      btns.push(`<button class="b alt" data-a="flip">Move to the DD seat (Tab)</button>`);
+      if (!this.astMode) btns.push(`<button class="b alt" data-a="flip">Move to the DD seat (Tab)</button>`);
       btns.push(`<button class="b alt" data-close>Close</button>`);
       const box = q("cbtn"); box.innerHTML = btns.join("");
       this.closeBtn(p);
@@ -1052,14 +1056,20 @@ export class Game {
     }
     const pipe = MeshBuilder.CreateCylinder("apipe", { diameter: 0.3, height: 1, tessellation: 8 }, sc); pipe.material = steel; this.arm.pipe = pipe; pipe.position.set(ox, 10, oz); pipe.scaling.y = 20;
     const topd = MeshBuilder.CreateBox("atd", { width: 1.2, height: 2, depth: 1.2 }, sc); topd.material = orange; topd.position.set(ox, 22, oz); this.arm.rig = topd;
-    const con = MeshBuilder.CreateBox("acon", { width: 3, height: 1.2, depth: 1.2 }, sc); con.material = steel; con.position.set(ox + 4, 1.1, oz + 3);
-    const scr = MeshBuilder.CreateBox("ascr", { width: 2.6, height: 0.8, depth: 0.1 }, sc); const sm = new StandardMaterial("asscr", sc); sm.emissiveColor = Color3.FromHexString("#8a1f10"); sm.diffuseColor = Color3.Black(); scr.material = sm; scr.position.set(ox + 4, 1.95, oz + 3.65);
-    this.colliders.push({ x0: ox + 2.5, x1: ox + 5.5, y0: 0.5, y1: 1.7, z0: oz + 2.4, z1: oz + 3.6 });
+    // the driller's station: a desk, a chair and three live monitors (the same EDR, autodriller and parameters screens as the main rig)
+    const desk = MeshBuilder.CreateBox("acon", { width: 4.2, height: 1.0, depth: 1.1 }, sc); desk.material = steel; desk.position.set(ox + 4, 0.75, oz + 3);
+    this.colliders.push({ x0: ox + 1.9, x1: ox + 6.1, y0: 0.5, y1: 1.5, z0: oz + 2.4, z1: oz + 3.6 });
+    const chair = MeshBuilder.CreateBox("achair", { width: 0.8, height: 0.9, depth: 0.8 }, sc); chair.material = orange; chair.position.set(ox + 4, 0.95, oz + 4.3);
+    this.astScreens = new Screens(sc);
+    (["params", "edr", "auto"] as const).forEach((k, i) => {
+      const tex = this.astScreens!.make(k as any, false, [640, 400]);
+      const m = new StandardMaterial("astscr" + i, sc); m.emissiveTexture = tex; m.diffuseColor = Color3.Black(); m.specularColor = Color3.Black(); m.backFaceCulling = false;
+      const pl = MeshBuilder.CreatePlane("ascr" + i, { width: 1.5, height: 0.94 }, sc); pl.material = m; pl.position.set(ox + 2.6 + i * 1.6, 2.0, oz + 2.6); pl.rotation.y = Math.PI;
+      const fr = MeshBuilder.CreateBox("asfr" + i, { width: 1.6, height: 1.04, depth: 0.08 }, sc); fr.material = steel; fr.position.set(ox + 2.6 + i * 1.6, 2.0, oz + 2.56);
+    });
     this.arm.console = v3(ox + 4, 1.8, oz + 4.6);
-    // crew in orange suits
-    const crew: [number, number, string][] = [[-3, 3, "chick"], [3, 3.5, "bear"], [-4, -2, "rockhound"]];
-    for (const [x, z] of crew) { const h = new Human(sc, { shirt: "#e07010", pants: "#d0d0d0", hat: "#f2f2f2", skin: "#d9a77f" }); h.root.position.set(ox + x, 0.5, oz + z); h.root.rotation.y = Math.PI; this.armCrew.push(h); }
   }
+  astScreens: Screens | null = null;
   armCrew: Human[] = [];
   finale!: Finale;
   colliders: import("./builder").AABB[] = [];
@@ -1088,54 +1098,40 @@ export class Game {
     }, 1800);
   }
   astMode = false;
+  /** the asteroid console is the real driller's console on the real well engine, just with a different hole */
   openArm() {
-    const a = this.arm;
-    if (a.depth < 800) { this.flags.armDrilling = true; a.depth = Math.max(a.depth, 0.1); }
-    const render = () => {
-      const f = this.armFormation(a.depth);
-      return `<div class="eyebrow">ARMAGEDDON · Asteroid Drill</div><h2>${a.bombed ? "Detonation" : "Drilling Console"}</h2>
-        ${this.statRow("Depth", a.depth.toFixed(0) + " / 800 ft")}${this.statRow("Formation", f.name)}${this.statRow("Bit health", Math.round(a.bit) + "%", a.bit < 25 ? "bad" : "")}
-        ${a.depth >= 800 ? `<div class="note">Eight hundred feet. TD.</div>` : `<div class="hint">WOB: <b id="aw">${a.wob}</b> klbs — iron and vibranium are hard on a bit. Watch the bit health.</div><input type="range" id="awob" min="0" max="80" value="${a.wob}"/>`}
-        <div class="btns"><button class="b alt" data-close>Close</button></div>`;
-    };
-    const p = this.open(render(), { live: false });
-    const wire = () => {
-      this.closeBtn(p);
-      const w = p.querySelector<HTMLInputElement>("#awob"); if (w) w.oninput = () => { a.wob = Number(w.value); p.querySelector("#aw")!.textContent = w.value; };
-    };
-    wire();
+    if (!this.sim.astMode) { this.sim.beginAsteroid(); this.flags.armDrilling = true; this.stormT = 30; this.radio("harry", "That's it, A.J. Same as any hole. Crust first, then iron. Watch your diff pressure and your torque, and don't cook the bit. Eight hundred feet.", 11000); }
+    this.openCabin("all");
   }
+  stormT = 30;
   armUpdate(dt: number) {
-    const a = this.arm;
-    if (!this.astMode || a.bombed || this.flags.armTD) return;
-    if (a.pauseT > 0) { a.pauseT -= dt; return; }
-    if (a.depth >= 560 && !this.flags.armGas) { this.flags.armGas = true; this.ui.closePanel(); this.finale.gasPocket(); return; }
-    if (a.depth >= 800 && !this.flags.armTD) { this.flags.armTD = true; this.ui.closePanel(); this.finale.detonatorFails(); return; }
-    if (a.depth > 0 || this.flags.armDrilling) {
-      const f = this.armFormation(a.depth);
-      const rop = Math.max(2, (a.wob * 6 / f.hard) * (0.35 + 0.65 * a.bit / 100)) * 1.0; // ft/min-ish
-      a.depth = Math.min(800, a.depth + rop * dt * 1.2);
-      a.bit = Math.max(0, a.bit - 1.3 * Math.pow(a.wob / 20, 2.2) * f.abr * dt * 0.35);
-      if (a.bit <= 0) { a.bit = 100; this.radio("rockhound", "Bit's cooked! Swapped it for a new one. Don't tell the President.", 6000); this.sim.addCost(50000); }
+    const a = this.arm, s = this.sim.s;
+    if (!this.astMode || !this.sim.astMode) return;
+    a.depth = s.depth;
+    if (this.astScreens && this.scrData && a.site && Math.hypot(this.player.pos.x - a.console.x, this.player.pos.z - a.console.z) < 40) this.astScreens.update(this.scrData);
+    if (a.bombed || this.flags.armTD) return;
+    if (s.depth >= 560 && !this.flags.armGas) { this.flags.armGas = true; this.finale.gasPocket(); }
+    if (s.depth >= 799.5 && !this.flags.armTD) { this.flags.armTD = true; this.ui.closePanel(); this.finale.detonatorFails(); return; }
+    for (const d of [50, 100, 150, 250, 300, 400, 460, 500, 600, 625, 750, 790]) {
+      if (s.depth >= d && !a.said.has(d)) { a.said.add(d); this.armSpeech(d); }
     }
-    for (const d of [50, 100, 150, 200, 250, 300, 400, 500, 550, 600, 625, 750, 790]) {
-      if (a.depth >= d && !a.said.has(d)) { a.said.add(d); this.armSpeech(d); }
-    }
-    if (a.pipe && this.arm.site) { a.pipe.scaling.y = 20 + a.depth * 0.02; a.pipe.position.y = 10 - a.depth * 0.005; }
+    // the storm keeps throwing rock at the site
+    this.stormT -= dt;
+    if (this.stormT <= 0 && s.mode === "drilling") { this.stormT = 26 + Math.random() * 20; this.finale.debrisHit(); }
+    if (a.pipe && a.site) { a.pipe.scaling.y = 20 + a.depth * 0.02; a.pipe.position.y = 10 - a.depth * 0.005; }
   }
   armSpeech(d: number) {
     const L: Record<number, [Who, string, number?]> = {
-      50: ["harry", "That's the crust, A.J. Easy part. Keep the weight steady and let the bit do the work."],
-      100: ["chick", "You know, Harry, I swore I'd never drill again after that last one."],
-      150: ["harry", "You're into solid iron now, son. Watch the bit health. Too much weight and you'll cook it."],
-      200: ["bear", "You stick that drill in the ground, A.J., and you make it sing!"],
-      250: ["rockhound", "I'm not crazy, I'm just a little unwell."],
-      300: ["nasa", "Harry, the debris field is getting thicker on your side of the rock. Keep it moving."],
-      400: ["harry", "Four hundred feet. Halfway, kid. You drill like you've been doing it thirty years."],
-      500: ["rockhound", "Guess what guys, it's time to embrace the horror! Look, we've got front row tickets to the end of the earth!"],
-      550: ["chick", "Harry, you ever miss a depth?"],
-      600: ["harry", "Not once, Chick. Not once."],
-      625: ["harry", "I have been drilling holes in the earth for thirty years. And I have never, NEVER missed a depth that I have aimed for. And by God, I am not gonna miss this one — we will make 800 feet.", 11000],
+      50: ["harry", "That's the crust, A.J. Soft. Watch your diff pressure up here, it climbs fast in soft rock."],
+      100: ["harry", "You're drilling like you've been doing it thirty years, son."],
+      150: ["harry", "Solid iron now. Weight's harder to get, ROP's slower. Don't cook the bit."],
+      250: ["nasa", "Harry, the debris field is getting thicker on your side of the rock. Keep it moving."],
+      300: ["harry", "Halfway to the vein, kid. Keep an eye on your torque."],
+      400: ["harry", "Iron-nickel vein coming up. It'll fight you. Ease the weight and let her cut."],
+      460: ["harry", "Through the vein. Good hands, A.J."],
+      500: ["harry", "I've drilled holes in the earth for thirty years. This is the best one yet."],
+      600: ["harry", "Vibranium. Don't ask. It's hard, it's slow, and it's the last hundred feet that count."],
+      625: ["harry", "I have never, NEVER missed a depth that I have aimed for. And by God, I am not gonna miss this one. We will make 800 feet.", 11000],
       750: ["nasa", "Fifty feet to go, Harry. The storm is almost on top of you. Hurry."],
       790: ["harry", "Ten more feet, A.J. Hold her steady. Hold her steady…"],
     };
@@ -1237,6 +1233,7 @@ export class Game {
     if (!this.started || this.paused) return 0;
     if (this.ui.panelOpen && !this.live) return 0;
     if (this.sleeping) return 60;
+    if (this.astMode && this.sim.astMode && s.mode !== "tripping") return 6;   // the asteroid hole goes at a finale pace
     if (s.mode === "killing") return 1.0;             // circulating out the kick: about a minute, still slow enough to work the choke
     if (s.kick.alarm || s.mode === "shutin") return 0.7;
     if (s.mode === "tripping") return 8;
@@ -1301,7 +1298,7 @@ export class Game {
         if (l > 0.4) { dn.position.addInPlace(d.scale((7 * realDt) / l)); pushOutXZ(this.player.colliders, dn.position, 0, 0.8); dn.rotation.y = Math.atan2(d.x, d.z); }
       } else dn.rotation.y += Math.sin(this.realT * 0.7) * 0.003;
     }
-    this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, 0)); this.finale.update(realDt);
+    this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);
     if (this.asteroid) {
       this.asteroidT += realDt;                                            // (the rock itself stays put: only the tail flickers)
       this.asteroidTail.forEach((tl, i) => { const f = 1 + Math.sin(this.asteroidT * (3.1 + i * 0.9) + i) * 0.08 + (Math.random() - 0.5) * 0.05; tl.mesh.scaling.set(f, 1, f); });

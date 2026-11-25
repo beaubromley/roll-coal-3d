@@ -270,7 +270,9 @@ export function defineMissions(g: Game) {
       { text: "Get in the Armadillo", at: () => g.finale.armPos, label: "Climb into the Armadillo", r: 5, act: (done) => { g.finale.startDrive(); done(); } },
       { text: "Drive to Harry's rig: hit the ramp fast and hold SPACE for thrusters to jump the canyon", at: () => g.finale.siteTarget(), watch: () => g.finale.arrived },
       { text: "Drill 800 feet at the console", at: () => g.arm.console, label: "Take the driller's seat", r: 4, act: () => g.openArm(), watch: () => g.arm.depth >= 799.5 },
-      { text: "The detonator is smashed. Draw straws.", watch: () => !!g.flags.finish },
+      { text: "The detonator is smashed. Drop the bomb down the hole by hand", at: () => g.finale.holePos(), label: "Drop the bomb", r: 6, act: (done) => { g.finale.startRun(); done(); } },
+      { text: "RUN to the Freedom!", at: () => g.finale.shipPos(), watch: () => g.finale.runDone || !!g.flags.finish },
+      { text: "Hold the button, Harry.", watch: () => !!g.flags.finish },
     ] });
 
   g.missionTotal = g.queue.length;

@@ -853,17 +853,51 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.blocker(cx - 0.95, 2.78, -25.5, cx + 0.95, 4.1, -20.5);
     b.slab("dsteel", cx - 0.95, 2.78, -25.5, cx + 0.95, 2.9, -20.5);                                 // skid
     for (const sx of [-0.72, 0.72]) for (const sz of [-21.4, -24.6]) b.cyl("black", cx + sx, 3.05, sz, 0.18, 0.3, { tess: 8 });   // rubber mounts
-    for (const s of [-1, 1]) b.slab("steel", cx + s * 0.88 - 0.05, 3.2, -25.3, cx + s * 0.88 + 0.05, 3.75, -21.0);   // basket sides
-    b.ramp("black", cx, 1.7, -21.0, 3.3, -25.3, 3.56, 0.06);                                        // screen deck, higher at the discharge end
-    for (let k = 0; k < 4; k++) { const zz = -21.4 - k * 1.0, yy = 3.3 + ((zz * -1 - 21.0) / 4.3) * 0.26 + 0.045; b.box("steel", cx, yy, zz, 1.5, 0.02, 0.05); }   // screen panel frames
+    // (the basket sides, the screen deck, its panel frames and the vibrators are built below as moving parts)
     b.slab("steel", cx - 0.85, 3.1, -20.95, cx + 0.85, 3.8, -20.45);                                 // possum belly (feed box)
     b.slab("dsteel", cx - 0.9, 3.8, -21.0, cx + 0.9, 3.86, -20.4);
     b.cyl("steel", cx, 3.55, -20.25, 0.38, 0.5, { axis: "z", tess: 12 });                           // inlet from the header
     b.slab("dsteel", cx - 0.95, 3.75, -23.45, cx + 0.95, 3.85, -22.95);                              // vibrator beam
-    for (const s of [-1, 1]) { b.cyl("orange", cx + s * 0.4, 4.05, -23.2, 0.3, 0.55, { axis: "x", tess: 12 }); b.cyl("steel", cx + s * 0.72, 4.05, -23.2, 0.36, 0.1, { axis: "x", tess: 12 }); }   // vibrator motors and weights
     b.ramp("steel", cx, 1.7, -25.3, 3.56, -27.6, 1.3, 0.05);                                        // discharge lip and chute to the cuttings pit
     for (const s of [-1, 1]) b.slab("steel", cx + s * 0.85 - 0.04, 1.3, -27.6, cx + s * 0.85 + 0.04, 3.2, -25.3);
   }
+  // the moving parts of each shaker: a basket on its rubber mounts (deck, sides, screen frames, vibrators) that shakes while the pumps are on, and cuttings that ride the deck across when drilling
+  const shakerNodes: TransformNode[] = [];
+  const cutMat = new StandardMaterial("cutm", scene); cutMat.diffuseColor = Color3.FromHexString("#5a4f45"); cutMat.specularColor = Color3.Black();
+  const cutSrc = MeshBuilder.CreateBox("cutsrc", { size: 1 }, scene); cutSrc.material = cutMat; cutSrc.isVisible = false; cutSrc.parent = rigRoot;
+  const SHX = [-16.6, -14.1, -11.6], DECK = { z0: -21.0, y0: 3.3, z1: -25.3, y1: 3.56 }, CHUTE_Z = -27.6, CHUTE_Y = 1.3;
+  SHX.forEach((cx) => {
+    const n = new TransformNode("shaker", scene); n.parent = rigRoot; n.position.set(cx, 0, 0); shakerNodes.push(n);
+    const mk = (m: Mesh, mat: string, x: number, y: number, z: number) => { m.material = b.getMat(mat); m.parent = n; m.position.set(x, y, z); m.isPickable = false; return m; };
+    const ang = Math.atan2(DECK.y1 - DECK.y0, DECK.z0 - DECK.z1), len = Math.hypot(DECK.z0 - DECK.z1, DECK.y1 - DECK.y0), zm = (DECK.z0 + DECK.z1) / 2, ym = (DECK.y0 + DECK.y1) / 2;
+    mk(MeshBuilder.CreateBox("deck", { width: 1.7, height: 0.1, depth: len }, scene), "black", 0, ym + 0.05, zm).rotation.x = ang;                                          // the screen deck, higher at the discharge end
+    for (const s of [-1, 1]) mk(MeshBuilder.CreateBox("bsk", { width: 0.1, height: 0.55, depth: len }, scene), "steel", s * 0.88, ym + 0.27, zm).rotation.x = ang;           // basket sides
+    for (let k = 0; k < 4; k++) { const zz = -21.4 - k * 1.0, yy = DECK.y0 + ((-zz - 21.0) / 4.3) * 0.26 + 0.11; mk(MeshBuilder.CreateBox("scr", { width: 1.5, height: 0.02, depth: 0.05 }, scene), "steel", 0, yy, zz); }   // screen panel frames
+    mk(MeshBuilder.CreateBox("vbeam", { width: 1.9, height: 0.1, depth: 0.5 }, scene), "dsteel", 0, 3.8, -23.2);
+    for (const s of [-1, 1]) { mk(MeshBuilder.CreateCylinder("vib", { diameter: 0.3, height: 0.55, tessellation: 12 }, scene), "orange", s * 0.4, 4.05, -23.2).rotation.z = Math.PI / 2; mk(MeshBuilder.CreateCylinder("vibc", { diameter: 0.36, height: 0.1, tessellation: 12 }, scene), "steel", s * 0.72, 4.05, -23.2).rotation.z = Math.PI / 2; }
+  });
+  type Cut = { m: ReturnType<typeof cutSrc.createInstance>; sh: number; u: number; x: number; s: number; on: boolean };
+  const cuts: Cut[] = []; for (let i = 0; i < 120; i++) { const m = cutSrc.createInstance("cut" + i); m.parent = rigRoot; m.isPickable = false; m.setEnabled(false); cuts.push({ m, sh: i % 3, u: 0, x: 0, s: 0.08, on: false }); }
+  let shAmp = 0, shT = 0, cutAcc = 0;
+  const shakerStep = (dt: number, f: RigFrame) => {
+    shAmp += ((f.pumpsOn ? 1 : 0) - shAmp) * Math.min(1, dt * 3); shT += dt;
+    shakerNodes.forEach((n, i) => { const a = shAmp; n.position.y = Math.sin(shT * 62 + i * 1.7) * 0.012 * a; n.position.x = SHX[i] + Math.sin(shT * 47 + i) * 0.006 * a; n.rotation.z = Math.sin(shT * 53 + i * 2) * 0.004 * a; });
+    const rop = f.screens ? f.screens.rop : 0, drilling = f.rotating && f.pumpsOn && rop > 1;
+    cutAcc += dt * (drilling ? 2 + rop * 0.018 : 0);     // cuttings per second, per shaker, grows with the penetration rate
+    while (cutAcc >= 1) {
+      cutAcc -= 1;
+      for (let sh = 0; sh < 3; sh++) { const c = cuts.find((q) => !q.on); if (!c) break; c.on = true; c.sh = sh; c.u = 0; c.x = (Math.random() - 0.5) * 1.3; c.s = 0.05 + Math.random() * 0.07; c.m.setEnabled(true); c.m.scaling.setAll(c.s); }
+    }
+    for (const c of cuts) {
+      if (!c.on) continue;
+      c.u += dt * (0.28 + 0.06 * Math.random());     // along the deck, then over the lip and down the chute
+      let z: number, y: number;
+      if (c.u < 0.78) { const k = c.u / 0.78; z = DECK.z0 + (DECK.z1 - DECK.z0) * k; y = DECK.y0 + (DECK.y1 - DECK.y0) * k + 0.13 + Math.abs(Math.sin(shT * 40 + c.x * 9)) * 0.03 * shAmp; }
+      else { const k = (c.u - 0.78) / 0.22; z = DECK.z1 + (CHUTE_Z - DECK.z1) * k; y = DECK.y1 + 0.1 + (CHUTE_Y - DECK.y1 - 0.1) * k * k; }
+      c.m.position.set(SHX[c.sh] + c.x * (c.u < 0.78 ? 1 : 0.5), y, z);
+      if (c.u >= 1) { c.on = false; c.m.setEnabled(false); }
+    }
+  };
   // cuttings pit under the chutes, with mounds where each chute lands
   const CP = { x0: -18.0, x1: -10.4, z0: -30.8, z1: -27.0 };
   b.slab("steel", CP.x0, 0, CP.z0, CP.x1, 0.2, CP.z1);
@@ -1539,6 +1573,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
       : f.connecting ? F + 26 : F + 2.6 + (1 - into / 93) * 24;
     tdY += (targetY - tdY) * Math.min(1, dt * (f.connecting || f.tripping ? 2.5 : 8));
     mudTex.uOffset += dt * 0.012; mudTex.vOffset += dt * 0.008;
+    shakerStep(dt, f);
     agiNodes.forEach((n, i) => { n.rotation.y += dt * (1.1 + i * 0.07); });
     td.position.y = tdY;
     { const inHole = f.connecting || f.tripping; slips.position.set(inHole ? 0 : 1.25, inHole ? F + 0.4 : F + 0.01, inHole ? 0 : -0.8); slips.rotation.y = inHole ? 0 : 0.7; }

@@ -176,7 +176,7 @@ engine.runRenderLoop(() => {
     screens: { depth: s.depth, wob: s.wob, rop: s.rop, spp: s.spp, flow: s.flow, pit: s.pit, mw: s.mw, mode: s.mode, rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
       kicking: s.kick.active, dd: game.dd, t: clock,
       wobSet: s.auto.on ? s.auto.wob : s.wobTarget,   // the set point, not the autodriller's moment-to-moment output
-      motor: s.motor, dp: s.dp, torque: s.torque, tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), bitDepth: s.mode === "casing" ? s.depth * (s.casing.phase === "run" ? s.casing.progress : 1) : sim.bitDepth, casing: s.mode === "casing" || s.mode === "done" ? s.casing.phase : "none",
+      motor: s.motor, dp: s.dp, torque: s.torque, tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), tripOut: s.mode === "tripping" ? sim.tripGoingOut : false, bitDepth: s.mode === "casing" ? s.depth * (s.casing.phase === "run" ? s.casing.progress : 1) : sim.bitDepth, casing: s.mode === "casing" || s.mode === "done" ? s.casing.phase : "none",
       auto: { on: s.auto.on, limit: s.auto.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: s.auto.rop, wob: s.auto.wob, dp: s.auto.dp, tq: s.auto.torque ?? 10000 } } },
   };
   if (fx.running) Object.assign(frame, fx.frameOverride());

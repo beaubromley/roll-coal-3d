@@ -193,6 +193,9 @@ export class Sim {
     return frac < 0.5 ? s.depth * (1 - out) : s.depth * Math.min(1, (frac - 0.5) * 2);
   }
 
+  /** true while the string is coming out of the hole, false while it is running back in */
+  get tripGoingOut(): boolean { return Math.min(1, this.s.tripT / Math.max(1, this.s.tripTotal)) < 0.5; }
+
   openBopResume() {
     const s = this.s;
     s.kick.shut = false; s.kick.active = false; s.kick.gain = 0; s.kick.alarm = false;

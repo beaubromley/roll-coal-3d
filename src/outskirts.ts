@@ -705,6 +705,9 @@ export class Outskirts {
     // the competitor
     let rustN = 0;
     out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to UNIT-9 (Singularity supervisor unit)", r: 3.4, act: () => this.talkRusty(rustN++) });
+    // the wind turbines can be locked out any time (the Windmill Shutdown job notices, and starts itself if it has to)
+    for (const i of [0, 1, 2, 9]) out.push({ pos: () => i === 9 ? g.rig.spots.windmill : this.turbinePos(i), label: () => "Lock out the turbine", r: i === 9 ? 6 : 4, ok: () => !g.flags["wm" + i] && !g.doneIds.has("windmill"), act: () => g.doLockout(i) });
+    out.push({ pos: () => v(FOREST_CAMP.x, 1.2, FOREST_CAMP.z), label: () => "Join Hank's hunt", r: 4, ok: () => !!g.flags.hankFriend && g.daytime() && !g.doneIds.has("hunt") && !(g.active && g.active.m.id === "hunt") && !g.stack.some((r) => r.m.id === "hunt"), act: () => { if (g.activateSide("hunt")) { g.ui.toast("HANK", "About time. Binoculars up."); g.stepDone(); } } });
     out.push({ pos: () => v(RIVAL.x + 50, 1.4, RIVAL.z - 8), label: () => "Break into their rig (steal the laser secrets)", r: 3.6, ok: () => !g.doneIds.has("secrets") && !(g.active && g.active.m.id === "secrets"), act: () => { if (!g.startSide("secrets")) g.ui.toast("NOT NOW", "Finish what you're on first."); } });
     out.push({ pos: () => this.terminalPos(), label: () => "Grab Singularity's secrets", r: 3.4, ok: () => !!g.flags.raidOn && !g.flags.secretsGot, act: () => { g.flags.secretsGot = true; g.sfx.good(); g.ui.toast("GOT THE SECRETS", "Laser drilling schematics. NOW RUN!"); g.radio("rival" as any, "UNAUTHORIZED DATA TRANSFER. ALL UNITS: REMOVE THE COMPANY MAN.", 5000); } });
     out.push({ pos: () => v(RIVAL.x + 47, 1.4, RIVAL.z + 8), label: () => "Spy on their rig", r: 3.4, act: () => {
@@ -730,7 +733,7 @@ export class Outskirts {
     if (f.st === "bite") {
       this.stopFishing();
       const deepHole = (f.bx - DEEP.x) ** 2 + (f.bz - DEEP.z) ** 2 < (DEEP.r * 1.05) ** 2, onBottom = f.depth >= f.bed - 1.4;
-      const sixty = deepHole && f.depth >= 5 && !!g.flags.sixtyOn && !g.flags.sixty && Math.random() < 0.4;
+      const sixty = deepHole && f.depth >= 5 && !!(g.flags.sixtyOn || (g.flags.hankFriend && !g.doneIds.has("sixty"))) && !g.flags.sixty && Math.random() < 0.4;
       if (sixty) { this.fightSixty(); return ["HOOKED", "That's not a small fish."]; }
       // what is down there depends on how deep you fish: the shallows, the middle, the deep water, and the deep hole's bottom (lost steerable tools)
       let T: [string, number, number, number, string, string][];
@@ -770,7 +773,7 @@ export class Outskirts {
     g.mini.mash({ eyebrow: "The Big Catfish", title: "Old Sixty", intro: "Sixty pounds of whiskers and bad attitude. Reel him in before the line breaks.", seconds: 9, label: "reel!" }, (r: any) => {
       if (r && r.skipped) { g.radio("hank" as any, "You let go of OLD SIXTY?! I've been after him for thirty years!", 6000); return; }
       if (r && r.score < 0.45) { g.ui.toast("LINE SNAPPED", "He's gone. He looked back at you."); g.radio("hank" as any, "He snapped it. He does that. Try again, he'll be back.", 6000); return; }
-      g.flags.sixty = true; this.fish.caught++; g.sfx.good(); g.gain(0.4, 12);
+      g.flags.sixty = true; this.fish.caught++; g.sfx.good(); g.gain(0.4, 12); g.activateSide("sixty");
       this.showCatch("OLD SIXTY", "62.4 lb. Whiskers like a Texas senator. Hank will want a photo.", "catfish", false, "THE BIG ONE");
       g.radio("hank" as any, "THAT'S HIM. THAT'S OLD SIXTY. Thirty years. Put him back, put him BACK, then take a picture first.", 9000);
     });
@@ -923,6 +926,7 @@ export class Outskirts {
     const stH = (qx: number, sg: number) => Math.max(0.15, 8.3 - (Math.abs(qx - (X + sg * 9.5)) / 0.3) * 0.26);
     const pUp = p.pos.y > 1.5 && (stN(px, pz) !== 0 || (Math.abs(px - X) < 9.6 && Math.abs(pz - Z) < 9.6));
     this.raidCd -= dt;
+    if (!raid && !g.doneIds.has("secrets") && this.inLease() && !riding) g.activateSide("secrets");
     for (const gd of this.guards) {
       const hunting = raid ? (this.inLease() && !riding) : (near(RIVAL.x, RIVAL.z, 60) && near(gx, gz, 44) && !riding);
       const hx = gd.h.root.position.x, hz = gd.h.root.position.z, sg0 = stN(hx, hz), stairs = sg0 !== 0;

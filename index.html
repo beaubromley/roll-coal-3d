@@ -25,6 +25,8 @@
   #mission { position: absolute; left: 24px; top: 20px; max-width: min(46vw, 520px); }
   #mission .title { font-family: var(--display); font-size: clamp(30px, 4.6vw, 54px); line-height: .95; text-transform: uppercase; letter-spacing: .5px; color: #fff; }
   #mission .sub { margin-top: 8px; font-size: 15px; color: #f1f4f7; max-width: 440px; }
+  #mission .mhint { margin-top: 10px; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #cfd8e3; opacity: .85; text-shadow: 1px 1px 0 #000; } #mission .mhint kbd { font: 700 11px ui-monospace, Consolas, monospace; background: #f1f4f7; color: #111; padding: 2px 6px; border-radius: 3px; margin-right: 4px; box-shadow: 0 2px 0 #667; }
+  body.touch #mission .mhint kbd { display: none; } body.touch #mission .mhint::before { content: 'tap || '; }
   #mission .count { font-size: 11px; letter-spacing: 2px; color: var(--gold); text-transform: uppercase; margin-bottom: 4px; font-weight: 700; }
 
   #status { position: absolute; right: 22px; top: 18px; width: 300px; text-align: right; }
@@ -231,6 +233,7 @@
   .trow b, .ach b { font-size: 12px; color: #6ff08c; } .trow.wait b { color: #6a7688; } .trow.now b { color: #ffd24a; } .ach b { color: #ffd24a; }
   .trow em { font-style: normal; font-size: 7px; color: #6a7688; padding-top: 3px; } .trow.ok em { color: #6ff08c; } .trow.now em { color: #ffd24a; }
   .trow.ok .tt { color: #9fe0a8; }
+  .tact { font-family: inherit; font-size: 8px; padding: 7px 8px; color: #0b1a05; background: #3ddc84; border: 2px solid #0b1a05; cursor: pointer; align-self: center; } .tact:hover { background: #7dffb2; }
   @media (max-width: 560px) { .agrid { grid-template-columns: 1fr; } }
   .pbtn { font-family: inherit; font-size: 13px; color: #0b1a05; background: #7bc02c; border: 3px solid #0b1a05; box-shadow: 0 4px 0 #3f7a10; padding: 14px 10px; cursor: pointer; min-height: 48px; }
   .pbtn:hover, .pbtn:focus-visible { background: #9be34a; outline: none; }
@@ -401,7 +404,7 @@
 
 <div id="hud">
   <div id="crosshair"></div>
-  <div id="mission"><div class="count" id="mcount"></div><div class="title shadowtext" id="mtitle"></div><div class="sub shadowtext" id="msub"></div></div>
+  <div id="mission"><div class="count" id="mcount"></div><div class="title shadowtext" id="mtitle"></div><div class="sub shadowtext" id="msub"></div><div class="mhint" id="mhint"><kbd>ESC</kbd> pause · job details</div></div>
   <div id="strip"></div>
   <div id="alert"></div>
   <div id="status">

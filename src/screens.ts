@@ -7,7 +7,7 @@ import type { Dd } from "./dd";
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
   depth: number; wob: number; rop: number; spp: number; flow: number; pit: number; mw: number; mode: string;
-  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; bitDepth?: number; casing?: "run" | "cement" | "done" | "none";
+  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; tripOut?: boolean; bitDepth?: number; casing?: "run" | "cement" | "done" | "none";
 }
 
 export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac" | "systems" | "dirq" | "ddq" | "weight";
@@ -252,9 +252,13 @@ function trip(d: ScreenData): { hook: number; block: number } {
   if (d.casing === "done") return { hook: BLOCKS, block: 5 };
   const W = BLOCKS + 0.025 * bd;
   if (d.tripping) {
-    const u = 1 - ((bd % STAND) + STAND) % STAND / STAND;          // 0..1 through each stand; it moves forward coming out and backward going in
-    if (u < 0.88) return { hook: W, block: (u / 0.88) * STROKE };   // loaded: pipe on the hook, block travelling with it
-    return { hook: BLOCKS, block: STROKE * (1 - (u - 0.88) / 0.12) };   // empty: block and top drive going back for the next stand
+    // u runs 0..1 through each stand: upward while pulling out (bit depth falling), downward while running in (bit depth rising), then it wraps
+    const u = 1 - ((bd % STAND) + STAND) % STAND / STAND;
+    // block height: like drilling, only fast. Running in it ramps down the stand and skips back up; pulling out the ramp is inverted: low, ramping up, then skipping back low
+    const block = 5 + u * (STROKE - 5);
+    // hookload follows the string weight, so it is proportional to the depth of the bit. Pulling out is heavier (drag holds the pipe back), running in is lighter; each stand ramps the same way as the block
+    const W0 = BLOCKS + 0.025 * bd, hook = d.tripOut === false ? W0 * 0.86 * (0.93 + 0.14 * u) : W0 * 1.16 * (0.93 + 0.14 * u);
+    return { hook, block };
   }
   return { hook: W - d.wob * (d.rotating ? 1 : 0), block: 5 + (1 - ((((d.depth - WELL.startDepth) % STAND) + STAND) % STAND) / STAND) * (STROKE - 5) };   // starts at the top of a stand and comes down as the hole is made
 }

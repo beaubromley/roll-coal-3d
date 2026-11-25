@@ -247,8 +247,13 @@ export class Game {
     const box = $("tallybook"); if (!box) return;
     const tab = this.tallyTab;
     const mark = (n: number) => { let s = ""; for (let i = 0; i < Math.floor(n / 5); i++) s += '<span class="tm5">||||</span> '; s += "|".repeat(n % 5); return s || "&nbsp;"; };
-    const status = (m: Mission) => this.doneIds.has(m.id) ? ["✔", "DONE", "ok"] : (this.active && this.active.m === m) || this.stack.some((r) => r.m === m) ? ["▶", "NOW", "now"] : ["○", m.side ? "OPEN" : "COMING UP", "wait"];
-    const row = (m: Mission) => { const [ic, st, cl] = status(m); return `<div class="trow ${cl}"><b>${ic}</b><div><div class="tt">${m.title}</div><div class="ts">${m.sub}</div></div><em>${st}</em></div>`; };
+    const status = (m: Mission) => this.doneIds.has(m.id) ? ["✔", "DONE", "ok"] : (this.active && this.active.m === m) ? ["▶", "NOW", "now"] : this.stack.some((r) => r.m === m) ? ["▶", "ON HOLD", "now"] : ["○", m.side ? "OPEN" : "COMING UP", "wait"];
+    const row = (m: Mission) => {
+      const [ic, st, cl] = status(m), known = this.doneIds.has(m.id) || this.seenJob(m.id) || cl === "now";
+      if (!known) return `<div class="trow wait"><b>?</b><div><div class="tt">???</div><div class="ts">Not found yet.</div></div><em></em></div>`;
+      const open = m.side && cl === "wait";
+      return `<div class="trow ${cl}"><b>${ic}</b><div><div class="tt">${m.title}</div><div class="ts">${m.sub}</div></div>${open ? `<button class="tact" data-act="${m.id}">ACTIVATE</button>` : `<em>${st}</em>`}</div>`;
+    };
     let body = "";
     const main = this.allMissions, side = this.sideList, sd = side.filter((m) => this.doneIds.has(m.id)).length, md = main.filter((m) => this.doneIds.has(m.id)).length;
     if (tab === "main") body = `<div class="tmarks">${mark(md)}</div>${main.map(row).join("")}`;
@@ -256,6 +261,7 @@ export class Game {
     else if (tab === "ach") { const n = ACHIEVEMENTS.filter((a) => this.hasAward(a.id)).length; body = `<div class="tmarks">${n} / ${ACHIEVEMENTS.length}</div><div class="agrid">${ACHIEVEMENTS.map((a) => { const on = this.hasAward(a.id); return `<div class="ach ${on ? "on" : ""}"><b>${on ? "★" : "☆"}</b><div><div class="tt">${on || !a.secret ? a.name : "???"}</div><div class="ts">${on || !a.secret ? a.desc : "A secret."}</div></div></div>`; }).join("")}</div>`; }
     box.innerHTML = `<div class="ttabs">${[["main", "MAIN JOBS"], ["side", "SIDE JOBS"], ["ach", "ACHIEVEMENTS"], ["depth", "DEPTH"]].map(([k, l]) => `<button class="ttab ${tab === k ? "on" : ""}" data-t="${k}">${l}</button>`).join("")}</div><div class="tbody">${body}</div>`;
     box.querySelectorAll<HTMLButtonElement>(".ttab").forEach((b) => b.onclick = () => { this.tallyTab = b.dataset.t!; this.renderTally(); });
+    box.querySelectorAll<HTMLButtonElement>(".tact").forEach((b) => b.onclick = () => { this.togglePause(false); this.activateSide(b.dataset.act!); });
     $("curvewrap").style.display = tab === "depth" ? "block" : "none"; if (tab === "depth") this.drawCurve();
   }
   /** daylight on the lease (about 7am to 6pm) */
@@ -1235,6 +1241,17 @@ export class Game {
     const dr = this.veh.active; if (!on || !dr || dr.kind !== "drone") return;
     R.pts.forEach((p, i) => { if (tags[i]) return; if (Math.hypot(dr.x - p.x, dr.alt - p.y, dr.z - p.z) < 5) { tags[i] = true; const n = tags.filter(Boolean).length; this.sfx.good(); this.ui.toast("PHOTO " + n + " / 5", "Defect found: " + R.names[i] + "."); if (n >= 5) { this.flags.inspDone = true; this.radio("earl", "That's all five on camera. Now bring it home before it rains.", 7000); } } });
   }
+  /** lock out one of the wind turbines (9 is the company's own west of the lease, 0 to 2 are scattered about). Works with or without the job; the job notices. */
+  doLockout(i: number, done?: () => void) {
+    if (this.flags["wm" + i]) return;
+    this.lockout("Wind Turbine " + (i === 9 ? 1 : i + 2), (mistakes) => {
+      if (i === 9) this.rig.setWindmill(false); else this.outskirts.turbs[i].on = false;
+      this.flags["wm" + i] = true;
+      if (mistakes === 0) { this.gain(0.1, 2); this.radio("earl", "Clean lockout. Zero mistakes. I'd put that on a wall.", 6000); } else { this.sim.addCost(mistakes * 800); this.radio("earl", "You got there. With " + mistakes + " mistake" + (mistakes > 1 ? "s" : "") + ". The incident report is mostly blank.", 6000); }
+      if (!this.doneIds.has("windmill") && !(this.active && this.active.m.id === "windmill") && !this.stack.some((r) => r.m.id === "windmill")) this.activateSide("windmill");
+      done?.();
+    });
+  }
   /** lockout / tagout: put the six steps of shutting a machine down safely in the right order */
   lockout(title: string, done: (mistakes: number) => void) {
     const steps = ["Call the control room", "Stop the rotor with the service brake", "Open the electrical disconnect", "Put your lock on the disconnect", "Hang your tag on the lock", "Try to start it, to prove it's dead"];
@@ -1353,7 +1370,17 @@ export class Game {
     const side = !!m.side, offered = !!(o.offer || o.ask);
     this.showCard(m, side, offered, () => this.runMission(m, true), offered ? () => { this.declined.set(m.id, this.realT); } : undefined);
   }
+  seenJob(id: string) { return !!(this.flags.seenJobs && this.flags.seenJobs[id]); }
+  /** put a job on the board (it has been offered or started, so it shows in the tally book from now on) */
+  private markSeen(id: string) { (this.flags.seenJobs ??= {})[id] = true; }
+  /** start a side job straight away without the card: from the pause screen, or because you walked into the thing it is about */
+  activateSide(id: string): boolean {
+    const m = this.sideList.find((x) => x.id === id);
+    if (!m || this.doneIds.has(id) || this.cardOpen || (this.active && this.active.m.id === id) || this.stack.some((r) => r.m.id === id)) return false;
+    this.runMission(m, true); return true;
+  }
   private runMission(m: Mission, carded: boolean) {
+    this.markSeen(m.id);
     if (this.active) this.stack.push(this.active);
     this.active = { m, i: 0 }; this.missionNo++;
     this.quiet = carded; try { m.start?.(); } finally { this.quiet = false; }
@@ -1362,6 +1389,7 @@ export class Game {
     m.steps[0].enter?.();
   }
   private showCard(m: Mission, side: boolean, offered: boolean, go: () => void, no?: () => void) {
+    this.markSeen(m.id);
     this.cardOpen = true; this.player.enabled = false; this.player.unlock(); this.live = false;
     const total = this.missionTotal, story = [...this.doneIds].filter((id) => !this.sideList.some((s) => s.id === id)).length;
     const pay = side && (m.a || m.m) ? `Pays ${m.a ? "+" + m.a + " approval" : ""}${m.a && m.m ? " · " : ""}${m.m ? "+" + m.m + " morale" : ""}` : "";
@@ -1369,7 +1397,8 @@ export class Game {
       <canvas id="mcard" style="width:100%;image-rendering:pixelated;border:3px solid #000;display:block;margin:8px 0;background:#000"></canvas>
       <h2 style="margin:0 0 6px">${m.title}</h2><p>${m.sub}</p>
       <div class="hint">FIRST: ${m.steps[0].text}</div>${pay ? `<div class="hint" style="color:#3ddc84">${pay}</div>` : ""}
-      <div class="btns"><button class="b green" id="mc_go">${offered ? "ACCEPT" : "LET'S GO"}</button>${offered ? '<button class="b alt" id="mc_no">LATER</button>' : ""}</div>`, { closable: false });
+      <div class="hint" style="margin-top:6px">Press <b>ESC</b> any time to pause and review every job in the tally book.</div>
+      <div class="btns"><button class="b green" id="mc_go">ACTIVATE</button>${offered ? '<button class="b alt" id="mc_no">LATER</button>' : ""}</div>`, { closable: false });
     this.sfx.click(); drawMissionArt(p.querySelector<HTMLCanvasElement>("#mcard")!, m.id);
     let chosen = false;
     const resolve = (yes: boolean) => { if (chosen) return; chosen = true; this.cardOpen = false; if (yes) go(); else no?.(); };

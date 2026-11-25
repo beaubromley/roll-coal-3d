@@ -7,7 +7,7 @@ import type { Dd } from "./dd";
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
   depth: number; wob: number; rop: number; spp: number; flow: number; pit: number; mw: number; mode: string;
-  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; bitDepth?: number;
+  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; bitDepth?: number; casing?: "run" | "cement" | "done" | "none";
 }
 
 export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac";
@@ -203,7 +203,17 @@ const EDR: [Chan, Chan][] = [
  *  (string weight on the hook; it shrinks as pipe comes out and grows as it goes in) and then drops back empty (just the block and top drive) for the next one. */
 const STAND = 93, STROKE = 100, BLOCKS = 50;
 function trip(d: ScreenData): { hook: number; block: number } {
-  const bd = d.bitDepth ?? d.depth, W = BLOCKS + 0.025 * bd;
+  const bd = d.bitDepth ?? d.depth;
+  // running casing: the same saw-tooth as running pipe in, in 80 ft doubles and a good deal heavier (the casing floats a little in the mud)
+  if (d.casing === "run") {
+    const u = 1 - ((bd % 80) + 80) % 80 / 80;
+    const Wc = BLOCKS + 0.045 * bd;
+    if (u < 0.88) return { hook: Wc, block: (u / 0.88) * STROKE };
+    return { hook: BLOCKS, block: STROKE * (1 - (u - 0.88) / 0.12) };
+  }
+  if (d.casing === "cement") return { hook: BLOCKS + 0.04 * d.depth, block: 5 };   // landed and cementing: the string hangs steady and the block sits low
+  if (d.casing === "done") return { hook: BLOCKS, block: 5 };
+  const W = BLOCKS + 0.025 * bd;
   if (d.tripping) {
     const u = 1 - ((bd % STAND) + STAND) % STAND / STAND;          // 0..1 through each stand; it moves forward coming out and backward going in
     if (u < 0.88) return { hook: W, block: (u / 0.88) * STROKE };   // loaded: pipe on the hook, block travelling with it

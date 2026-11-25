@@ -170,12 +170,12 @@ engine.runRenderLoop(() => {
   const frame: any = {
     depth: s.depth, startDepth: WELL.startDepth,
     rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
-    connecting: s.mode === "connection", tripping: s.mode === "tripping", tripFrac: 0,
+    connecting: s.mode === "connection", tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), tripFrac: 0,
     standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true, kicking: s.kick.active || s.kick.shut || s.mode === "killing",
     near: Math.hypot(player.pos.x - 4.8, player.pos.z + 3) < 22 && player.pos.y > 4,
     screens: { depth: s.depth, wob: s.wob, rop: s.rop, spp: s.spp, flow: s.flow, pit: s.pit, mw: s.mw, mode: s.mode, rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
       kicking: s.kick.active, dd: game.dd, t: clock,
-      wobSet: s.wobTarget, motor: s.motor, dp: s.dp, torque: s.torque, tripping: s.mode === "tripping", bitDepth: sim.bitDepth,
+      wobSet: s.wobTarget, motor: s.motor, dp: s.dp, torque: s.torque, tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), bitDepth: s.mode === "casing" ? s.depth * (s.casing.phase === "run" ? s.casing.progress : 1) : sim.bitDepth, casing: s.mode === "casing" || s.mode === "done" ? s.casing.phase : "none",
       auto: { on: s.auto.on, limit: s.auto.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: s.auto.rop, wob: s.auto.wob, dp: s.auto.dp, tq: s.auto.torque ?? 10000 } } },
   };
   if (fx.running) Object.assign(frame, fx.frameOverride());

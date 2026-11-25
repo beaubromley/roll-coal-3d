@@ -160,7 +160,7 @@ export class Player {
     const len = Math.hypot(ix, iz);
     const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.sprintLatch || this.stickSprint;
     const wet = this.pos.y < -0.4;   // wading or swimming: slow, no sprint, no jumping
-    const speed = (sprint && !wet ? 9.0 : 3.4) * (wet ? 0.55 : 1) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
+    const speed = (sprint && !wet ? 10.5 : 6.0) * (wet ? 0.55 : 1) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
     let vx = 0, vz = 0;
     if (len > 0) {
       ix /= len; iz /= len;

@@ -1,16 +1,18 @@
 import { Scene, DynamicTexture } from "@babylonjs/core";
 import { drawRecorder, drawAutoBars, type AutoView } from "./recorder";
+import { drawDd } from "./ddscreens";
+import type { Dd } from "./dd";
 
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
   depth: number; wob: number; rop: number; spp: number; flow: number; pit: number; mw: number; mode: string;
-  rotating: boolean; kicking: boolean; dd: { inc: number; azi: number; tf: number; sliding: boolean }; t: number; auto?: AutoView;
+  rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number;
 }
 
-export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto";
+export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac";
 
 const W = 256, H = 160;
-const BG = "#050a12", GRID = "rgba(120,170,220,0.16)", CY = "#4fd6ff", GR = "#5dff8a", AM = "#ffb02a", RD = "#ff5a4a", TX = "#cfe6f7", DIM = "#6f8aa1";
+const BG = "#0b0e12", GRID = "rgba(120,140,160,0.22)", CY = "#2fd0d0", GR = "#22c06a", AM = "#e8d34a", RD = "#ff6a7a", TX = "#e6ebf0", DIM = "#8d98a5";
 
 const hist = { rop: [] as number[], wob: [] as number[], spp: [] as number[], gr: [] as number[], res: [] as number[] };
 const push = (a: number[], v: number, n = 90) => { a.push(v); if (a.length > n) a.shift(); };
@@ -42,10 +44,13 @@ export class Screens {
   }
 }
 
-function frame(c: CanvasRenderingContext2D, title: string, color = CY) {
+function frame(c: CanvasRenderingContext2D, title: string, color = "#e6ebf0") {
   c.fillStyle = BG; c.fillRect(0, 0, W, H);
-  c.fillStyle = "#0e1b2b"; c.fillRect(0, 0, W, 18); c.fillStyle = color; c.font = "bold 11px monospace"; c.textBaseline = "middle"; c.textAlign = "left"; c.fillText(title, 6, 9);
-  c.strokeStyle = GRID; c.lineWidth = 1; c.strokeRect(0.5, 0.5, W - 1, H - 1);
+  c.fillStyle = "#14181e"; c.fillRect(0, 0, W, 18); c.fillStyle = "#2a313a"; c.fillRect(0, 18, W, 1);
+  c.fillStyle = color; c.font = "bold 11px monospace"; c.textBaseline = "middle"; c.textAlign = "left"; c.fillText(title, 6, 9);
+  const live = Math.floor(performance.now() / 650) % 2 === 0; c.fillStyle = live ? "#3ddc84" : "#1b5a38"; c.beginPath(); c.arc(W - 36, 9, 2.5, 0, 6.3); c.fill();
+  c.fillStyle = "#3ddc84"; c.font = "bold 8px monospace"; c.textAlign = "right"; c.fillText("LIVE", W - 6, 9);
+  c.strokeStyle = "#252c35"; c.lineWidth = 1; c.strokeRect(0.5, 0.5, W - 1, H - 1);
 }
 function bar(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, v: number, max: number, col: string, label: string, unit: string) {
   c.fillStyle = DIM; c.font = "9px monospace"; c.textAlign = "left"; c.textBaseline = "middle"; c.fillText(label, x, y - 6);
@@ -59,6 +64,7 @@ function trace(c: CanvasRenderingContext2D, a: number[], x: number, y: number, w
 
 function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
   c.lineWidth = 1; c.textBaseline = "middle";
+  if (drawDd(kind, c, d.dd, d.t)) return;
   switch (kind) {
     case "params": {
       frame(c, "DRILLING PARAMETERS");
@@ -177,12 +183,12 @@ interface Chan { name: string; unit: string; col: string; max: number; get: (d: 
 const EDR: [Chan, Chan][] = [
   [{ name: "Hookload", unit: "klb", col: "#6cb4ff", max: 750, get: (d) => 250 - d.wob * 1.2 + (d.rotating ? 0 : 40) },
    { name: "Block Height", unit: "ft", col: "#d8dde3", max: 150, get: (d) => 20 + ((d.depth % 93) / 93) * 100 }],
-  [{ name: "Avg ROP", unit: "ft/hr", col: "#22c06a", max: 500, get: (d) => d.rop },
-   { name: "Offsets ROP", unit: "ft/hr", col: "#ff6a7a", max: 500, get: (_d, s) => s.rop2 }],
+  [{ name: "Avg ROP", unit: "ft/hr", col: "#22c06a", max: 500, get: (_d, s) => s.rop2 },
+   { name: "Inst ROP", unit: "ft/hr", col: "#ff6a7a", max: 500, get: (d) => d.rop }],
   [{ name: "WOB", unit: "klb", col: "#ff6a7a", max: 100, get: (d) => d.wob },
-   { name: "Offsets WOB", unit: "klb", col: "#2fd0d0", max: 100, get: (_d, s) => s.wob2 }],
+   { name: "WOB Set Pt", unit: "klb", col: "#2fd0d0", max: 100, get: (d) => d.wobSet ?? d.wob }],
   [{ name: "Diff Press", unit: "psi", col: "#e8d34a", max: 1500, get: (d) => (d.rotating ? 150 + d.wob * 11 : 0) },
-   { name: "Offsets Diff", unit: "psi", col: "#2fd0d0", max: 1500, get: (d) => (d.rotating ? 130 + d.wob * 9 : 0) }],
+   { name: "Diff Limit", unit: "psi", col: "#2fd0d0", max: 1500, get: (d) => d.auto?.sp.dp ?? 0 }],
   [{ name: "TD Torque", unit: "ft-lbs", col: "#6cb4ff", max: 75000, get: (d) => (d.rotating ? 12000 + d.wob * 380 : 0) },
    { name: "TD Speed", unit: "rpm", col: "#f0922b", max: 120, get: (d) => (d.rotating ? 82 : 0) }],
   [{ name: "Flow In", unit: "gpm", col: "#2fd0d0", max: 1000, get: (d) => d.flow },
@@ -193,7 +199,7 @@ const EDR: [Chan, Chan][] = [
 const edrHist: number[][] = [];
 const edrState = { rop2: 0, wob2: 0 };
 function pushEdr(d: ScreenData) {
-  edrState.rop2 += (d.rop * 0.5 - edrState.rop2) * 0.2; edrState.wob2 += (d.wob * 0.95 - edrState.wob2) * 0.2;
+  edrState.rop2 += (d.rop - edrState.rop2) * 0.12; edrState.wob2 += (d.wob * 0.95 - edrState.wob2) * 0.2;
   const first = edrHist.length === 0;
   if (first) for (let i = 0; i < 14; i++) edrHist.push([]);
   EDR.forEach((pair, ti) => pair.forEach((ch, ci) => {

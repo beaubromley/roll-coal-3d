@@ -101,6 +101,8 @@ export class Sim {
   /** diff-pressure spike multiplier (the original game's DP spikes near the motor limit); decays back to 1 */
   spike = 1;
   private dist = 0;
+  /** ROP multiplier from the directional driller: sliding and oscillating cost penetration rate */
+  ropMul = 1;
   /** bit bounce (0..1): too much weight for the rock sets the string and the motor hammering; shows on the recorder and in the diff pressure and torque */
   bounce = 0; private bph = 0;
   /** autodriller: one PI loop per limit (ROP, diff, torque). Each holds the WOB that parameter would allow; the weight applied is the lowest of those and the WOB set point. */
@@ -287,7 +289,7 @@ export class Sim {
         s.motor = Math.max(0, s.motor - (s.dp < 1000 ? 0 : s.dp >= 1850 ? 0.25 : s.dp >= 1350 ? 0.05 : 0.01) * dt);
         if (s.motor <= 0 && !s.needTrip) { s.needTrip = true; this.events.push({ type: "motorDead" }); }
         let rop = eff > 0 ? (eff * 6) / f.hardness : 0;
-        rop = Math.min(600, rop * fac);
+        rop = Math.min(600, rop * fac * this.ropMul);
         if (s.needTrip || s.fuel <= 0) rop = 0;
         s.rop = rop;
         const dd = (rop / 60) * dt;

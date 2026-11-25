@@ -176,12 +176,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
 
   // ---- BOP stack in the cellar zone below the rotary ----
   // The stack stands on the wellhead in a 10 ft diameter, 6 ft deep cellar, so its bottom half is below ground; a longer bell nipple still reaches the floor.
-  const CELL = 1.83;
+  const CELL = 0;   // the wellhead sits at ground level and the stack stands on it; the cellar below holds just the casing stub and the ladder
+  b.cyl("steel", 0, -0.92, 0, 0.5, 1.84, { tess: 12 });   // casing running down into the cellar
   if (kit) {
     const bopW = kit.place("bop", 0, -CELL, 0, RYAW);                     // Blender BOP stack: flanges, bonnets, hydraulics, valves
-    bopW.scaling.set(0.58, 1, 0.58);                                      // narrowed so none of it pokes through the 10 ft cellar wall (its hoses and outlets reached 2.5 m out)
+    bopW.scaling.set(1, 1, 1);
     b.blocker(-0.55, 1.35 - CELL, -0.45, 0.55, 2.65 - CELL, 0.45);
-    b.cyl("steel", 0, 6.1, 0, 0.7, 2.0, { tess: 12 });                    // bell nipple extension up to the floor
+    b.cyl("steel", 0, 6.5, 0, 0.7, 2.6, { tess: 12 });                    // bell nipple extension up to the floor
   } else {
     b.cyl("steel", 0, 0.5 - CELL, 0, 1.0, 1.0, { tess: 14 });       // wellhead / casing head
     b.cyl("black", 0, 1.15 - CELL, 0, 1.3, 0.3, { tess: 14 });      // flange
@@ -195,9 +196,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     b.cyl("bopred", 0, 5.1 - CELL, 0, 1.5, 1.4, { tess: 16, dia2: 1.2 });  // annular
     b.cyl("steel", 0, 5.51, 0, 0.9, 3.08, { tess: 12 });            // bell nipple, long enough to reach the floor
   }
-  // flowline to shakers
-  b.beam("steel", v(0, 6.0, 0), v(0, 6.0, -8), 0.5); b.beam("steel", v(0, 6.0, -8), v(0, 3.4, -19), 0.5);
-  b.beam("steel", v(0, 3.4, -19), v(-13.5, 3.3, -19.5), 0.5);
+  // (the flowline from the bell nipple to the shaker header is built with the shakers, below)
 
   // ---- rotary table ----
   // rotary table: housing on the deck, the turning table on top, then the master bushing (with its four drive-pin lugs), the insert bowl, and the bore the pipe goes through
@@ -313,8 +312,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   // ---- directional driller / MWD desk along the east wall: they face east, back to the driller ----
   b.slab("dsteel", 6.0, F, -5.7, 6.8, F + 0.95, -1.6, true);
   b.slab("steel", 6.0, F + 0.95, -5.7, 6.8, F + 0.99, -1.6);
-  ([["survey", -5.2], ["toolface", -4.45], ["gamma", -3.7], ["mwd", -2.95]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.45, F + 1.32, z, 0.7, 0.5, k, screens, [1, i]));
-  ([["plan", -4.8], ["steer", -3.3]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k, screens, [0, i]));
+  ([["survey", -5.2], ["toolface", -4.45], ["steer", -3.7], ["gamma", -2.95]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.45, F + 1.32, z, 0.7, 0.5, k, screens, [1, i]));
+  ([["plan", -5.0], ["geo", -4.0], ["ac", -3.0], ["mwd", -2.0]] as [ScreenKind, number][]).forEach(([k, z], i) => monitor("-x", 6.6, F + 2.1, z, 0.9, 0.5, k, screens, [0, i]));
   for (const z of [-5.0, -4.0, -3.0]) b.slab("black", 6.15, F + 0.99, z - 0.25, 6.4, F + 1.03, z + 0.25);
   for (const cz of [-4.7]) {                                                     // the directional driller's chair, facing the desk
     b.cyl("black", 5.4, F + 0.25, cz, 0.12, 0.5, { tess: 8 }); b.slab("black", 5.0, F, cz - 0.4, 5.8, F + 0.07, cz + 0.4);
@@ -483,6 +482,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   }
   // standpipe up the right back leg + mud line from pumps
   b.beam("steel", v(2.7, 0.0, -3.2), v(2.7, F + 31, -3.2), 0.22);
+  {   // pump discharge header, then the mud line across to the foot of the standpipe (which feeds the kelly hose and the top drive)
+    b.beam("steel", v(9.0, 1.1, -14.0), v(9.0, 1.1, -10.0), 0.2);
+    b.beam("steel", v(9.0, 1.1, -12.0), v(2.7, 1.1, -12.0), 0.2); b.beam("steel", v(2.7, 1.1, -12.0), v(2.7, 1.1, -3.2), 0.2);
+    for (const [x, z] of [[9.0, -12.0], [2.7, -12.0], [2.7, -8.0]]) b.cyl("dsteel", x, 1.1, z, 0.46, 0.14, { tess: 12 });
+    for (const z of [-11.2, -6.0]) b.slab("dsteel", 2.62, 0, z - 0.08, 2.78, 1.0, z + 0.08);
+    b.label("MUD LINE TO STANDPIPE", 5.9, 1.6, -12.0, 3.2, 0.3, Math.PI, "#7a1a14", "#ffffff", 36);
+  }
   // drawworks housing under the doghouse side + cable reels (visual)
   b.cyl("dsteel", -0.2, F + 0.9, -4.8, 1.8, 1.4, { axis: "x", tess: 14 });
   b.cyl("steel", -0.2, F + 0.9, -4.8, 1.2, 1.5, { axis: "x", tess: 10 });
@@ -772,10 +778,11 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   //      a pair of vibrator motors across the basket, and a discharge lip over a chute into the cuttings pit ----
   b.defMat("cuttings", "#4d443b");
   const flowY = 3.75;
-  b.beam("steel", v(0, 5.0, -2.6), v(-10.4, flowY, -20.1), 0.42);                                  // flow line from the bell nipple, over the choke manifold, to the shaker header
+  b.beam("steel", v(0, 6.0, 0), v(0, 6.0, -2.6), 0.42); b.cyl("dsteel", 0, 6.0, -1.3, 0.62, 0.12, { axis: "z", tess: 12 });   // flowline outlet on the bell nipple, with its flange
+  b.beam("steel", v(0, 6.0, -2.6), v(-10.4, flowY, -20.1), 0.42);                                  // flow line from the bell nipple, over the choke manifold, to the shaker header
   b.beam("steel", v(-17.3, flowY, -20.1), v(-10.4, flowY, -20.1), 0.42);                           // header across the three shakers
   b.cyl("dsteel", -10.4, flowY, -20.1, 0.55, 0.08, { axis: "z", tess: 12 });
-  for (const [px, pz] of [[-3.0, -9.0], [-7.0, -14.5]]) b.slab("dsteel", px - 0.1, 0, pz - 0.1, px + 0.1, 4.8 - ((Math.abs(px) / 10.4) * 1.25), pz + 0.1);   // flow-line supports
+  for (const [px, pz] of [[-3.0, -9.0], [-7.0, -14.5]]) b.slab("dsteel", px - 0.1, 0, pz - 0.1, px + 0.1, 5.75 - ((Math.abs(px) / 10.4) * 2.25), pz + 0.1);   // flow-line supports
   b.label("FLOW LINE", -5.3, 4.9, -11.1, 1.8, 0.35, Math.PI / 2, "#7a1a14", "#ffffff", 40);
   for (const cx of [-16.6, -14.1, -11.6]) {
     b.blocker(cx - 0.95, 2.78, -25.5, cx + 0.95, 4.1, -20.5);

@@ -67,7 +67,8 @@ export class Vehicles {
     { name: "Directional driller's seat", pos: rv(5.4, F + 0.5, -4.7), yaw: Math.PI / 2 + RYAW, npc: "dd1", off: rv(4.9, F, -3.75) },
   ];
   /** steering the well from the DD seat */
-  dd = { inc: 2.1, azi: 270, tf: 0, sliding: false, warned: 0 };
+  get dd() { return this.game.dd; }
+  private ddKeys: Record<string, boolean> = {};
   private keyOff: (() => void)[] = [];
   private pressed = new Set<string>();
   private dmgCd = 0; private xWas = false;
@@ -1085,20 +1086,15 @@ export class Vehicles {
         + `W/S weight on bit  ·  A/D pump rate  ·  SPACE brake  ·  T autodriller  ·  C console panel  ·  E stand up`;
       return;
     }
-    // directional driller / MWD seat: pick a toolface and slide to steer; rotating straightens the hole back up
+    // directional driller / MWD seat: A/D turn the toolface, 1 / 2 / 3 (or S / W) pick rotate / slide / oscillating slide, K shoots a check shot; clicking a screen opens the full console
     const d = this.dd, drilling = s.mode === "drilling" && s.rop > 0;
-    d.tf = (d.tf + side * 90 * dt + 360) % 360;
-    d.sliding = up > 0;
-    if (d.sliding && drilling) {
-      const rate = s.rop / 3600 * 3.0;                             // deg per foot drilled, scaled by ROP
-      d.inc = Math.max(0, Math.min(90, d.inc + Math.cos(d.tf * Math.PI / 180) * rate * dt * 12));
-      d.azi = (d.azi + Math.sin(d.tf * Math.PI / 180) * rate * dt * 12 / Math.max(2, Math.sin(Math.max(2, d.inc) * Math.PI / 180) * 20) + 360) % 360;
-    } else if (up < 0 && drilling) d.inc = Math.max(0, d.inc - 0.4 * dt);
-    d.warned -= dt;
-    const off = Math.abs(((d.azi - 270 + 540) % 360) - 180);
-    if ((d.inc > 6 || off > 15) && d.warned <= 0) { d.warned = 40; this.game.radio("tex", d.inc > 6 ? "We're building angle, boss. That's a lot of curve for a vertical section." : "Azimuth is wandering off the plan. The lease line is that way.", 6500); }
-    this.hud.textContent = `${st.name.toUpperCase()} — ${d.sliding && drilling ? "SLIDING" : "ROTATING"}   INC ${d.inc.toFixed(1)}°   AZI ${d.azi.toFixed(0)}° (plan 270°)   TOOLFACE ${d.tf.toFixed(0)}°\n`
-      + `DEPTH ${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr   ${drilling ? "" : "(drill to see the well respond)"}\n`
-      + `A/D set toolface  ·  W hold to slide / steer  ·  S rotate (straighten up)  ·  E stand up`;
+    const hit = (code: string) => { const on = this.k(code), was = this.ddKeys[code]; this.ddKeys[code] = on; return on && !was; };
+    if (side) d.setTf(d.tfSet + side * 90 * dt);
+    if (hit("Digit1") || hit("KeyS")) d.setMode("rotate"); if (hit("Digit2") || hit("KeyW")) d.setMode("slide"); if (hit("Digit3")) d.setMode("osc");
+    if (hit("KeyK")) d.checkShot();
+    const sv = d.lastSurvey, tp = d.toPlan;
+    this.hud.textContent = `${st.name.toUpperCase()} — ${d.mode === "rotate" ? "ROTATING" : d.mode === "slide" ? "SLIDING" : "OSCILLATING SLIDE"}   INC ${d.inc.toFixed(1)}°   AZI ${sv.azi.toFixed(0)}° (survey)   TOOLFACE set ${d.tfSet.toFixed(0)}° / ${d.tf.toFixed(0)}°\n`
+      + `${Math.round(s.depth).toLocaleString()} ft   ROP ${Math.round(s.rop)} ft/hr   ${tp.dist.toFixed(0)} ft off plan   SF ${Math.min(...d.acNow.map((a) => a.sf)).toFixed(2)}   ${drilling ? "" : "(drill to see the well respond)"}\n`
+      + `A/D toolface  ·  1 rotate · 2 slide · 3 oscillate  ·  K check shot  ·  click a screen for the console  ·  E stand up`;
   }
 }

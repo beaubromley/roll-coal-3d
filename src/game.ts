@@ -3,6 +3,7 @@ import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
 import { drawRecorder, drawAutoBars } from "./recorder";
+import { Dd, OFFSETS } from "./dd";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
 import { Sfx } from "./audio";
 import { UI, Who, Choice, $ } from "./ui";
@@ -278,7 +279,9 @@ export class Game {
 
   // ---------- ambient interactables ----------
   outskirts!: Outskirts;
+  dd!: Dd;
   buildAmbient() {
+    this.dd = new Dd(this);
     const S = this.rig.spots, H = this.rig.humans;
     // everything past the fence: its colliders join the world before the vehicles take their snapshot of it
     this.outskirts = new Outskirts(this);
@@ -349,13 +352,53 @@ export class Game {
   statRow(k: string, v: string, cls = "") { return `<div class="row"><span>${k}</span><b class="${cls}">${v}</b></div>`; }
 
   private cabGrid: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
-  /** the directional drillers' screens, from either of their seats */
+  /** the directional drillers' screens and controls, from either of their seats: mode, toolface, check shots, the plan, surveys and anti-collision */
   openDdScreens() {
-    const p = this.open(`<div class="eyebrow">Directional Driller</div><h2>Screens</h2><div class="scrgrid" id="ddgrid" style="grid-template-columns:repeat(4,1fr)"></div><div class="btns"><button class="b alt" data-close>Close</button></div>`, { wide: true, live: true });
+    const dd = this.dd;
+    const p = this.open(`<div class="eyebrow">Directional Driller</div><h2>Directional Console</h2>
+      <div class="cabwide"><div class="cabl">
+      <div class="scrgrid" id="ddgrid" style="grid-template-columns:repeat(4,1fr)"></div>
+        <div class="cab-left" style="display:block">
+          <div class="row"><span>Inclination</span><b id="d_inc"></b></div>
+          <div class="row"><span>Azimuth (last survey)</span><b id="d_azi"></b></div>
+          <div class="row"><span>Off the plan</span><b id="d_dev"></b></div>
+          <div class="row"><span>Gtotal</span><b id="d_g"></b></div>
+          <div class="row"><span>Btotal</span><b id="d_b"></b></div>
+          <div class="row"><span>Dip</span><b id="d_dip"></b></div>
+          <div class="row"><span id="d_n0"></span><b id="d_sf0"></b></div>
+          <div class="row"><span id="d_n1"></span><b id="d_sf1"></b></div>
+        </div></div>
+        <div class="cab-right">
+          <div class="hint">Drilling mode <span style="color:var(--dim)">(keys 1 · 2 · 3)</span></div>
+          <div class="btns" style="margin:4px 0 10px"><button class="b" id="dm_rotate">Rotate</button><button class="b" id="dm_slide">Slide</button><button class="b" id="dm_osc">Oscillating slide</button></div>
+          <div class="hint">Toolface: set <b id="d_tfs"></b> · actual <b id="d_tfa"></b> <span style="color:var(--dim)">(A / D)</span></div>
+          <input type="range" id="dtf" min="0" max="359" step="1" value="${Math.round(dd.tfSet)}"/>
+          <div class="btns" style="margin:4px 0"><button class="b alt" data-tf="-15">−15°</button><button class="b alt" data-tf="-5">−5°</button><button class="b alt" data-tf="5">+5°</button><button class="b alt" data-tf="15">+15°</button></div>
+          <div class="btns" style="margin:4px 0 10px"><button class="b" data-tfa="0">High side (build)</button><button class="b" data-tfa="90">Right</button><button class="b" data-tfa="180">Low side (drop)</button><button class="b" data-tfa="270">Left</button></div>
+          <div class="btns"><button class="b green" id="dcs">Take a check shot</button></div>
+          <div class="hint" style="margin-top:6px">A check shot costs two minutes of rig time. The survey is also taken at every connection.</div>
+        </div></div>
+      <div class="btns"><button class="b alt" data-close>Close</button></div>`, { wide: true, live: true });
     this.closeBtn(p);
-    const grid = p.querySelector<HTMLElement>("#ddgrid")!, list: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
+    const q = <T extends HTMLElement>(id: string) => p.querySelector<T>("#" + id)!;
+    const grid = q("ddgrid"), list: { cv: HTMLCanvasElement; src: HTMLCanvasElement }[] = [];
     for (const m of this.rig.monitors.filter((x) => x.grp === "dd")) { const cv = document.createElement("canvas"); cv.width = 256; cv.height = 160; cv.style.gridRow = String(m.slot![0] + 1); cv.style.gridColumn = String(m.slot![1] + 1); grid.appendChild(cv); list.push({ cv, src: m.tex.getContext().canvas as HTMLCanvasElement }); }
-    (this.ui as any).panelTick = () => { for (const g of list) g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height); };
+    q("dm_rotate").onclick = () => dd.setMode("rotate"); q("dm_slide").onclick = () => dd.setMode("slide"); q("dm_osc").onclick = () => dd.setMode("osc");
+    q<HTMLInputElement>("dtf").oninput = (ev) => dd.setTf(Number((ev.target as HTMLInputElement).value));
+    p.querySelectorAll<HTMLButtonElement>("[data-tf]").forEach((b) => b.onclick = () => { dd.setTf(dd.tfSet + Number(b.dataset.tf)); this.sfx.click(); });
+    p.querySelectorAll<HTMLButtonElement>("[data-tfa]").forEach((b) => b.onclick = () => { dd.setTf(Number(b.dataset.tfa)); this.sfx.click(); });
+    q("dcs").onclick = () => dd.checkShot();
+    (this.ui as any).panelTick = () => {
+      for (const g of list) g.cv.getContext("2d")?.drawImage(g.src, 0, 0, g.cv.width, g.cv.height);
+      const set = (id: string, v: string, cls = "") => { const e = q(id); e.textContent = v; e.className = cls; };
+      const sv = dd.lastSurvey, tp = dd.toPlan;
+      for (const m of ["rotate", "slide", "osc"] as const) q("dm_" + m).className = "b" + (dd.mode === m ? " green" : " alt");
+      set("d_tfs", Math.round(dd.tfSet) + "°"); set("d_tfa", Math.round(dd.tf) + "°"); q<HTMLInputElement>("dtf").value = String(Math.round(dd.tfSet));
+      set("d_inc", dd.inc.toFixed(2) + "°"); set("d_azi", sv.azi.toFixed(1) + "°  (" + Math.round(dd.bit.md - sv.md) + " ft ago)");
+      set("d_dev", tp.dist.toFixed(0) + " ft " + (tp.right >= 0 ? "right" : "left") + ", " + Math.abs(tp.high).toFixed(0) + " " + (tp.high >= 0 ? "high" : "low"), tp.dist > 50 ? "bad" : tp.dist > 30 ? "warn" : "ok");
+      set("d_g", sv.g.toFixed(1) + " mG", Math.abs(sv.g - 1000) <= 3 ? "ok" : "bad"); set("d_b", Math.round(sv.b).toLocaleString("en-US") + " nT", Math.abs(sv.b - 48000) <= 150 ? "ok" : "bad"); set("d_dip", sv.dip.toFixed(2) + "°", Math.abs(sv.dip - 59.4) <= 0.5 ? "ok" : "bad");
+      dd.acNow.forEach((a, i) => { q("d_n" + i).textContent = "SF to " + OFFSETS[i].name; set("d_sf" + i, a.sf.toFixed(2) + "  (" + Math.round(a.ctc) + " ft)", a.sf < 1 ? "bad" : a.sf < 1.5 ? "warn" : "ok"); });
+    };
   }
   openCabin(view: "all" | "params" | "trends" | "pits" | "alarms" = "all") {
     // the chair and the console are the same thing: opening the console sits you in the driller's chair
@@ -365,29 +408,22 @@ export class Game {
       const k = s.kick, a = s.auto;
       const busy = s.mode === "tripping" || s.mode === "casing";
       return `<div class="eyebrow">Driller's Cabin</div><h2>${{ all: "Driller's Console", params: "Drilling screen", trends: "Trends screen", pits: "Pits screen", alarms: "Alarms & well control" }[view]}</h2>
+        <div class="cabwide"><div class="cabl">
         <div class="scrgrid" id="scrgrid"></div>
         ${view === "pits" || view === "alarms" ? "" : `<div class="recwrap"><canvas id="rec" width="880" height="300"></canvas></div>`}
-        <div class="cabview" data-view="${view}"><canvas id="tvmirror" width="512" height="320"></canvas></div>
-        <div class="grid2 cabgrid">
           <div class="cab-left">
             <div class="row"><span>Depth</span><b id="c_depth"></b></div><div class="row"><span>Formation</span><b id="c_form"></b></div>
             <div class="row"><span>ROP</span><b id="c_rop"></b></div><div class="row"><span>Diff pressure</span><b id="c_dp"></b></div><div class="row"><span>Surface torque</span><b id="c_tq"></b></div>
             <div class="row"><span>Bit health</span><b id="c_bit"></b></div><div class="row"><span>Motor life</span><b id="c_motor"></b></div><div class="row"><span>Standpipe pressure</span><b id="c_spp"></b></div>
             <div class="row"><span>Mud weight</span><b id="c_mw"></b></div><div class="row"><span>Pit volume</span><b id="c_pit"></b></div>
             <div class="row"><span>Mode</span><b id="c_mode"></b></div>
-          </div>
+          </div></div>
           <div class="cab-right">
             <div class="autobox cab-auto">
               <div class="row"><span>AUTODRILLER</span><b id="a_state" class="warn">${a.on ? "ON" : "OFF"}</b></div>
-              <canvas id="abars" width="480" height="260" style="width:100%;display:block;margin:6px 0;background:#06090d;border:2px solid #000;border-radius:6px"></canvas>
-              <div class="hint">WOB set point: <b id="aw">${a.wob}</b> klbs</div>
-              <input type="range" id="a_wob" min="5" max="60" step="1" value="${a.wob}" />
-              <div class="hint">ROP limit: <b id="ar">${a.rop}</b> ft/hr</div>
-              <input type="range" id="a_rop" min="40" max="380" step="10" value="${a.rop}" />
-              <div class="hint">Differential pressure limit: <b id="ad">${a.dp}</b> psi <span style="color:var(--red)">(motor stalls above 1,650)</span></div>
-              <input type="range" id="a_dp" min="300" max="2400" step="50" value="${a.dp}" />
-              <div class="hint">Torque limit: <b id="at">${a.torque ?? 10000}</b> ft-lb <span style="color:var(--red)">(string twists off above 16,500)</span></div>
-              <input type="range" id="a_tq" min="3000" max="20000" step="250" value="${a.torque ?? 10000}" />
+              <div style="position:relative;height:28px;margin-top:6px"><div style="position:absolute;left:38.5%;top:0;transform:translateX(-50%);display:flex;gap:3px"><button class="b alt" style="padding:2px 9px" data-ast="wob" data-d="1" title="WOB set point up">▲</button><button class="b alt" style="padding:2px 9px" data-ast="wob" data-d="-1" title="WOB set point down">▼</button></div><div style="position:absolute;left:15.4%;top:0;transform:translateX(-50%);display:flex;gap:3px"><button class="b alt" style="padding:2px 9px" data-ast="rop" data-d="1" title="ROP set point up">▲</button><button class="b alt" style="padding:2px 9px" data-ast="rop" data-d="-1" title="ROP set point down">▼</button></div><div style="position:absolute;left:61.5%;top:0;transform:translateX(-50%);display:flex;gap:3px"><button class="b alt" style="padding:2px 9px" data-ast="dp" data-d="1" title="DIFF set point up">▲</button><button class="b alt" style="padding:2px 9px" data-ast="dp" data-d="-1" title="DIFF set point down">▼</button></div><div style="position:absolute;left:84.6%;top:0;transform:translateX(-50%);display:flex;gap:3px"><button class="b alt" style="padding:2px 9px" data-ast="tq" data-d="1" title="TQ set point up">▲</button><button class="b alt" style="padding:2px 9px" data-ast="tq" data-d="-1" title="TQ set point down">▼</button></div></div>
+              <canvas id="abars" width="480" height="260" style="width:100%;display:block;margin:4px 0 6px;background:#06090d;border:2px solid #000;border-radius:6px"></canvas>
+              <div class="hint">Set points: WOB (klb) · ROP (ft/hr) · DIFF (psi, motor stalls at 2,100) · TQ (ft-lb, string twists off at 16,500)</div>
               <div class="hint" id="a_lim" style="min-height:18px"></div>
               <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button></div>
             </div>
@@ -408,10 +444,20 @@ export class Game {
       const sl = (id: string, out: string, apply: (v: number) => void) => { const el = q<HTMLInputElement>(id); el.oninput = () => { apply(Number(el.value)); q(out).textContent = el.value; }; };
       sl("wob", "wv", (v) => { s.wobTarget = v; });
       sl("flow", "fv", (v) => { s.flowTarget = v; });
-      sl("a_wob", "aw", (v) => { s.auto.wob = v; });
-      sl("a_rop", "ar", (v) => { s.auto.rop = v; });
-      sl("a_dp", "ad", (v) => { s.auto.dp = v; });
-      sl("a_tq", "at", (v) => { s.auto.torque = v; });
+      // autodriller set points: an up and a down arrow over each bar (hold to repeat)
+      const SPEC: Record<string, { lo: number; hi: number; step: number; get: () => number; put: (v: number) => void }> = {
+        wob: { lo: 5, hi: 60, step: 1, get: () => s.auto.wob, put: (v) => { s.auto.wob = v; } },
+        rop: { lo: 40, hi: 380, step: 10, get: () => s.auto.rop, put: (v) => { s.auto.rop = v; } },
+        dp: { lo: 300, hi: 2400, step: 50, get: () => s.auto.dp, put: (v) => { s.auto.dp = v; } },
+        tq: { lo: 3000, hi: 20000, step: 250, get: () => s.auto.torque ?? 10000, put: (v) => { s.auto.torque = v; } },
+      };
+      p.querySelectorAll<HTMLButtonElement>("[data-ast]").forEach((btn) => {
+        const sp = SPEC[btn.dataset.ast!], dir = Number(btn.dataset.d); let to = 0, iv = 0;
+        const step = () => sp.put(Math.max(sp.lo, Math.min(sp.hi, sp.get() + dir * sp.step)));
+        const stop = () => { clearTimeout(to); clearInterval(iv); };
+        btn.addEventListener("pointerdown", (ev) => { ev.preventDefault(); step(); this.sfx.click(); to = window.setTimeout(() => { iv = window.setInterval(step, 70); }, 350); });
+        for (const ev of ["pointerup", "pointerleave", "pointercancel"]) btn.addEventListener(ev, stop);
+      });
       // WOB arrows, as on the original console: one klb a press, and hold to repeat after 0.3 s at 20 per second
       const holdBtn = (id: string, dir: number) => {
         const b = q<HTMLButtonElement>(id); let to = 0, iv = 0;

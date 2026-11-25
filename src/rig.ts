@@ -1305,6 +1305,42 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     box("white", 0, 4.5, 4.1, 12.5, 0.4, 7.5); box("black", 0, 4.3, 4.1, 12.7, 0.2, 7.7);       // delta wing, black underside
     box("white", 0, 6.5, 8.0, 0.45, 8, 3.6);                                                      // vertical tail
     for (const s of [-1, 1]) cyl("dsteel", s * 1.1, 1.6, 3.6, 1.0, 1.4, 2.0);                    // main engines
+    // ---- detail: the stack, piece by piece ----
+    b.defMat("foam", "#b8571a"); b.defMat("foamlt", "#d8782c"); b.defMat("tile", "#17181c"); b.defMat("rcc", "#3a3d44"); b.defMat("nasared", "#b3221c"); b.defMat("wingblue", "#1d3f8f");
+    const ring = (mat: string, x: number, y: number, z: number, dia: number, h: number) => cyl(mat, x, y, z, dia, dia, h);
+    // the external tank: darker foam, a white-banded intertank, stiffening rings, a long ogive nose, a lightning rod, the cable tray and the LOX feedline down the side
+    for (const y of [4, 8.5, 20, 26.2]) ring("foamlt", 0, y, 0, 4.26, 0.35);
+    cyl("white", 0, 21.4, 0, 4.3, 4.3, 3.2);                                                         // intertank
+    for (let k = 0; k < 8; k++) { const ang = (k / 8) * Math.PI * 2; box("steel", Math.sin(ang) * 2.16, 21.4, Math.cos(ang) * 2.16, 0.18, 3.0, 0.18); }   // intertank ribs
+    cyl("foam", 0, 33.6, 0, 3.2, 4.2, 2.6); cyl("foam", 0, 35.4, 0, 1.9, 3.2, 1.2); cyl("foam", 0, 36.7, 0, 0.8, 1.9, 1.4); cyl("steel", 0, 38.4, 0, 0.04, 0.2, 2.6);   // ogive nose and the rod
+    cyl("foam", 0, -0.3, 0, 3.0, 4.2, 1.2);                                                          // the tank's tail cone
+    box("foamlt", 0, 15, -2.25, 0.5, 26, 0.3); box("steel", 1.6, 15, -2.0, 0.18, 26, 0.18);        // cable tray and feedline on the back
+    // the boosters: segment joints, a forward skirt and a nose cap, the aft skirt flare, a red band
+    for (const s of [-1, 1]) {
+      for (const y of [4.2, 8.4, 12.6, 16.8, 21]) ring("dsteel", s * 3.7, y, 0, 2.5, 0.16);
+      ring("white", s * 3.7, 23.2, 0, 2.7, 1.1); cyl("white", s * 3.7, 24.2, 0, 2.0, 2.7, 1.0); cyl("steel", s * 3.7, 27.4, 0, 0.1, 0.4, 0.6);
+      ring("nasared", s * 3.7, 17.6, 0, 2.46, 0.9);
+      cyl("white", s * 3.7, 1.9, 0, 2.4, 3.2, 1.8); cyl("dsteel", s * 3.7, 0.5, 0, 1.2, 2.2, 1.2);      // aft skirt flare and the nozzle bell
+      box("steel", s * 2.05, 6, 0, 0.5, 0.25, 0.35); box("steel", s * 2.05, 22, 0, 0.5, 0.25, 0.35);   // the forward and aft attach struts to the tank
+    }
+    // the orbiter: tiled belly, payload bay doors and the hinge line, a black nose cap, six cockpit panes, RCS jets, OMS pods, tail with a split rudder, a body flap
+    cyl("tile", 0, 22.8, 3.9, 0.7, 1.0, 1.4); cyl("tile", 0, 21.9, 3.9, 1.0, 3.4, 0.9);
+    for (let k = 0; k < 6; k++) box("glass", -1.0 + k * 0.4, 20.5 - (k === 0 || k === 5 ? 0.15 : 0), 5.5, 0.34, 0.5, 0.2);
+    box("white", 0, 14.5, 5.62, 2.7, 9.5, 0.12); box("tile", 0, 14.5, 5.6, 0.12, 9.6, 0.14); box("tile", -1.4, 14.5, 5.55, 0.08, 9.6, 0.12); box("tile", 1.4, 14.5, 5.55, 0.08, 9.6, 0.12);   // bay doors
+    for (const y of [20.6, 21.3, 22.0]) for (const s of [-1, 1]) box("tile", s * 0.55, y, 5.25, 0.2, 0.12, 0.12);   // RCS jets
+    for (const s of [-1, 1]) { cyl("white", s * 1.45, 2.8, 5.0, 1.0, 1.0, 3.6); cyl("tile", s * 1.45, 1.0, 5.0, 0.8, 0.5, 0.5); }   // the OMS pods
+    box("white", 0, 7.3, 8.6, 0.5, 6.4, 2.6); box("tile", 0, 11.0, 8.6, 0.5, 0.8, 2.0); box("nasared", 0, 9.1, 9.9, 0.52, 1.0, 0.1);   // the tail and its red stripe
+    box("steel", 0, 3.6, 8.6, 0.4, 0.2, 2.4); box("tile", 0, 3.6, 5.3, 2.0, 0.5, 1.2);                // speed brake and the body flap
+    // the wings: a stronger delta with dark leading edges, tips and elevons
+    for (const s of [-1, 1]) {
+      box("tile", s * 6.4, 4.5, 3.4, 0.5, 0.45, 6.6); box("tile", s * 5.2, 4.5, 0.85, 3.4, 0.45, 0.35);                  // leading edge and wing glove
+      box("rcc", s * 6.0, 4.5, 8.0, 3.6, 0.38, 1.1);                                                                           // the elevons, hinged along the back
+      box("white", s * 4.0, 4.75, 4.1, 0.4, 0.24, 6.6);
+    }
+    box("nasared", -5.2, 4.78, 6.2, 2.6, 0.04, 0.5); box("wingblue", 5.2, 4.78, 6.2, 2.6, 0.04, 0.5);   // a stripe on each wing
+    // the main engines: three bells in a triangle with their heat-shield ring
+    for (const [x, y] of [[0, 2.0], [-1.0, 0.8], [1.0, 0.8]] as number[][]) cyl("rcc", x, y, 3.6, 0.9, 1.7, 1.4);
+    ring("tile", 0, 1.1, 3.6, 3.3, 0.35);
     for (const [x, z, d, h] of [[0, 3.6, 3.2, 3], [-3.7, 0, 2.2, 2.6], [3.7, 0, 2.2, 2.6]] as number[][]) {
       const f = MeshBuilder.CreateCylinder("shflame", { diameterTop: d, diameterBottom: 0.2, height: 1, tessellation: 12 }, scene);
       const fm = new StandardMaterial("shfm", scene); fm.disableLighting = true; fm.emissiveColor = new Color3(1, 0.6, 0.2); fm.alpha = 0.85; fm.backFaceCulling = false; fm.fogEnabled = false;

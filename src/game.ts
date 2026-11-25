@@ -3,6 +3,7 @@ import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
 import { drawAutoBars } from "./recorder";
+import { setupBoard } from "./scores";
 import { drawEdr, Screens, type ScreenData } from "./screens";
 import { Dd, OFFSETS } from "./dd";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
@@ -1164,6 +1165,7 @@ export class Game {
     $("endstats").innerHTML = rows.map((r) => `<div class="row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
     $("endtitle").innerHTML = over <= 0 ? `Under <em>AFE</em>` : `Planet <em>Saved</em>`;
     $("end").style.display = "grid"; this.player.unlock(); this.started = false;
+    void setupBoard({ score, grade, depth: s.stats.feetDrilled, hours: Math.floor(hours), cost: s.cost, approval: this.approval, incidents: this.incidents });
   }
 
   // ---------- mission engine ----------

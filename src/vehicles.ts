@@ -876,7 +876,7 @@ export class Vehicles {
       let top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;
       let gy0 = v.gy ?? 0;
       const stepDist = v.px === undefined ? 0 : Math.hypot(v.x - v.px, v.z - (v.pz ?? v.z));
-      if (v.px !== undefined && top - gy0 > 0.35 + stepDist * 1.0) {
+      if (v.px !== undefined && top - gy0 > 0.3 + stepDist * 0.7) {
         // the ground ahead is a wall (a cliff, a mesa side): the truck stops against it instead of driving up it
         v.x = v.px; v.z = v.pz!; if (Math.abs(v.speed) > 6) this.game.propertyDamage(Math.abs(v.speed) * 0.4); v.speed *= -0.25; v.vyG = 0;
         top = this.terrain ? this.terrain(v.x, v.z) : 0; for (const c of this.ramps) if (v.x > c.x0 && v.x < c.x1 && v.z > c.z0 && v.z < c.z1 && c.y1 > top) top = c.y1;

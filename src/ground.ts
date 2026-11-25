@@ -113,8 +113,8 @@ export class Ground {
     vd.positions = new Float32Array(count * 3); vd.normals = new Float32Array(count * 3); vd.colors = new Float32Array(count * 4).fill(1); vd.uvs = uvs;
     // two triangles per cell, then the skirt quads
     const idx: number[] = [];
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const a = j * V + i, b = a + 1, c = a + V, d = c + 1; idx.push(a, c, b, b, c, d); }
-    for (let e = 0; e < 4 * n; e++) { const k = e, k2 = (e + 1) % (4 * n); const eIdx = (q: number) => { const s = q; if (s <= n) return s; if (s <= 2 * n) return (s - n) * V + n; if (s <= 3 * n) return n * V + (3 * n - s); return (4 * n - s) * V; }; const a = eIdx(k), b = eIdx(k2), sa = V * V + k, sb = V * V + k2; idx.push(a, sa, b, b, sa, sb); }
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const a = j * V + i, b = a + 1, c = a + V, d = c + 1; idx.push(a, b, c, b, d, c); }
+    for (let e = 0; e < 4 * n; e++) { const k = e, k2 = (e + 1) % (4 * n); const eIdx = (q: number) => { const s = q; if (s <= n) return s; if (s <= 2 * n) return (s - n) * V + n; if (s <= 3 * n) return n * V + (3 * n - s); return (4 * n - s) * V; }; const a = eIdx(k), b = eIdx(k2), sa = V * V + k, sb = V * V + k2; idx.push(a, b, sa, b, sb, sa); }
     vd.indices = idx; vd.applyToMesh(m, true);
     if (this.mat) m.material = this.mat; m.receiveShadows = false; m.isPickable = false; m.alwaysSelectAsActiveMesh = false;
     return m;
@@ -136,9 +136,9 @@ export class Ground {
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const cx = t.x0 + (i + 0.5) * t.step, cz = t.z0 + (j + 0.5) * t.step;
       if (mask[j * n + i] || this.skip(cx, cz)) continue;
-      const a = j * V + i, b = a + 1, c = a + V, d = c + 1; idx.push(a, c, b, b, c, d);
+      const a = j * V + i, b = a + 1, c = a + V, d = c + 1; idx.push(a, b, c, b, d, c);
     }
-    for (let e = 0; e < 4 * n; e++) { const k = e, k2 = (e + 1) % (4 * n); const eIdx = (q: number) => { if (q <= n) return q; if (q <= 2 * n) return (q - n) * V + n; if (q <= 3 * n) return n * V + (3 * n - q); return (4 * n - q) * V; }; const a = eIdx(k), b = eIdx(k2), sa = V * V + k, sb = V * V + k2; idx.push(a, sa, b, b, sa, sb); }
+    for (let e = 0; e < 4 * n; e++) { const k = e, k2 = (e + 1) % (4 * n); const eIdx = (q: number) => { if (q <= n) return q; if (q <= 2 * n) return (q - n) * V + n; if (q <= 3 * n) return n * V + (3 * n - q); return (4 * n - q) * V; }; const a = eIdx(k), b = eIdx(k2), sa = V * V + k, sb = V * V + k2; idx.push(a, b, sa, b, sb, sa); }
     t.mesh.setIndices(idx, undefined, true); t.ntris = idx.length / 3; t.mesh.setEnabled(idx.length > 4 * n * 6);
   }
 

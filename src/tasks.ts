@@ -44,12 +44,11 @@ export function defineMissions(g: Game) {
   ], end: () => g.radio("dale", "Autodriller's in control. I can finally drink my coffee while it's hot. Keep an eye on those limits — it will run right up to every one of them.") });
 
   // ================================================================ 9. kill the well (unchanged flow; dosing at the hopper)
-  M({ id: "kick", title: "Kill the Well", sub: "The well is kicking. Shut it in, read the pressures, calculate the kill weight, weight up and circulate it out through the choke.", trigger: () => s.kick.alarm || s.kick.active || s.kick.shut || s.kill.stage !== "none", priority: true, a: 1.0, m: 10,
+  M({ id: "kick", title: "Kill the Well", sub: "The well is kicking. Shut it in, record the pressures, weight up to the kill weight and circulate it out through the choke.", trigger: () => s.kick.alarm || s.kick.active || s.kick.shut || s.kill.stage !== "none", priority: true, a: 1.0, m: 10,
     start: () => { g.sfx.horn(); g.ui.toast("KICK!", "Pit gain — flow check!"); g.radio("dale", "PIT GAIN! She's flowing! BOSS — shut it in!", 10000); },
     steps: [
       { text: "Shut in the well at the driller's console", at: sy(S.cabin), label: "Driller's console — SHUT IN", r: 3.5, act: () => g.openCabin(), watch: () => s.kick.shut },
-      { text: "Record SIDPP & SICP at the choke panel", at: sy(S.choke), label: "Choke panel", r: 4, act: () => g.openChoke(), watch: () => s.kill.stage === "calc" || s.kill.stage === "weightup" || s.kill.stage === "circ" },
-      { text: "Calculate the kill mud weight", at: sy(S.choke), label: "Choke panel", r: 4, act: () => g.openChoke(), watch: () => s.kill.stage === "weightup" || s.kill.stage === "circ" },
+      { text: "Record SIDPP & SICP at the choke panel", at: sy(S.choke), label: "Choke panel", r: 4, act: () => g.openChoke(), watch: () => s.kill.stage === "weightup" || s.kill.stage === "circ" },
       { text: "Weight up to kill weight at the mud hopper", at: sy(S.hopper), label: "Mud hopper", r: 3.8, act: () => g.openHopper(), watch: () => s.mw >= s.kill.kmw - 0.1 && s.kill.kmw > 0 },
       { text: "Circulate the kick out through the choke", at: sy(S.choke), label: "Choke panel — circulate", r: 4, act: () => g.openChoke(), watch: () => s.kill.stage === "flowcheck" },
       { text: "Flow-check and open the BOP at the console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.kill.stage === "none" && !s.kick.shut },

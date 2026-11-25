@@ -822,7 +822,7 @@ export class Game {
         <p>Enter the kill mud weight (ppg):</p><input type="number" step="0.1" id="kmw" value="${this.kmwInput ? this.kmwInput : ""}"/>
         <div class="btns"><button class="b" id="calc">Submit kill sheet</button></div><p class="hint" id="calcmsg"></p>`;
       } else if (k.stage === "weightup") {
-        body = `<p>Kill sheet signed. Weight up the active system to <b>${k.kmw.toFixed(1)} ppg</b> at the mud hopper, then come back and start the circulation.</p>
+        body = `<p>Kill weight worked out for you: <b>${k.kmw.toFixed(1)} ppg</b> (current MW + SIDPP ÷ (0.052 × TVD)). Weight up the active system to it at the mud hopper, then come back and start the circulation.</p>
         ${this.statRow("Current MW", s.mw.toFixed(2) + " ppg")}${this.statRow("Kill MW", k.kmw.toFixed(1) + " ppg")}
         <div class="btns"><button class="b" id="circ" ${s.mw >= k.kmw - 0.1 ? "" : "disabled"}>${s.mw >= k.kmw - 0.1 ? "Begin circulating the kick out" : "Waiting on mud weight…"}</button></div>`;
       } else if (k.stage === "circ") {
@@ -842,7 +842,12 @@ export class Game {
     const p = this.open(render(), { wide: true, live: true });
     const wire = () => {
       this.closeBtn(p);
-      p.querySelector<HTMLButtonElement>("#rec")?.addEventListener("click", () => { k.stage = "calc"; this.sfx.click(); p.innerHTML = render(); wire(); });
+      p.querySelector<HTMLButtonElement>("#rec")?.addEventListener("click", () => {
+        // the kill sheet fills itself in: Marcus does the arithmetic, you weight up and circulate
+        k.kmw = Math.ceil(this.sim.killMudWeight() * 10) / 10 + 0.1; k.stage = "weightup"; this.sfx.good();
+        this.radio("marcus", "Pressures are in. I ran the numbers: kill weight is " + k.kmw.toFixed(1) + " ppg. Bring me to the hopper and let's weight it up.", 8000);
+        p.innerHTML = render(); wire();
+      });
       p.querySelector<HTMLButtonElement>("#calc")?.addEventListener("click", () => {
         const val = Number((p.querySelector("#kmw") as HTMLInputElement).value); this.kmwInput = val;
         const right = this.sim.killMudWeight();

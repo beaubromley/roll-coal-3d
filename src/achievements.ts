@@ -1,5 +1,6 @@
 import type { Game } from "./game";
 import { WELL } from "./sim";
+import type { HatKind } from "./npcs";
 
 export interface Ach { id: string; name: string; desc: string; secret?: boolean; check?: (g: Game) => boolean }
 
@@ -39,21 +40,23 @@ export const ACHIEVEMENTS: Ach[] = [
   { id: "td", name: "Total Depth", desc: `Reach ${WELL.td.toLocaleString("en-US")} feet.`, check: (g) => g.sim.s.depth >= WELL.td - 1 },
 ];
 
-/** the hard hats: one is always yours, the rest are won with achievements */
-export interface Hat { id: string; name: string; shell: string; ridge: string; band: string; ach?: string; glow?: boolean; shine?: boolean }
+/** the hats: the company hard hat is always yours, the rest are won with achievements */
+export interface Hat { id: HatKind; name: string; icon: string; ach?: string }
 export const HATS: Hat[] = [
-  { id: "white", name: "Company Issue", shell: "#f4f4f4", ridge: "#e6e9ec", band: "#e6e9ec" },
-  { id: "yellow", name: "Safety Yellow", shell: "#ffd21a", ridge: "#e6b800", band: "#fff0a0", ach: "hardhat" },
-  { id: "orange", name: "Kill Switch Orange", shell: "#ff7a1a", ridge: "#c9540a", band: "#ffd0a0", ach: "kill" },
-  { id: "camo", name: "Hunter's Camo", shell: "#5a6b3a", ridge: "#3a2a1a", band: "#8a7a4a", ach: "hunt" },
-  { id: "flames", name: "Roll Coal Flames", shell: "#1b1b1b", ridge: "#ff7a1a", band: "#ff3a1a", ach: "coal", glow: true },
-  { id: "chrome", name: "Pew Pew Chrome", shell: "#cfd8e0", ridge: "#2ee6ff", band: "#8a96a6", ach: "pew", shine: true },
-  { id: "gold", name: "World Saver Gold", shell: "#f2c230", ridge: "#fff2a0", band: "#b8860b", ach: "world", shine: true },
-  { id: "agi", name: "AGI Cyan", shell: "#0b1220", ridge: "#2ee6ff", band: "#ff3ad6", ach: "secrets", glow: true },
-  { id: "lonestar", name: "Lone Star", shell: "#1f3f8f", ridge: "#ffffff", band: "#c4231c", ach: "taco" },
-  { id: "squatch", name: "Squatch Brown", shell: "#4a3322", ridge: "#2b1f18", band: "#6a4a30", ach: "bigfoot" },
-  { id: "catfish", name: "Old Sixty Teal", shell: "#3a7a8a", ridge: "#e8e8d0", band: "#1f4a56", ach: "sixty" },
-  { id: "pink", name: "Zero Harm Pink", shell: "#ff8ad8", ridge: "#ffffff", band: "#d44aa8", ach: "zero" },
+  { id: "hardhat", name: "Company Hard Hat", icon: "⛑️" },
+  { id: "cone", name: "Safety Cone", icon: "🚧", ach: "hardhat" },
+  { id: "beanie", name: "Safety Orange Beanie", icon: "🧶", ach: "kill" },
+  { id: "cowboy", name: "Cowboy Hat", icon: "🤠", ach: "hunt" },
+  { id: "cap", name: "Roll Coal Trucker Cap", icon: "🧢", ach: "coal" },
+  { id: "helmet", name: "Space Helmet", icon: "👨‍🚀", ach: "pew" },
+  { id: "tophat", name: "Executive Top Hat", icon: "🎩", ach: "world" },
+  { id: "robot", name: "Robot Head", icon: "🤖", ach: "secrets" },
+  { id: "sombrero", name: "Taco Tuesday Sombrero", icon: "🌮", ach: "taco" },
+  { id: "fur", name: "Squatch Fur Hat", icon: "🦧", ach: "bigfoot" },
+  { id: "bucket", name: "Old Sixty Bucket Hat", icon: "🎣", ach: "sixty" },
+  { id: "party", name: "Zero Harm Party Hat", icon: "🥳", ach: "zero" },
+  { id: "tinfoil", name: "Tinfoil Hat", icon: "🛸", ach: "nightcall" },
+  { id: "crown", name: "Trophy Crown", icon: "👑", ach: "trophy" },
 ];
 
 export function checkAchievements(g: Game) {

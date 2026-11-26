@@ -249,7 +249,7 @@ export class Outskirts {
     for (const s of [-1, 1]) { const piv = new TransformNode("oar", sc); piv.parent = bn; piv.position.set(s * 0.74, 0.6, -0.05); const oar = MeshBuilder.CreateCylinder("oar", { diameter: 0.045, height: 2.0, tessellation: 6 }, sc); oar.material = wood; oar.parent = piv; oar.rotation.z = Math.PI / 2; oar.position.x = s * 0.55; oar.isPickable = false; const blade = MeshBuilder.CreateBox("blade", { width: 0.4, height: 0.02, depth: 0.14 }, sc); blade.material = dark; blade.parent = piv; blade.position.x = s * 1.5; blade.isPickable = false; B.oars.push(piv); }
     B.node = bn; B.x = x; B.z = z; B.yaw = Math.PI / 2; bn.position.set(x, WATER_Y, z); bn.rotation.y = B.yaw;
     B.dock = { x0: x - 4.2 - 0.2, x1: x - 4.2 + 18.4, z: z - 2.9 };
-    window.addEventListener("keydown", (ev) => this.bkeys.add(ev.code)); window.addEventListener("keyup", (ev) => this.bkeys.delete(ev.code)); window.addEventListener("blur", () => this.bkeys.clear());
+    window.addEventListener("keydown", (ev) => { this.bkeys.add(ev.code); if (ev.code === "KeyX" && !ev.repeat && this.boat.aboard) this.leaveBoat(); });   // X climbs out (E is for fishing while you are aboard) window.addEventListener("keyup", (ev) => this.bkeys.delete(ev.code)); window.addEventListener("blur", () => this.bkeys.clear());
   }
   /** the nearest bit of land to the boat (for climbing out), or null if it is all water */
   private landNear(): Vector3 | null {
@@ -265,7 +265,7 @@ export class Outskirts {
   }
   private boardBoat() {
     const g = this.g, B = this.boat, p = g.player; if (!B.node) return;
-    B.aboard = true; B.spd = p.speedMul; p.speedMul = 0; g.ui.toast("IN THE BOAT", "W / S row, A / D turn. Fish from here, and take it out to the deep end. E at a shore to climb out.");
+    B.aboard = true; B.spd = p.speedMul; p.speedMul = 0; g.ui.toast("IN THE BOAT", "W / S row, A / D turn. Fish from here, and take it out to the deep end. X climbs out when you are next to the dock or a shore.");
   }
   private leaveBoat() {
     const g = this.g, B = this.boat, p = g.player, land = this.landNear();
@@ -797,7 +797,7 @@ export class Outskirts {
     // fishing is something you do at the dock: stand at the end of it, E (or a click) to cast, again to set the hook when the bobber dips, again to reel in
     // fishing is something you do from anywhere along the shore (once Hank is a friend): hold to charge the cast, release to throw it, R / F or the wheel to set how deep the bait sinks
     out.push({ pos: () => this.boat.node ? v(this.boat.x, 0.9, this.boat.z) : v(0, -999, 0), label: () => this.boat.aboard ? "Climb out of the boat" : "Get in the rowboat", r: 4.2, ok: () => !!this.boat.node && !g.veh.riding && this.fish.st === "idle", act: () => { if (!g.flags.hankFriend && !this.boat.aboard) { g.ui.toast("HANK'S BOAT", "Hank's pond, Hank's boat. Make friends with Hank first."); return; } if (this.boat.aboard) this.leaveBoat(); else this.boardBoat(); } });
-    out.push({ pos: () => this.boat.aboard ? g.player.pos.add(new Vector3(0, 1, 0)) : this.shorePoint(), label: () => !g.flags.hankFriend ? "Hank's pond (make friends with Hank first)" : this.fish.st === "idle" ? "Fish the pond: hold to charge a cast" : this.fish.st === "bite" ? "SET THE HOOK!" : this.fish.st === "charge" ? "Release to cast" : "Reel in", r: 6, ok: () => this.nearShore() || this.boat.aboard, act: () => {
+    out.push({ pos: () => this.boat.aboard ? g.player.pos.add(new Vector3(0, 1, 0)) : this.shorePoint(), label: () => !g.flags.hankFriend ? "Hank's pond (make friends with Hank first)" : this.fish.st === "idle" ? (this.boat.aboard ? "Fish from the boat: hold to charge a cast  ·  X climbs out" : "Fish the pond: hold to charge a cast") : this.fish.st === "bite" ? "SET THE HOOK!" : this.fish.st === "charge" ? "Release to cast" : "Reel in", r: 6, ok: () => this.nearShore() || this.boat.aboard, act: () => {
       if (!g.flags.hankFriend) { g.sfx.click(); g.ui.toast("HANK'S POND", "Hank's pond, Hank's fish. Go and make friends with Hank first. (Not near the pond.)"); return; }
       const r = this.fishClick(); if (r) { g.sfx.click(); g.ui.toast(r[0], r[1]); } } });
     // taco truck
@@ -866,6 +866,13 @@ export class Outskirts {
           sub = `LIH credit: $${credit.toLocaleString("en-US")} for the tool lost in hole on the last well, applied to THIS well's AFE.`;
           g.radio("tex", "THAT'S THE WHOLE RSS! I'll never lose anything again. (I will. I'll lose it again.)", 7000);
           setTimeout(() => g.radio("brent", "Accounting says the vendor reverses the lost-in-hole charge from the last run. It lands on this well. Don't ask how that works.", 9000), 3500);
+        } else if (id === "pad" || id === "bias" || id === "sub") {
+          // each RSS part is a lost-in-hole credit on its own the first time you find it (a repeat is only scrap); all three together rebuild the set for a bonus
+          const found: Record<string, boolean> = (g.flags.rssFound ??= {}), CR: Record<string, number> = { pad: 150000, bias: 250000, sub: 200000 }, first = !found[id], credit = first ? CR[id] : 20000;
+          found[id] = true; g.sim.addCost(-credit); g.gain(0, first ? 5 : 1); g.award("rss"); if (first) g.logBonus(name + " recovered from the pond", "$" + credit.toLocaleString("en-US") + " credit on the well");
+          sub = first ? `LIH credit: $${credit.toLocaleString("en-US")} for the part lost in hole on the last well, applied to THIS well's AFE.` : `A spare. The vendor credits only $${credit.toLocaleString("en-US")} scrap value.`;
+          if (first) g.radio("tex", "That's one of ours! Houston will credit the lost-in-hole charge against this well.", 6000);
+          if (found.pad && found.bias && found.sub && !g.flags.rssSet) { g.flags.rssSet = true; g.sim.addCost(-300000); g.gain(0.2, 6); g.logBonus("The RSS set is back together", "$300,000 bonus credit"); setTimeout(() => { g.ui.toast("RSS SET COMPLETE", "Pad, bias unit and control sub. The vendor sends a $300,000 bonus credit."); g.radio("brent", "Accounting says three parts is a set. A set gets a bonus. Don't ask me how a set is worth more than three parts.", 9000); }, 1800); }
         } else if (value > 0) { g.sim.addCost(-Math.round(value * 0.25)); g.gain(0, 3); sub = `Est. value $${value.toLocaleString("en-US")}. Insurance recovery credits $${Math.round(value * 0.25).toLocaleString("en-US")} to the AFE.`; }
         else sub = "Worth nothing, and you got it from the bottom of the deep hole.";
       } else {

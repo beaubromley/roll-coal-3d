@@ -253,9 +253,9 @@ export class Game {
   private hatApplied = "";
   hatOwned(id: string) { const h = HATS.find((x) => x.id === id); return !!h && (!h.ach || this.hasAward(h.ach)); }
   applyHat() {
-    let id = this.flags.hat ?? "white"; if (!this.hatOwned(id)) id = "white";
+    let id = this.flags.hat ?? "hardhat"; if (id === "white" || !this.hatOwned(id)) id = "hardhat";
     if (id === this.hatApplied) return; this.hatApplied = id;
-    const h = HATS.find((x) => x.id === id)!; this.player.body.setHatStyle(h);
+    this.player.body.setHat(id as any);
   }
   /** achievements */
   private achT = 1;
@@ -282,7 +282,7 @@ export class Game {
     const main = this.allMissions, side = this.sideList, sd = side.filter((m) => this.doneIds.has(m.id)).length, md = main.filter((m) => this.doneIds.has(m.id)).length;
     if (tab === "main") body = `<div class="tmarks">${mark(md)}</div>${main.map(row).join("")}`;
     else if (tab === "side") body = `<div class="tmarks">${mark(sd)}</div>${side.map(row).join("")}`;
-    else if (tab === "hats") { const have = HATS.filter((h) => this.hatOwned(h.id)).length; const cur = this.flags.hat ?? "white"; body = `<div class="tmarks">${have} / ${HATS.length} hard hats</div><div class="agrid">${HATS.map((h) => { const own = this.hatOwned(h.id), req = h.ach ? ACHIEVEMENTS.find((a) => a.id === h.ach) : null; return `<button class="hatb ${own ? "own" : ""} ${cur === h.id && own ? "on" : ""}" data-hat="${h.id}" ${own ? "" : "disabled"}><i style="background:${h.shell};box-shadow:inset 0 -6px 0 ${h.band}, inset 0 6px 0 ${h.ridge}"></i><div><div class="tt">${own ? h.name : "???"}</div><div class="ts">${own ? (cur === h.id ? "Wearing it" : "Click to wear") : "Unlock: " + (req ? req.name : "")}</div></div></button>`; }).join("")}</div>`; }
+    else if (tab === "hats") { const have = HATS.filter((h) => this.hatOwned(h.id)).length; const cur = this.flags.hat ?? "hardhat"; body = `<div class="tmarks">${have} / ${HATS.length} hats</div><div class="agrid">${HATS.map((h) => { const own = this.hatOwned(h.id), req = h.ach ? ACHIEVEMENTS.find((a) => a.id === h.ach) : null; return `<button class="hatb ${own ? "own" : ""} ${cur === h.id && own ? "on" : ""}" data-hat="${h.id}" ${own ? "" : "disabled"}><i>${own ? h.icon : "?"}</i><div><div class="tt">${own ? h.name : "???"}</div><div class="ts">${own ? (cur === h.id ? "Wearing it" : "Click to wear") : "Unlock: " + (req ? req.name : "")}</div></div></button>`; }).join("")}</div>`; }
     else if (tab === "items") { body = `<div class="trow ok"><b>☎</b><div><div class="tt">Cell phone</div><div class="ts">Press 1. Call the driller (shut in, weight on bit, trip), the engineer for help on what to do next, the directional driller, the superintendent, Houston, or Mom.</div></div><em>OWNED</em></div><div class="trow ${this.items.has("shotgun") ? "ok" : "wait"}"><b>${this.items.has("shotgun") ? "✔" : "?"}</b><div><div class="tt">${this.items.has("shotgun") ? "Shotgun" : "???"}</div><div class="ts">${this.items.has("shotgun") ? "Press 2 to ready it, click to fire. It only fires out in the country where the animals are, never around people." : "Somebody out there might lend you one."}</div></div><em>${this.items.has("shotgun") ? "OWNED" : ""}</em></div>`; }
     else if (tab === "ach") { const n = ACHIEVEMENTS.filter((a) => this.hasAward(a.id)).length; body = `<div class="tmarks">${n} / ${ACHIEVEMENTS.length}</div><div class="agrid">${ACHIEVEMENTS.map((a) => { const on = this.hasAward(a.id); return `<div class="ach ${on ? "on" : ""}"><b>${on ? "★" : "☆"}</b><div><div class="tt">${on || !a.secret ? a.name : "???"}</div><div class="ts">${on || !a.secret ? a.desc : "A secret."}</div></div></div>`; }).join("")}</div>`; }
     box.innerHTML = `<div class="ttabs">${[["main", "MAIN JOBS"], ["side", "SIDE JOBS"], ["ach", "ACHIEVEMENTS"], ["hats", "HARD HATS"], ["items", "ITEMS"], ["depth", "DEPTH"]].map(([k, l]) => `<button class="ttab ${tab === k ? "on" : ""}" data-t="${k}">${l}</button>`).join("")}</div><div class="tbody">${body}</div>`;

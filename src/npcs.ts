@@ -52,6 +52,40 @@ function hardHatParts(sc: Scene): { mesh: Mesh; x: number; y: number; z: number 
   return out;
 }
 
+/** the unlockable hats: each is its own shape, built from simple solids and positioned from the brim line of the head (y = 0 is where a hard hat's brim sits) */
+export type HatKind = "hardhat" | "cone" | "beanie" | "cowboy" | "cap" | "helmet" | "tophat" | "tinfoil" | "sombrero" | "fur" | "bucket" | "party" | "robot" | "crown";
+function hatParts(sc: Scene, kind: HatKind): { mesh: Mesh; x: number; y: number; z: number; hex: string; shine?: boolean; glow?: boolean; alpha?: number }[] {
+  type P = { mesh: Mesh; x: number; y: number; z: number; hex: string; shine?: boolean; glow?: boolean; alpha?: number };
+  const out: P[] = [];
+  const cyl = (n: string, top: number, bot: number, h: number, y: number, hex: string, o: Partial<P> & { z?: number; sz?: number } = {}) => { const mm = MeshBuilder.CreateCylinder(n, { diameterTop: top, diameterBottom: bot, height: h, tessellation: 24 }, sc); if (o.sz) mm.scaling.z = o.sz; out.push({ mesh: mm, x: 0, y, z: o.z ?? 0, hex, shine: o.shine, glow: o.glow, alpha: o.alpha }); return mm; };
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: string, o: Partial<P> = {}) => { const mm = MeshBuilder.CreateBox("hatb", { width: w, height: h, depth: d }, sc); out.push({ mesh: mm, x, y, z, hex, shine: o.shine, glow: o.glow }); return mm; };
+  const ball = (d: number, x: number, y: number, z: number, hex: string, o: Partial<P> & { sy?: number } = {}) => { const mm = MeshBuilder.CreateSphere("hatS", { diameter: d, segments: 12 }, sc); if (o.sy) mm.scaling.y = o.sy; out.push({ mesh: mm, x, y, z, hex, shine: o.shine, glow: o.glow, alpha: o.alpha }); return mm; };
+  switch (kind) {
+    case "cone": cyl("cone", 0.05, 0.3, 0.36, 0.2, "#ff7a1a"); cyl("conebase", 0.4, 0.4, 0.03, 0.01, "#ff7a1a"); cyl("conestripe1", 0.12, 0.2, 0.07, 0.24, "#ffffff"); cyl("conestripe2", 0.19, 0.24, 0.05, 0.1, "#ffffff"); break;
+    case "beanie": ball(0.32, 0, 0.07, 0, "#ff7a1a", { sy: 0.85 }); cyl("beaniecuff", 0.3, 0.3, 0.07, 0.02, "#d9540a"); ball(0.08, 0, 0.22, 0, "#ffffff"); break;
+    case "cowboy": cyl("cbrim", 0.56, 0.56, 0.014, 0.0, "#7a4a28", { sz: 1.1 }); cyl("ccrown", 0.2, 0.26, 0.14, 0.08, "#8a5a32"); cyl("cpinch", 0.1, 0.2, 0.05, 0.17, "#8a5a32"); cyl("cband", 0.27, 0.27, 0.03, 0.03, "#2b1f18"); box(0.04, 0.035, 0.012, 0, 0.03, 0.135, "#d8b640", { shine: true }); for (const s of [-1, 1]) box(0.05, 0.03, 0.34, s * 0.255, 0.02, 0, "#7a4a28"); break;
+    case "cap": ball(0.31, 0, 0.05, -0.005, "#c4231c", { sy: 0.8 }); box(0.2, 0.012, 0.2, 0, 0.0, 0.2, "#a31a14"); ball(0.03, 0, 0.17, 0, "#8a1510"); box(0.1, 0.05, 0.01, 0, 0.09, 0.155, "#ffffff"); break;
+    case "helmet": ball(0.5, 0, -0.04, 0, "#bfe8ff", { alpha: 0.32, shine: true }); cyl("neckring", 0.4, 0.42, 0.06, -0.24, "#cfd8e0", { shine: true }); cyl("antenna", 0.012, 0.012, 0.18, 0.3, "#8a96a6"); ball(0.04, 0, 0.4, 0, "#ff3a2a", { glow: true }); break;
+    case "tophat": cyl("tbrim", 0.38, 0.38, 0.012, 0.0, "#15171a", { shine: true }); cyl("tcrown", 0.21, 0.21, 0.28, 0.14, "#15171a", { shine: true }); cyl("tband", 0.215, 0.215, 0.045, 0.04, "#c4231c"); break;
+    case "tinfoil": cyl("tin", 0.015, 0.3, 0.38, 0.19, "#cfd8e0", { shine: true }); cyl("tinbase", 0.3, 0.3, 0.02, 0.0, "#aab4be", { shine: true }); break;
+    case "sombrero": cyl("sbrim", 0.74, 0.74, 0.012, 0.0, "#e8c860", { sz: 1.05 }); cyl("scrown", 0.1, 0.22, 0.2, 0.1, "#e8c860"); cyl("sband", 0.225, 0.225, 0.04, 0.03, "#c4231c"); cyl("sedge", 0.74, 0.74, 0.02, 0.0, "#2f9e5a", { sz: 1.05 }).scaling.x = 0.97; break;
+    case "fur": ball(0.38, 0, 0.06, 0, "#4a3322", { sy: 0.78 }); for (const s of [-1, 1]) ball(0.1, s * 0.17, 0.0, 0.0, "#4a3322"); ball(0.18, 0, 0.0, 0.14, "#5a4030", { sy: 0.7 }); break;
+    case "bucket": cyl("bk", 0.22, 0.28, 0.13, 0.07, "#3a7a8a"); cyl("bkbrim", 0.46, 0.46, 0.014, 0.0, "#3a7a8a"); box(0.03, 0.06, 0.012, 0.1, 0.03, 0.14, "#ff7a1a"); box(0.02, 0.07, 0.012, 0.12, 0.02, 0.14, "#e8e8d0"); break;
+    case "party": cyl("pcone", 0.012, 0.24, 0.32, 0.17, "#ff8ad8"); cyl("pstripe1", 0.07, 0.15, 0.04, 0.17, "#ffffff"); cyl("pstripe2", 0.13, 0.19, 0.04, 0.08, "#ffd24a"); ball(0.07, 0, 0.34, 0, "#ffd24a", { glow: true }); break;
+    case "robot": box(0.44, 0.44, 0.42, 0, -0.04, 0, "#9aa4b0", { shine: true }); box(0.34, 0.1, 0.02, 0, 0.0, 0.215, "#10151c"); for (const s of [-1, 1]) ball(0.05, s * 0.07, 0.0, 0.225, "#2ee6ff", { glow: true }); box(0.2, 0.025, 0.02, 0, -0.14, 0.215, "#2a3446"); cyl("rant", 0.012, 0.012, 0.16, 0.26, "#cfd8e0"); ball(0.045, 0, 0.35, 0, "#ff3ad6", { glow: true }); for (const s of [-1, 1]) cyl("rear", 0.07, 0.07, 0.06, -0.04, "#6a7480").rotation.z = Math.PI / 2; break;
+    case "crown": cyl("crown", 0.28, 0.24, 0.12, 0.06, "#f2c230", { shine: true }); for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; const sp = MeshBuilder.CreateCylinder("cpt", { diameterTop: 0.0, diameterBottom: 0.06, height: 0.09, tessellation: 6 }, sc); out.push({ mesh: sp, x: Math.cos(a) * 0.125, y: 0.15, z: Math.sin(a) * 0.125, hex: "#f2c230", shine: true }); ball(0.03, Math.cos(a) * 0.125, 0.21, Math.sin(a) * 0.125, "#c4231c", { glow: true }); } break;
+    default: break;
+  }
+  return out;
+}
+const hatMatCache = new Map<string, StandardMaterial>();
+function hatMat(sc: Scene, hex: string, shine?: boolean, glow?: boolean, alpha?: number) {
+  const k = hex + (shine ? "s" : "") + (glow ? "g" : "") + (alpha ?? "");
+  let x = hatMatCache.get(k);
+  if (!x) { x = new StandardMaterial("hatm" + k, sc); x.diffuseColor = Color3.FromHexString(hex); x.specularColor = shine ? new Color3(0.9, 0.9, 0.95) : new Color3(0.06, 0.06, 0.06); x.specularPower = shine ? 40 : 16; if (glow) x.emissiveColor = Color3.FromHexString(hex).scale(0.7); if (alpha !== undefined) { x.alpha = alpha; x.backFaceCulling = false; } hatMatCache.set(k, x); }
+  return x;
+}
+
 export class Human {
   root: TransformNode;
   legL!: TransformNode; legR!: TransformNode; armL!: TransformNode; armR!: TransformNode;
@@ -505,7 +539,23 @@ export class Human {
       else if (x.name === "hhband") x.material = mat(s.band, !!s.glow, false);
     }
   }
-  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); /* the hair stays: the hat sits over the top of it and the back still shows below the brim */ }
+  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); this.refreshHat(); /* the hair stays: the hat sits over the top of it and the back still shows below the brim */ }
+  /** wear a different hat: the company hard hat, or one of the unlockables (a cowboy hat, a robot head, a crown...) */
+  private hatKind: HatKind = "hardhat"; private hats = new Map<HatKind, Mesh[]>();
+  setHat(kind: HatKind) {
+    if (kind === this.hatKind) return; this.hatKind = kind;
+    if (kind !== "hardhat" && !this.hats.has(kind)) {
+      const HY = 1.665, parts = hatParts(this.scene, kind), meshes: Mesh[] = [];
+      for (const p of parts) { p.mesh.material = hatMat(this.scene, p.hex, p.shine, p.glow, p.alpha); p.mesh.parent = this.root; p.mesh.position.set(p.x, HY + 0.072 + p.y, p.z); p.mesh.isPickable = false; p.mesh.setEnabled(false); meshes.push(p.mesh); }
+      this.hats.set(kind, meshes);
+    }
+    this.refreshHat();
+  }
+  private refreshHat() {
+    const custom = this.hatKind !== "hardhat", show = this.ppeOn && !this.suitOn;
+    for (const x of this.ppe) if (x.name === "hardhat" || x.name === "hhridge" || x.name === "hhband" || x.name === "hhmark") x.setEnabled(show && !custom);
+    for (const [k, ms] of this.hats) for (const x of ms) x.setEnabled(show && custom && k === this.hatKind);
+  }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {

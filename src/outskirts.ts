@@ -100,17 +100,31 @@ export class Outskirts {
     for (const [k, c, o] of [["leaf", "#3d5a2a"], ["leaf2", "#2c4a22"], ["leaf3", "#55672f"], ["bark", "#4a3a28"], ["tent", "#c8a24a"], ["tentd", "#8a6a2a"], ["campfire", "#ff7a1a", { emissive: "#ff7a1a" }], ["flog", "#5a4128"], ["cooler", "#2c6fb5"]] as [string, string, { emissive?: string }?][]) b.defMat(k, c, o ?? {});
     let seed = 91; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const C = FOREST_CAMP;
-    for (let gx = -340; gx < 340; gx += 13) for (let gz = -150; gz > -560; gz -= 13) {
-      const x = gx + (R() - 0.5) * 10, z = gz + (R() - 0.5) * 10, h = 3.5 + R() * 3.5, w = 0.35 + R() * 0.3, big = 2.6 + R() * 2.4, mat = ["leaf", "leaf2", "leaf3"][(R() * 3) | 0], extra = R() < 0.5;
-      if (R() < 0.38) continue;
-      if (x > 30 && z > -250) continue;                           // the hills' country
-      if (Math.hypot(x - RIVAL.x, z - RIVAL.z) < 150) continue;   // the rival's fence
-      if (Math.hypot(x - C.x, z - C.z) < 17) continue;            // the camp's clearing
-      if (Math.hypot(x, z) > 540) continue;                       // the cliffs
-      b.cyl("bark", x, h / 2, z, w, h, { tess: 6, dia2: w * 0.6 });
-      b.sphere(mat, x, h + big * 0.35, z, big, 8);
-      if (extra) b.sphere(mat, x + (R() - 0.5) * 1.8, h + big * 0.1, z + (R() - 0.5) * 1.8, big * 0.7, 7);
+    // a proper forest: mesquite and oak with fat, lumpy canopies; cedars and pines; undergrowth in the gaps, so you cannot see straight through
+    for (const [k, c] of [["leaf4", "#4d7a2e"], ["leaf5", "#3a6a2a"], ["pine", "#1f3d27"], ["pine2", "#2b5233"], ["bush", "#35542a"], ["bush2", "#4a6a2e"]] as [string, string][]) b.defMat(k, c, {});
+    const LEAF = ["leaf", "leaf2", "leaf3", "leaf4", "leaf5"], inForest = (x: number, z: number) => !(x > 30 && z > -250) && Math.hypot(x - RIVAL.x, z - RIVAL.z) >= 150 && Math.hypot(x - C.x, z - C.z) >= 17 && Math.hypot(x, z) <= 540;
+    for (let gx = -340; gx < 340; gx += 9.5) for (let gz = -150; gz > -560; gz -= 9.5) {
+      const x = gx + (R() - 0.5) * 7, z = gz + (R() - 0.5) * 7, kind = R();
+      if (R() < 0.14 || !inForest(x, z)) continue;
+      if (kind < 0.3) {   // cedar / pine: a trunk and three stacked cones
+        const h = 7 + R() * 5, w = 0.38 + R() * 0.15, m1 = R() < 0.5 ? "pine" : "pine2", m2 = m1 === "pine" ? "pine2" : "pine";
+        b.cyl("bark", x, 1.2, z, w, 2.4, { tess: 6 });
+        for (let k = 0; k < 3; k++) b.cyl(k % 2 ? m2 : m1, x, 2.2 + k * h * 0.2 + h * 0.17, z, 5.2 - k * 1.3, h * 0.34, { tess: 8, dia2: 0.2 });
+      } else {   // broad canopy: a skirt, a crown and four lumps around it, in two greens
+        const h = 3.2 + R() * 2.4, w = 0.4 + R() * 0.3, big = 4.4 + R() * 2.6, m1 = LEAF[(R() * 5) | 0], m2 = LEAF[(R() * 5) | 0];
+        b.cyl("bark", x, h / 2, z, w, h, { tess: 6, dia2: w * 0.6 });
+        const fx = (R() - 0.5) * 1.6, fz = (R() - 0.5) * 1.6; b.beam("bark", new Vector3(x, h * 0.55, z), new Vector3(x + fx, h + 0.8, z + fz), 0.11, 5);
+        b.sphere("leaf2", x, h + big * 0.08, z, big * 0.92, 6);
+        b.sphere(m1, x, h + big * 0.42, z, big * 0.86, 6);
+        for (let k = 0; k < 4; k++) { const an = k * 1.571 + R() * 0.8, rr = big * (0.3 + R() * 0.12); b.sphere(k % 2 ? m1 : m2, x + Math.cos(an) * rr, h + big * (0.22 + R() * 0.3), z + Math.sin(an) * rr, big * (0.5 + R() * 0.18), 6); }
+      }
       b.blocker(x - 0.3, 0, z - 0.3, x + 0.3, 4, z + 0.3);
+    }
+    // undergrowth: low bushes between the trees
+    for (let gx = -340; gx < 340; gx += 7) for (let gz = -150; gz > -560; gz -= 7) {
+      const x = gx + (R() - 0.5) * 6, z = gz + (R() - 0.5) * 6, d = 1.3 + R() * 1.6;
+      if (R() < 0.5 || !inForest(x, z)) continue;
+      b.sphere(R() < 0.5 ? "bush" : "bush2", x, d * 0.38, z, d, 5);
     }
     // the hunters' camp: a tent, a fire ring with log seats, a cooler, and a sign
     b.box("tent", C.x - 4, 0.9, C.z + 1, 3.2, 1.8, 2.6, true); b.beam("tentd", new Vector3(C.x - 4, 1.9, C.z - 0.4), new Vector3(C.x - 4, 1.9, C.z + 2.4), 0.12);

@@ -15,7 +15,7 @@ export const STAND_M = 28.35; // 93 ft stand
 
 export interface RigFrame {
   depth: number; startDepth: number; rotating: boolean; connecting: boolean; tripping: boolean;
-  tripFrac: number; standsRacked: number; night: number; t: number; pumpsOn: boolean; flaring: boolean; kicking?: boolean;
+  tripFrac: number; standsRacked: number; night: number; t: number; pumpsOn: boolean; flaring: boolean; kicking?: boolean; laser?: boolean;
   /** live data for the cabin monitors; `near` = the player is close enough for them to be worth redrawing */
   screens?: import("./screens").ScreenData; near?: boolean;
 }
@@ -1566,6 +1566,12 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   const tdBox: AABB = { x0: -0.7, x1: 0.75, z0: -0.75, z1: 0.75, y0: 0, y1: 0 };
   const blockBox: AABB = { x0: -0.18, x1: 0.78, z0: -0.8, z1: 0.8, y0: 0, y1: 0 };
   b.colliders.push(tdBox, blockBox);
+  // the stolen laser: a beam from the top drive straight down the hole, with a glowing pool at the bottom (only while laser drilling is on)
+  const laserMat = (hex: string, alpha: number) => { const m = new StandardMaterial("rigbeam" + hex, scene); m.emissiveColor = Color3.FromHexString(hex); m.disableLighting = true; m.alpha = alpha; m.backFaceCulling = false; m.fogEnabled = false; return m; };
+  const laserCore = MeshBuilder.CreateCylinder("rlaserCore", { diameter: 0.16, height: 1, tessellation: 10 }, scene), laserGlow = MeshBuilder.CreateCylinder("rlaserGlow", { diameter: 0.7, height: 1, tessellation: 12 }, scene), laserPool = MeshBuilder.CreateDisc("rlaserPool", { radius: 1, tessellation: 28 }, scene);
+  laserCore.material = laserMat("#d8fdff", 0.95); laserGlow.material = laserMat("#2ee6ff", 0.3); laserPool.material = laserMat("#2ee6ff", 0.6);
+  laserPool.rotation.x = Math.PI / 2; laserPool.position.set(0, 0.12, 0);
+  for (const m of [laserCore, laserGlow, laserPool]) { m.parent = rigRoot; m.isPickable = false; m.setEnabled(false); }
   const tmpQ = new Quaternion();
   let scrT = 0;
   const update = (dt: number, f: RigFrame) => {
@@ -1581,6 +1587,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     td.position.y = tdY;
     { const inHole = f.connecting || f.tripping; slips.position.set(inHole ? 0 : 1.25, inHole ? F + 0.4 : F + 0.01, inHole ? 0 : -0.8); slips.rotation.y = inHole ? 0 : 0.7; }
     tdBox.y0 = tdY - 2.3; tdBox.y1 = tdY + 1.8; blockBox.y0 = tdY + 2.85; blockBox.y1 = tdY + 3.9;
+    { const on = !!f.laser; if (laserCore.isEnabled() !== on) for (const m of [laserCore, laserGlow, laserPool]) m.setEnabled(on);
+      if (on) { const top = tdY - 1.7, bot = 0.1, len = Math.max(0.5, top - bot), pul = 0.5 + 0.5 * Math.sin(f.t * 22);
+        laserCore.position.y = laserGlow.position.y = (top + bot) / 2; laserCore.scaling.y = laserGlow.scaling.y = len; laserCore.scaling.x = laserCore.scaling.z = 0.85 + 0.3 * pul; laserGlow.scaling.x = laserGlow.scaling.z = 0.9 + 0.35 * Math.sin(f.t * 13 + 1);
+        laserPool.scaling.set(1.1 + 0.5 * pul, 1.1 + 0.5 * pul, 1); (laserPool.material as StandardMaterial).alpha = 0.4 + 0.3 * pul; } }
     tdSpin.rotation.y += f.rotating ? dt * 5 : 0;
     rotMark.rotation.y += f.rotating ? dt * 5 : 0;
     const blockY = tdY + 3.1;

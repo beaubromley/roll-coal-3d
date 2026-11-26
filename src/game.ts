@@ -539,7 +539,7 @@ export class Game {
               <div class="hint">Set points: WOB (klb) · ROP (ft/hr) · DIFF (psi, motor stalls at 2,100) · TQ (ft-lb, string twists off at 16,500)</div>
               <div class="hint" id="a_lim" style="min-height:18px"></div>
               <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button></div>
-              ${this.flags.laserUnlocked ? `<div class="btns"><button class="b ${this.flags.laserOn ? "red" : "alt"}" id="a_laser" style="border-color:#2ee6ff">${this.flags.laserOn ? "LASER DRILLING: ON (300 ft/hr)" : "Switch to LASER drilling"}</button></div>` : ""}
+              ${this.flags.laserUnlocked ? `<div class="btns"><button class="b ${this.flags.laserOn ? "red" : "alt"}" id="a_laser" style="border-color:#2ee6ff" ${!this.flags.laserOn && s.mode !== "drilling" ? "disabled" : ""}>${this.flags.laserOn ? "LASER DRILLING: ON (300 ft/hr) · switch off" : s.mode === "drilling" ? "Switch to LASER drilling (instead of the autodriller)" : "LASER drilling: only while drilling"}</button></div>` : ""}
             </div>
             <div class="cab-manual"><div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
             <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
@@ -586,7 +586,7 @@ export class Game {
       holdBtn("wobUp", 1); holdBtn("wobDn", -1);
       q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
       q("c_sweep").onclick = () => { const r = this.sim.sweep(); if (r) { this.ui.toast("NO SWEEP", r); return; } this.sfx.click(); this.ui.toast("LCM SWEEP AWAY", "A 30 lb/bbl pill is going down the pipe. It will fade as it circulates out."); this.radio("marcus", "The pill is pumped. Watch the pits and the returns.", 6000); };
-      const lz = p.querySelector<HTMLElement>("#a_laser"); if (lz) lz.onclick = () => { this.flags.laserOn = !this.flags.laserOn; if (this.flags.laserOn) this.award("pew"); this.sfx.click(); this.radio("dale", this.flags.laserOn ? "Laser is firing. No weight on bit. 300 an hour and nothing wears out. This feels illegal." : "Back to the bit. It missed us.", 7000); this.rerenderCabin(p, render, bind); };
+      const lz = p.querySelector<HTMLElement>("#a_laser"); if (lz) lz.onclick = () => { if (!this.flags.laserOn && s.mode !== "drilling") { this.ui.toast("NOT NOW", "The laser only fires while you are drilling."); return; } this.flags.laserOn = !this.flags.laserOn; if (this.flags.laserOn) { this.award("pew"); s.auto.on = false; } this.sfx.click(); this.radio("dale", this.flags.laserOn ? "Laser is firing. No weight on bit. 300 an hour and nothing wears out. This feels illegal." : "Back to the bit. It missed us.", 7000); this.rerenderCabin(p, render, bind); };
       q("a_toggle").onclick = () => {
         const a = s.auto;
         if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
@@ -595,7 +595,7 @@ export class Game {
         if (a.rop < 100) notes.push("That ROP limit is going to strangle us. We'll crawl.");
         if ((a.torque ?? 10000) > TORQUE_MAX) notes.push("A torque limit over 16,500 won't save the string. It'll twist off first.");
         if (a.wob > 45) notes.push("Forty-five klbs on a bit that size is a lot of weight for not much hole.");
-        a.on = true; this.sfx.good();
+        a.on = true; this.flags.laserOn = false; this.sfx.good();
         this.radio("dale", notes.length ? notes[0] : "Autodriller's in. Set points look sane — nice.", 8000);
         if (!notes.length) this.gain(0.15, 0);
         this.rerenderCabin(p, render, bind);
@@ -1548,6 +1548,7 @@ export class Game {
     this.inspectStep();
     this.pumpRadio();
     if ((this.achT -= realDt) <= 0) { this.achT = 1; if (this.started) checkAchievements(this); }
+    if (this.flags.laserOn && this.sim.s.mode !== "drilling" && this.sim.s.mode !== "connection") { this.flags.laserOn = false; this.ui.toast("LASER OFF", "The laser only fires while you are drilling. Switch it back on when you are."); }
     this.sim.laser = !!this.flags.laserUnlocked && !!this.flags.laserOn && !this.astMode;
     if (this.started && !this.paused && !this.astMode && !this.flags.finish) this.supplyNotes(realDt); else if (this.supplyEl) this.supplyEl.innerHTML = "";
     this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);

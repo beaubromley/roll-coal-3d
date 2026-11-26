@@ -78,17 +78,16 @@ export function defineMissions(g: Game) {
 
   // ================================================================ 16. ARMAGEDDON (finale)
   // ================================================================ 15. the well: TD, run pipe, rig release (the finale only comes after this is done)
-  M({ id: "welldone", title: "Finish the Well", sub: "Drill to TD, run the pipe, and release the rig. Then you are done with the well.", trigger: () => g.flags.chainDone === true, a: 0.6, m: 8,
+  M({ id: "welldone", title: "Finish the Well", sub: "Drill to TD, then run the casing and cement. When the pipe is cemented the well is done and the rig is released.", trigger: () => g.flags.chainDone === true, a: 0.6, m: 8,
     start: () => { g.hold = null; sim.hold = null; g.radio("dale", "Released the hold. We're drilling to TD, boss.", 8000); },
     steps: [
       { text: "TD: drill to 8,500 ft (set weight at the driller's console)", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.depth >= WELL.td - 0.5 && (s.mode === "idle" || s.mode === "casing" || s.mode === "done") },   // (casing may already be running or finished by the time the first step is looked at)
       { text: "Run Pipe: run the casing & cement at the console", at: sy(S.cabin), label: "Driller's console — run casing", r: 3.5, act: () => g.openCabin(), watch: () => s.mode === "casing" || s.mode === "done" },
       { text: "Run Pipe: casing & cement in the hole…", watch: () => s.casing.phase === "done" || s.mode === "done" },
-      { text: "Rig Release: sign the rig release in the doghouse", at: sy(S.doghouse), label: "Sign the rig release", r: 3.5, act: (done) => g.mini.signSheet({ eyebrow: "Doghouse", title: "Rig Release", intro: "The well is done. Earl slides the rig release across the desk. \"Sign on the line, boss. The rig is yours. Well, not yours. Nobody's. It's released.\"" }, () => { g.radio("earl", "Rig released. Good well, boss. Don't go anywhere. Houston's about to call.", 8000); done(); }) },
-    ] });
+    ], end: () => { g.flags.wellDoneAt = g.realT; g.radio("earl", "Casing's cemented. The well's done and the rig is released, boss. Houston's about to call.", 8000); } });
 
   // ================================================================ 16. ARMAGEDDON (finale): only after the well is done
-  M({ id: "armageddon", title: "Save the World", sub: "The well is done. Now the president is calling about an asteroid.", trigger: () => g.doneIds.has("welldone"), a: 1.0, m: 20,
+  M({ id: "armageddon", title: "Save the World", sub: "The well is done. Now the president is calling about an asteroid.", trigger: () => g.doneIds.has("welldone") && g.realT - (g.flags.wellDoneAt ?? -999) >= 10, a: 1.0, m: 20,
     steps: [
       { text: "Answer the phone (the one in your trailer)", at: sy(S.phone), label: "Answer the phone", r: 3, enter: () => { g.sfx.horn(); g.spawnAsteroid(); g.sim.s.paused = true; g.flags.ringing = true; g.flags.ringT = 0; g.flags.ringLast = 0; g.flags.ringNag = false; g.ui.toast("YOUR PHONE IS RINGING", "Answer it at the phone in your trailer."); g.radio("earl", "Boss, your phone's ringing. Caller ID says… the White House? Pick it up.", 11000); }, act: (done0) => {
         g.flags.ringing = false; const done = () => done0();

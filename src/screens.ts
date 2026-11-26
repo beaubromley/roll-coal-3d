@@ -239,6 +239,7 @@ const EDR: [Chan, Chan][] = [
 /** hookload and block height. Drilling: the string hangs from the hook less the weight on bit, and the block creeps down. Tripping: a sawtooth: the block climbs with a stand
  *  (string weight on the hook; it shrinks as pipe comes out and grows as it goes in) and then drops back empty (just the block and top drive) for the next one. */
 const STAND = 93, STROKE = 100, BLOCKS = 50;
+let tripPh = 0;   // 0..1 through the current stand while tripping
 function trip(d: ScreenData): { hook: number; block: number } {
   const bd = d.bitDepth ?? d.depth;
   // running casing: the same saw-tooth as running pipe in, in 80 ft doubles and a good deal heavier (the casing floats a little in the mud)
@@ -252,8 +253,9 @@ function trip(d: ScreenData): { hook: number; block: number } {
   if (d.casing === "done") return { hook: BLOCKS, block: 5 };
   const W = BLOCKS + 0.025 * bd;
   if (d.tripping) {
-    // u runs 0..1 through each stand: upward while pulling out (bit depth falling), downward while running in (bit depth rising), then it wraps
-    const u = 1 - ((bd % STAND) + STAND) % STAND / STAND;
+    // u runs 0..1 through each stand: upward while pulling out, downward while running in, then it wraps. Trips run far faster than the chart samples, so the stand phase advances
+    // a fixed number of samples per stand (see pushEdr) instead of following the bit depth, which would alias into noise
+    const u = tripPh;
     // block height: like drilling, only fast. Running in it ramps down the stand and skips back up; pulling out the ramp is inverted: low, ramping up, then skipping back low
     const block = 5 + u * (STROKE - 5);
     // hookload follows the string weight, so it is proportional to the depth of the bit. Pulling out is heavier (drag holds the pipe back), running in is lighter; each stand ramps the same way as the block
@@ -283,12 +285,13 @@ function drawWeight(c: CanvasRenderingContext2D, d: ScreenData, w: number, h: nu
 const edrMode: number[] = [];   // 0 rotating, 1 sliding, 2 oscillating slide, 3 not drilling
 const edrState = { rop2: 0, wob2: 0 };
 function pushEdr(d: ScreenData) {
+  if (d.tripping && d.casing !== "run") tripPh = ((tripPh + (d.tripOut === false ? -1 : 1) / 8) % 1 + 1) % 1;   // eight chart samples to a stand
   edrState.rop2 += (d.rop - edrState.rop2) * 0.12; edrState.wob2 += (d.wob * 0.95 - edrState.wob2) * 0.2;
   { const code = d.mode === "drilling" && d.rop > 0 ? (d.dd.mode === "slide" ? 1 : d.dd.mode === "osc" ? 2 : 0) : 3; edrMode.push(code); if (edrMode.length > EDR_N) edrMode.shift(); }
   const first = edrHist.length === 0;
   if (first) for (let i = 0; i < EDR.length * 2; i++) edrHist.push([]);
   EDR.forEach((pair, ti) => pair.forEach((ch, ci) => {
-    const a = edrHist[ti * 2 + ci], v = Math.max(0, ch.get(d, edrState) + (ch.sp ? 0 : (Math.random() - 0.5) * ch.max * 0.012));   // set points do not jitter
+    const a = edrHist[ti * 2 + ci], v = Math.max(0, ch.get(d, edrState) + (ch.sp ? 0 : (Math.random() - 0.5) * ch.max * (d.tripping ? 0.003 : 0.012)));   // set points do not jitter
     if (first) for (let i = 0; i < EDR_N; i++) a.push(v); else { a.push(v); if (a.length > EDR_N) a.shift(); }
   }));
 }

@@ -482,6 +482,12 @@ export class Vehicles {
     return out;
   }
 
+  /** put a vehicle at a saved spot and climb into it (continuing a saved game that ended while you were driving) */
+  restoreInto(id: string, x: number, z: number, yaw: number): boolean {
+    const v = this.list.find((q) => q.id === id); if (!v || v.kind === "drone" || this.riding) return false;
+    v.x = x; v.z = z; v.yaw = yaw; v.speed = 0; this.place(v);
+    this.player.teleport(x, 0.5, z, yaw); this.enter(v); return true;
+  }
   private place(v: Veh) {
     v.root.position.set(v.x, v.kind === "drone" ? v.alt : v.gy ?? 0, v.z); v.root.rotation.y = v.yaw;
     const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw);

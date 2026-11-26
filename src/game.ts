@@ -1103,7 +1103,8 @@ export class Game {
       const p = this.player, onFoot = !this.veh.riding;
       localStorage.setItem(Game.slotKey(this.slot), JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
         approval: this.approval, morale: this.morale, incidents: this.incidents, flags, depthLog: this.depthLog, done: [...this.doneIds], realT: this.realT, fishing: this.outskirts.fishSave(),
-        ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled(false) : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null }));
+        ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled(false) : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null,
+        veh: !onFoot && this.veh.active && this.veh.active.kind !== "drone" ? { id: this.veh.active.id, x: this.veh.active.x, z: this.veh.active.z, yaw: this.veh.active.yaw } : null }));
     } catch { /* storage full or blocked */ }
   }
   load(n = this.slot): boolean {
@@ -1122,9 +1123,12 @@ export class Game {
       this.rig.setWindmill(!this.doneIds.has("windmill"));
       this.player.body.setPPE(!!d.ppe || this.doneIds.has("ppe"));   // finishing the gate sign-in always means you have your PPE
       if (d.pos) {
-        // drove (or wandered) way off the lease? Continue at the gate instead of out in the desert
-        const far = Math.hypot(d.pos[0], d.pos[2] - 40) > 260;
-        if (far) this.player.teleport(0, 0.5, 112, Math.PI); else this.player.teleport(d.pos[0], d.pos[1], d.pos[2], d.pos[3]);
+        // wandered off into the middle of nowhere? Continue at the gate instead
+        if (!this.outskirts.nearSomething(d.pos[0], d.pos[2])) this.player.teleport(0, 0.5, 112, Math.PI); else this.player.teleport(d.pos[0], d.pos[1], d.pos[2], d.pos[3]);
+      } else if (d.veh) {
+        // saved while driving: continue in the same vehicle, right where you were (unless that is the middle of nowhere)
+        if (this.outskirts.nearSomething(d.veh.x, d.veh.z)) setTimeout(() => { if (!this.veh.restoreInto(d.veh.id, d.veh.x, d.veh.z, d.veh.yaw)) this.player.teleport(0, 0.5, 112, Math.PI); }, 500);
+        else this.player.teleport(0, 0.5, 112, Math.PI);
       }
       return true;
     } catch { return false; }

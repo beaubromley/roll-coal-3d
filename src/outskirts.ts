@@ -52,7 +52,7 @@ export class Outskirts {
   gatePos() { return new Vector3(RIVAL.x + 46, 1.2, RIVAL.z); }
   private fut: { core: Mesh; glow: Mesh; ground: Mesh; ring: Mesh; drones: { m: Mesh; a: number; r: number; h: number; w: number }[]; arm: TransformNode; l1: TransformNode; l2: TransformNode } | null = null;
   private fish = { st: "idle" as "idle" | "charge" | "fly" | "wait" | "bite", t: 0, bite: 0, sx: 0, sz: 0, bx: 0, bz: 0, caught: 0, best: 0, junk: 0, power: 0, pdir: 1, depth: 2, bed: 3 };
-  private eHeld = false; private fishHud: HTMLDivElement | null = null;
+  private sinkKeys = new Set<string>(); private eHeld = false; private fishHud: HTMLDivElement | null = null;
   /** the rod in the angler's hands: one on the body (third person) and one on the camera (first person) */
   private rodBody: Mesh | null = null; private rodCam: Mesh | null = null;
   private makeRod(): Mesh {
@@ -185,7 +185,8 @@ export class Outskirts {
       ["black", "#16181a"], ["steel", "#7b8087"], ["dsteel", "#3a3f45"], ["pad", "#4a443c"], ["flag", "#d8261c"], ["sign", "#d9cfae"], ["reed", "#8a7a3a"], ["sage", "#6a7a52"],
     ];
     for (const [k, c, o] of mats) b.defMat(k, c, o ?? {});
-    window.addEventListener("keydown", (ev) => { if (ev.code === "KeyE") this.eHeld = true; const f = this.fish; if (f.st !== "idle" && f.st !== "charge") { if (ev.code === "KeyR") f.depth = Math.min(Math.max(0.5, f.bed - 0.15), f.depth + 0.5); if (ev.code === "KeyF") f.depth = Math.max(0.5, f.depth - 0.5); } });
+    window.addEventListener("keydown", (ev) => { if (ev.code === "KeyE") this.eHeld = true; const f = this.fish; if (f.st !== "idle" && f.st !== "charge" && ["KeyR", "KeyF"].includes(ev.code)) ev.preventDefault(); this.sinkKeys.add(ev.code); });
+    window.addEventListener("keyup", (ev) => this.sinkKeys.delete(ev.code));
     window.addEventListener("keyup", (ev) => { if (ev.code === "KeyE") this.eHeld = false; });
     window.addEventListener("mousedown", (ev) => { if (ev.button === 0) this.eHeld = true; }); window.addEventListener("mouseup", (ev) => { if (ev.button === 0) this.eHeld = false; });
     window.addEventListener("blur", () => { this.eHeld = false; });
@@ -242,7 +243,8 @@ export class Outskirts {
     const part = (m: StandardMaterial, w: number, h: number, d: number, px: number, py: number, pz: number, ry = 0, rz = 0) => { const k = MeshBuilder.CreateBox("bp", { width: w, height: h, depth: d }, sc); k.material = m; k.parent = bn; k.position.set(px, py, pz); k.rotation.y = ry; k.rotation.z = rz; k.isPickable = false; return k; };
     part(dark, 1.15, 0.1, 2.8, 0, 0.06, -0.2);                                            // the bottom
     for (const s of [-1, 1]) { part(wood, 0.09, 0.5, 2.9, s * 0.62, 0.34, -0.2, 0, -s * 0.22); part(paint, 0.1, 0.07, 2.9, s * 0.7, 0.58, -0.2, 0, -s * 0.22); }   // sides and a painted gunwale
-    part(wood, 0.9, 0.5, 0.09, 0, 0.34, -1.62); part(wood, 0.78, 0.5, 0.09, -0.3, 0.34, 1.34, 0.65, 0); part(wood, 0.78, 0.5, 0.09, 0.3, 0.34, 1.34, -0.65, 0);   // the transom and the pointed bow
+    part(wood, 0.9, 0.5, 0.09, 0, 0.34, -1.62);                                           // the transom
+    part(wood, 0.88, 0.5, 0.88, 0, 0.34, 1.22, Math.PI / 4); part(dark, 0.88, 0.1, 0.88, 0, 0.06, 1.22, Math.PI / 4); part(paint, 0.7, 0.06, 0.7, 0, 0.6, 1.22, Math.PI / 4);   // a solid pointed bow: one diamond, deck and all
     part(dark, 1.2, 0.07, 0.34, 0, 0.5, 0.2); part(dark, 1.15, 0.07, 0.34, 0, 0.48, -0.9);   // two seats
     for (const s of [-1, 1]) { const piv = new TransformNode("oar", sc); piv.parent = bn; piv.position.set(s * 0.74, 0.6, -0.05); const oar = MeshBuilder.CreateCylinder("oar", { diameter: 0.045, height: 2.0, tessellation: 6 }, sc); oar.material = wood; oar.parent = piv; oar.rotation.z = Math.PI / 2; oar.position.x = s * 0.55; oar.isPickable = false; const blade = MeshBuilder.CreateBox("blade", { width: 0.4, height: 0.02, depth: 0.14 }, sc); blade.material = dark; blade.parent = piv; blade.position.x = s * 1.5; blade.isPickable = false; B.oars.push(piv); }
     B.node = bn; B.x = x; B.z = z; B.yaw = Math.PI / 2; bn.position.set(x, WATER_Y, z); bn.rotation.y = B.yaw;
@@ -272,11 +274,11 @@ export class Outskirts {
         const k = this.bkeys, fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0), turn = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
         if (g.ui.panelOpen || g.paused || this.fish.st === "charge") { /* no rowing while a panel is up or you are casting */ }
         else {
-          this.boat.rowT += dt * (fwd ? 3.2 : 0.4);
-          B.v += (fwd * (fwd > 0 ? 3.4 : 1.6) * (0.7 + 0.3 * Math.sin(B.rowT * 2)) - B.v) * Math.min(1, dt * 1.2);
-          B.yaw -= turn * dt * (0.5 + Math.min(1, Math.abs(B.v) / 2) * 0.5);
+          this.boat.rowT += dt * (fwd ? 5 : 0.4);
+          B.v += (fwd * (fwd > 0 ? 7.2 : 3.2) * (0.9 + 0.1 * Math.sin(B.rowT * 2)) - B.v) * Math.min(1, dt * 2.4);
+          B.yaw -= turn * dt * (0.9 + Math.min(1, Math.abs(B.v) / 3) * 0.7);
         }
-        if (!fwd) B.v *= Math.max(0, 1 - dt * 0.9);
+        if (!fwd) B.v *= Math.max(0, 1 - dt * 0.8);
         const nx = B.x + Math.sin(B.yaw) * B.v * dt, nz = B.z + Math.cos(B.yaw) * B.v * dt, u = ((nx - POND.x) / (POND.rx - 4)) ** 2 + ((nz - POND.z) / (POND.rz - 4)) ** 2, dk = B.dock;
         const onDock = Math.abs(nz - dk.z) < 1.9 && nx > dk.x0 - 1.2 && nx < dk.x1 + 1.2;
         if (u > 1 || onDock) { B.v *= -0.2; } else { B.x = nx; B.z = nz; }
@@ -287,6 +289,35 @@ export class Outskirts {
     }
     B.node.position.set(B.x, WATER_Y + 0.02 + Math.sin(this.t * 1.6) * 0.012, B.z); B.node.rotation.y = B.yaw; B.node.rotation.z = Math.sin(this.t * 1.3) * 0.02 + (B.aboard ? Math.sin(B.rowT) * 0.01 : 0);
     B.oars.forEach((o, i) => { o.rotation.y = (i ? -1 : 1) * (B.aboard ? Math.sin(B.rowT * 2 + (i ? 0 : 0.3)) * 0.35 : 0.1); });
+  }
+  /** Old Sixty's bubbles: a patch of bubbling water that drifts about the deep hole. Cast the bait right into it. */
+  private sixtyP = { x: DEEP.x, z: DEEP.z, tx: DEEP.x, tz: DEEP.z, wait: 0, bubs: [] as { m: Mesh; mat: StandardMaterial; a: number; r: number; k: number; sp: number }[], ring: null as Mesh | null, hinted: false };
+  private sixtyOn() { return !!this.g.flags.hankFriend && !this.g.flags.sixty; }
+  private updateSixty(dt: number) {
+    const S = this.sixtyP, g = this.g, p = g.player.pos, on = this.sixtyOn() && Math.hypot(p.x - POND.x, p.z - POND.z) < 190;
+    if (!S.bubs.length) {
+      for (let i = 0; i < 16; i++) { const m = MeshBuilder.CreateSphere("bub", { diameter: 1, segments: 6 }, this.scene), mat = new StandardMaterial("bubm" + i, this.scene); mat.diffuseColor = new Color3(0.9, 0.97, 1); mat.emissiveColor = new Color3(0.55, 0.7, 0.78); mat.specularColor = Color3.White(); mat.alpha = 0; m.material = mat; m.isPickable = false; m.setEnabled(false); S.bubs.push({ m, mat, a: Math.random() * 6.28, r: Math.random() * 1.8, k: Math.random(), sp: 0.5 + Math.random() * 0.6 }); }
+      const ring = MeshBuilder.CreateTorus("sixtyring", { diameter: 1, thickness: 0.05, tessellation: 24 }, this.scene), rm = new StandardMaterial("sixtyringm", this.scene); rm.emissiveColor = new Color3(0.8, 0.95, 1); rm.disableLighting = true; rm.alpha = 0.6; ring.material = rm; ring.isPickable = false; ring.setEnabled(false); S.ring = ring;
+    }
+    for (const b of S.bubs) b.m.setEnabled(on); if (S.ring) S.ring.setEnabled(on);
+    if (!on) return;
+    // he patrols the deep hole: swims to a point, lingers, picks another
+    const dx = S.tx - S.x, dz = S.tz - S.z, d = Math.hypot(dx, dz);
+    if (d < 1) { S.wait -= dt; if (S.wait <= 0) { const a = Math.random() * 6.28, r = Math.sqrt(Math.random()) * DEEP.r * 0.8; S.tx = DEEP.x + Math.cos(a) * r; S.tz = DEEP.z + Math.sin(a) * r; S.wait = 3 + Math.random() * 5; } }
+    else { const sp = 1.6; S.x += (dx / d) * Math.min(d, sp * dt); S.z += (dz / d) * Math.min(d, sp * dt); }
+    for (const b of S.bubs) {
+      b.k += dt * b.sp; if (b.k >= 1) { b.k = 0; b.a = Math.random() * 6.28; b.r = Math.random() * 1.8; }
+      const sz = 0.12 + 0.28 * b.k, rise = b.k;
+      b.m.position.set(S.x + Math.cos(b.a) * b.r, WATER_Y + 0.03 + rise * 0.12, S.z + Math.sin(b.a) * b.r); b.m.scaling.setAll(sz); b.mat.alpha = b.k < 0.85 ? 0.75 * Math.min(1, b.k * 5) : 0.75 * (1 - b.k) / 0.15;
+    }
+    if (S.ring) { const k = (this.t * 0.5) % 1; S.ring.position.set(S.x, WATER_Y + 0.04, S.z); S.ring.scaling.set(1 + k * 5, 1, 1 + k * 5); (S.ring.material as StandardMaterial).alpha = 0.55 * (1 - k); }
+    if (!S.hinted && Math.hypot(p.x - POND.x, p.z - POND.z) < 100) { S.hinted = true; g.ui.toast("BUBBLES", "Something big is stirring the water out in the deep end. Drop a deep line right in the bubbles."); }
+  }
+  /** is a spot near something worth being at: the lease, the farm, the pond, the taco truck, the silos, the hunters' camp, the other company, a wind turbine? (otherwise it is the middle of nowhere) */
+  nearSomething(x: number, z: number): boolean {
+    if (Math.hypot(x, z - 40) <= 260) return true;
+    const near = (px: number, pz: number, r: number) => Math.hypot(x - px, z - pz) < r;
+    return near(FOREST_CAMP.x, FOREST_CAMP.z, 70) || near(RIVAL.x, RIVAL.z, 95) || near(POND.x, POND.z, POND.rx + 30) || near(FARM.x, FARM.z, 70) || near(TACO.x, TACO.z, 60) || near(SILOS.x, SILOS.z, 60) || this.turbs.some((t) => near(t.x, t.z, 40));
   }
   /** is a spot too close to people to fire a gun (the farm, the taco truck, the other company)? */
   nearPeople(x: number, z: number): boolean { return Math.hypot(x - FARM.x, z - FARM.z) < 95 || Math.hypot(x - TACO.x, z - TACO.z) < 70 || Math.hypot(x - RIVAL.x, z - RIVAL.z) < 75; }
@@ -801,12 +832,12 @@ export class Outskirts {
   /** press: start charging a cast, set the hook on a bite, or reel in */
   fishClick(): [string, string] | null {
     const g = this.g, f = this.fish;
-    if (f.st === "idle") { f.st = "charge"; f.power = 0; f.pdir = 1; return ["CHARGING", "Hold to power up, release to cast. The farther you cast, the deeper the water."]; }
+    if (f.st === "idle") { f.st = "charge"; f.power = 0; f.pdir = 1; return ["CHARGING", "Hold to power up, release to cast. Then HOLD R to sink the bait deeper (F raises it). The farther you cast, the deeper the water."]; }
     if (f.st === "charge") return null;
     if (f.st === "bite") {
       this.stopFishing();
       const deepHole = (f.bx - DEEP.x) ** 2 + (f.bz - DEEP.z) ** 2 < (DEEP.r * 1.05) ** 2, onBottom = f.depth >= f.bed - 1.4;
-      const sixty = deepHole && f.depth >= 5 && !!(g.flags.sixtyOn || (g.flags.hankFriend && !g.doneIds.has("sixty"))) && !g.flags.sixty && Math.random() < 0.4;
+      const onHim = Math.hypot(f.bx - this.sixtyP.x, f.bz - this.sixtyP.z) < 6.5, sixty = deepHole && f.depth >= 5 && !!(g.flags.sixtyOn || (g.flags.hankFriend && !g.doneIds.has("sixty"))) && !g.flags.sixty && Math.random() < (onHim ? 0.9 : 0.1);   // he takes bait dropped in his bubbles; far from them he rarely bites
       if (sixty) { this.fightSixty(); return ["HOOKED", "That's not a small fish."]; }
       // what is down there depends on how deep you fish: the shallows, the middle, the deep water, and the deep hole's bottom (lost steerable tools)
       let T: [string, number, number, number, string, string][];
@@ -889,8 +920,12 @@ export class Outskirts {
       }
       return;
     }
-    // R / F and the wheel set how deep the bait sinks (and so what is down there)
-    hud.innerHTML = (f.st === "bite" ? '<div style="color:#ff6a3d;font-size:15px">BITE! CLICK NOW</div>' : '<div style="font-size:10px;letter-spacing:2px;color:#4fd6ff">LINE OUT</div>') + 'depth <b>' + f.depth.toFixed(1) + ' m</b> of ' + f.bed.toFixed(1) + ' m  ·  R deeper · F shallower · wheel';
+    // hold R or SPACE to sink the bait, F or SHIFT to raise it (or use the wheel): how deep it hangs decides what is down there
+    { const K = this.sinkKeys, dn = (K.has("KeyR") ? 1 : 0) - (K.has("KeyF") ? 1 : 0); if (dn) f.depth = Math.max(0.5, Math.min(Math.max(0.5, f.bed - 0.15), f.depth + dn * 1.5 * dt)); }
+    { const frac = Math.min(1, f.depth / Math.max(1, f.bed)), deep = f.depth >= 5;
+      hud.innerHTML = (f.st === "bite" ? '<div style="color:#ff6a3d;font-size:17px;font-weight:900">BITE! CLICK NOW</div>' : '<div style="font-size:10px;letter-spacing:2px;color:#4fd6ff">LINE OUT</div>')
+        + '<div style="display:flex;gap:10px;align-items:stretch;margin:8px 0"><div style="position:relative;width:20px;height:74px;background:linear-gradient(#5fb4d8,#0d3a52 70%,#04141f);border:2px solid #1b2836"><div style="position:absolute;left:-4px;right:-4px;top:' + Math.round(frac * 64) + 'px;height:8px;background:' + (deep ? "#ffd24a" : "#fff") + ';border:1px solid #000"></div><div style="position:absolute;left:24px;top:' + Math.round(Math.min(1, 5 / Math.max(5, f.bed)) * 70) + 'px;font-size:9px;white-space:nowrap;color:#ffd24a">5 m: old fish</div></div>'
+        + '<div style="text-align:left;font-size:13px;line-height:1.6"><div>Bait depth: <b style="font-size:18px">' + f.depth.toFixed(1) + ' m</b> <span style="opacity:.7">of ' + f.bed.toFixed(1) + ' m</span></div><div style="color:#7fe08a"><b>HOLD R</b> to SINK the bait</div><div style="color:#9fd3e8"><b>HOLD F</b> to raise it (or the mouse wheel)</div></div></div>'; }
     if (f.st === "fly") {
       f.t += dt / 0.6; const u = Math.min(1, f.t);
       this.bobber.position.set(tip.x + (f.bx - tip.x) * u, tip.y + (WATER_Y + 0.08 - tip.y) * u + Math.sin(Math.PI * u) * 2.4, tip.z + (f.bz - tip.z) * u);
@@ -1053,7 +1088,7 @@ export class Outskirts {
       f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
     }
     for (const T of this.turbs) if (T.on) T.rot.rotation.z += dt * 1.3;
-    this.updateBoat(dt);
+    this.updateBoat(dt); this.updateSixty(dt);
     this.updateFishing(dt);
     this.bigfootStep(dt);
     { // the diggable ground follows the player (and a point ahead when going fast)

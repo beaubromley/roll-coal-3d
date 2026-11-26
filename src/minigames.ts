@@ -32,8 +32,7 @@ export class Mini {
 
   private shell(eyebrow: string, title: string, intro: string, body: string, extraBtns = "") {
     return `<div class="eyebrow">${eyebrow}</div><h2>${title}</h2><p>${intro}</p>${body}
-      <div class="btns">${extraBtns}<button class="b alt" id="mgSkip">WING IT</button></div>
-      <div class="hint" style="margin-top:8px">Shortcut: skip the work and take your chances. It might be fine. It might come back later.</div>`;
+      ${extraBtns ? `<div class="btns">${extraBtns}</div>` : ""}`;
   }
   private open(html: string, tick?: (dt: number) => void, wide = false) {
     this.cleanup(); this.alive = true;
@@ -46,7 +45,7 @@ export class Mini {
     this.alive = false;                      // stop tick logic, keep the panel up briefly
     window.setTimeout(() => { this.g.closeMini(); done(r); }, msg ? ms : 0);
   }
-  private skip(done: Done, p: HTMLElement) { p.querySelector<HTMLButtonElement>("#mgSkip")!.onclick = () => { this.g.sfx.click(); this.end(done, { score: 0, skipped: true }); }; }
+  private skip(done: Done, p: HTMLElement) { const sk = p.querySelector<HTMLButtonElement>("#mgSkip"); if (sk) sk.onclick = () => { this.g.sfx.click(); this.end(done, { score: 0, skipped: true }); }; }
 
   // ---------------------------------------------------------------- 1. SEQUENCE (Simon)
   sequence(o: { eyebrow: string; title: string; intro: string; labels: string[]; length: number }, done: Done) {

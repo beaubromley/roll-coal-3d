@@ -10,7 +10,7 @@ const pick = <T,>(a: T[]) => a[(Math.random() * a.length) | 0];
 
 export class Items {
   held: Held = "none";
-  private gunBody: Mesh | null = null; private gunCam: Mesh | null = null; private cool = 0; private bar: HTMLDivElement;
+  private gunBody: Mesh | null = null; private gunCam: Mesh | null = null; private phoneBody: Mesh | null = null; private phoneCam: Mesh | null = null; private cool = 0; private bar: HTMLDivElement;
   private bagged = new Set<string>();
 
   constructor(private g: Game, private scene: Scene) {
@@ -45,6 +45,14 @@ export class Items {
     const p = this.g.player.pos, o = this.g.outskirts;
     if (this.g.veh.riding) return false;
     return Math.hypot(p.x, p.z) > 130 && !o.nearPeople(p.x, p.z);
+  }
+  /** a phone: a dark slab with a lit screen on both faces, so it reads whichever way the hand turns it */
+  private makePhone(): Mesh {
+    const body = new StandardMaterial("phm1", this.scene); body.diffuseColor = Color3.FromHexString("#14171c"); body.specularColor = new Color3(0.4, 0.4, 0.45);
+    const scr = new StandardMaterial("phm2", this.scene); scr.emissiveColor = new Color3(0.2, 0.75, 1); scr.diffuseColor = Color3.Black(); scr.disableLighting = true;
+    const m = MeshBuilder.CreateBox("phone", { width: 0.1, height: 0.2, depth: 0.018 }, this.scene); m.material = body; m.isPickable = false;
+    for (const s of [-1, 1]) { const f = MeshBuilder.CreateBox("phscreen", { width: 0.084, height: 0.17, depth: 0.002 }, this.scene); f.material = scr; f.parent = m; f.position.z = s * 0.0095; f.isPickable = false; }
+    m.setEnabled(false); return m;
   }
   private makeGun(): Mesh {
     const dark = new StandardMaterial("gunm1", this.scene); dark.diffuseColor = Color3.FromHexString("#1d2128"); dark.specularColor = new Color3(0.3, 0.3, 0.3);
@@ -162,6 +170,16 @@ export class Items {
       if (!this.gunCam) { this.gunCam = this.makeGun(); this.gunCam.parent = p.cam; this.gunCam.position.set(0.3, -0.26, 0.85); this.gunCam.rotation.set(0.05, -0.08, 0); }
       this.gunBody.setEnabled(p.third); this.gunCam.setEnabled(!p.third);
       p.body.root.rotation.y = p.yaw; p.body.useHand("gas", 0.4);
-    } else { this.gunBody?.setEnabled(false); this.gunCam?.setEnabled(false); if (this.held === "phone") p.body.useHand("phone", 0.4); }
+    } else {
+      this.gunBody?.setEnabled(false); this.gunCam?.setEnabled(false);
+      // the phone in hand: held up in front of you, on the camera in first person and in the hand in third
+      if (this.held === "phone" && p.body.elbowR) {
+        if (!this.phoneBody) { this.phoneBody = this.makePhone(); this.phoneBody.parent = p.body.elbowR; this.phoneBody.position.set(0, -0.3, 0.07); this.phoneBody.rotation.set(0.5, 0, 0); }
+        if (!this.phoneCam) { this.phoneCam = this.makePhone(); this.phoneCam.parent = p.cam; this.phoneCam.position.set(0.17, -0.2, 0.5); this.phoneCam.rotation.set(-0.45, -0.15, 0); }
+        this.phoneBody.setEnabled(p.third); this.phoneCam.setEnabled(!p.third);
+        p.body.root.rotation.y = p.yaw; p.body.useHand("tally", 0.4);
+      }
+    }
+    if (this.held !== "phone") { this.phoneBody?.setEnabled(false); this.phoneCam?.setEnabled(false); }
   }
 }

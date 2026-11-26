@@ -136,11 +136,11 @@ export function defineMissions(g: Game) {
 
   // ================================================================ side: windmill shutdown (four turbines, each a lockout / tagout)
   {
-    const turb = (i: number, label: string): any => ({ text: "Shut down " + label + " (lockout / tagout)", at: () => g.outskirts.turbinePos(i), label: "Lock out the turbine", r: 4, act: (done: () => void) => g.doLockout(i, done), watch: () => !!g.flags["wm" + i] });
-    SD({ id: "windmill", title: "Windmill Shutdown", sub: "The EPA says the company's wind turbines are killing birds. They aren't the company's. Nobody can prove that. Lock them out, one by one.", trigger: () => false, auto: () => g.sinceDone() >= 4 && s.depth > 1200 && !g.flags.finish, a: 0.5, m: 6,
-      start: () => { g.radio("earl", "Environmental's on the phone. Four wind turbines across the lease country, all shredding birds, and the paperwork has our name on it. Take a truck. Lock them out. Do it right, they're 1.5 megawatts each.", 13000); },
+    const turb = (i: number, label: string): any => ({ text: "Flip the switch on " + label, at: () => g.outskirts.turbinePos(i), label: "Flip the switch: turbine off", r: 4, act: (done: () => void) => g.doLockout(i, done), watch: () => !!g.flags["wm" + i] });
+    SD({ id: "windmill", title: "Windmill Shutdown", sub: "The EPA says the company's wind turbines are killing birds. They aren't the company's. Nobody can prove that. Flip the switch on each one.", trigger: () => false, auto: () => g.sinceDone() >= 4 && s.depth > 1200 && !g.flags.finish, a: 0.5, m: 6,
+      start: () => { g.radio("earl", "Environmental's on the phone. Four wind turbines across the lease country, all shredding birds, and the paperwork has our name on it. Take a truck and flip the shutoff switch on each one.", 13000); },
       steps: [
-        { text: "Shut down the turbine west of the lease (lockout / tagout)", at: sy(S.windmill), label: "Lock out the turbine", r: 6, act: (done: () => void) => g.doLockout(9, done), watch: () => !!g.flags.wm9 },
+        { text: "Flip the switch on the turbine west of the lease", at: sy(S.windmill), label: "Flip the switch: turbine off", r: 6, act: (done: () => void) => g.doLockout(9, done), watch: () => !!g.flags.wm9 },
         turb(0, "the turbine up in the northwest corner"), turb(1, "the turbine out in the southwest flats"), turb(2, "the turbine in the far southeast"),
       ], end: () => { g.radio("brent", "The EPA closed the file. They didn't say why. I'd stop asking.", 8000); } });
   }

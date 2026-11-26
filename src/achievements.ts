@@ -18,7 +18,7 @@ export const ACHIEVEMENTS: Ach[] = [
   { id: "deer", name: "Bambi's Bodyguard", desc: "Get the deer off the location.", check: (g) => g.doneIds.has("deer") },
   { id: "inspect", name: "Eagle Eye", desc: "Inspect the derrick with the drone.", check: (g) => g.doneIds.has("inspect") },
   { id: "hunt", name: "Hank's Wingman", desc: "Go hunting with Hank.", check: (g) => g.doneIds.has("hunt") },
-  { id: "windmill", name: "Lockout Legend", desc: "Shut down the wind turbines the right way.", check: (g) => g.doneIds.has("windmill") },
+  { id: "windmill", name: "Lockout Legend", desc: "Switch off all the killer wind turbines.", check: (g) => g.doneIds.has("windmill") },
   { id: "sixty", name: "Old Sixty", desc: "Land the sixty-pound catfish.", check: (g) => g.doneIds.has("sixty") },
   { id: "secrets", name: "Laser Focus", desc: "Steal AGI Drilling's laser secrets.", check: (g) => g.doneIds.has("secrets") },
   { id: "pew", name: "Pew Pew", desc: "Drill with the laser.", secret: true },

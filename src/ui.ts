@@ -20,6 +20,13 @@ export const CAST = {
   rockhound: { name: "Rockhound", img: "rockhound" },
   max: { name: "Max", img: "max" },
   ben: { name: "Ben Affleck", img: "nasa" },
+  aj: { name: "A.J.", img: "me" },
+  lev: { name: "Lev Andropov — Cosmonaut", img: "nasa" },
+  hank: { name: "Hank — The Landowner", img: "pusher" },
+  super: { name: "Walt — Superintendent", img: "pusher" },
+  mom: { name: "Mom", img: "me" },
+  taco: { name: "Lupe — El Fuego Tacos", img: "hand" },
+  rival: { name: "UNIT-9 — AGI Drilling", img: "nasa" },
 } as const;
 export type Who = keyof typeof CAST;
 
@@ -30,6 +37,8 @@ export interface Choice { label: string; cls?: "alt" | "red" | "green"; run?: ()
 
 export class UI {
   panelOpen = false;
+  /** called whenever a panel opens, so the game can free the mouse no matter which path opened it */
+  onPanelOpen: () => void = () => {};
   onPanelClose: () => void = () => {};
   private toastT = 0;
   private radioQ: HTMLElement[] = [];
@@ -47,23 +56,35 @@ export class UI {
   }
   closable = true;
 
+  /** while this says true (a catch card is on screen) new toasts wait their turn */
+  toastGate: (() => boolean) | null = null; private toastWait = 0;
+  hideToast() { const t = $("toast"); if (t) t.classList.remove("show"); }
   toast(title: string, sub = "") {
+    if (this.toastGate && this.toastGate() && this.toastWait < 30) { this.toastWait++; window.setTimeout(() => this.toast(title, sub), 600); return; }
+    this.toastWait = 0;
     const t = $("toast");
     t.innerHTML = `${title}${sub ? `<small>${sub}</small>` : ""}`;
     t.classList.add("show");
     clearTimeout(this.toastT);
-    this.toastT = window.setTimeout(() => t.classList.remove("show"), 3200);
+    this.toastT = window.setTimeout(() => t.classList.remove("show"), Math.max(6500, 4500 + sub.length * 60));
   }
 
+  /** everything anyone has said, oldest first, for the LOG panel */
+  log: { name: string; text: string; time: string }[] = [];
+  logClock: () => string = () => "";
+  private record(name: string, text: string) { this.log.push({ name, text, time: this.logClock() }); if (this.log.length > 400) this.log.shift(); }
+  /** goes in the L log but not on screen */
+  logOnly(who: Who, text: string) { this.record(CAST[who].name, text); }
   radio(who: Who, text: string, ms = 7000) {
     const c = CAST[who];
+    this.record(c.name, text);
     const el = document.createElement("div");
     el.className = "rmsg";
     el.innerHTML = `<img src="${import.meta.env.BASE_URL}portraits/${c.img}.jpg" alt=""/><div><div class="who">${c.name}</div><div class="txt">${text}</div></div>`;
     $("radio").appendChild(el);
     this.radioQ.push(el);
-    while (this.radioQ.length > 4) this.radioQ.shift()!.remove();
-    window.setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .5s"; window.setTimeout(() => el.remove(), 520); }, ms);
+    while (this.radioQ.length > 2) this.radioQ.shift()!.remove();
+    window.setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .5s"; window.setTimeout(() => el.remove(), 520); }, Math.min(10000, 3500 + text.length * 55));
   }
 
   /** Open a modal panel. `tick` runs every frame while open (for live gauges). */
@@ -73,6 +94,7 @@ export class UI {
     p.innerHTML = html;
     $("panelwrap").style.display = "grid";
     this.panelOpen = true; this.closable = o.closable !== false; this.panelTick = o.tick ?? null;
+    this.onPanelOpen();
     return p;
   }
   tickPanel() { if (this.panelOpen && this.panelTick) this.panelTick(); }
@@ -87,6 +109,7 @@ export class UI {
   /** Character dialog with choices. */
   say(who: Who, text: string, choices: Choice[] = [{ label: "OK" }], eyebrow = "", o: { closable?: boolean } = {}) {
     const c = CAST[who];
+    this.record(c.name, text);
     const p = this.panel(`
       ${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ""}
       <div class="who"><img src="${import.meta.env.BASE_URL}portraits/${c.img}.jpg" alt=""/><div><h2 style="font-size:26px">${c.name}</h2><p>${text}</p></div></div>
@@ -102,10 +125,17 @@ export class UI {
     return p;
   }
 
+  /** the top-left objective: the active job, or (when nothing is asked of you) the standing objective */
   setMission(title: string, sub: string, count: string) {
-    $("mtitle").textContent = title; $("msub").textContent = sub; $("mcount").textContent = count;
-    $("mission").style.display = title ? "block" : "none";
+    this.idleObjective = !title;
+    $("mtitle").textContent = title || "MAKE HOLE"; $("msub").textContent = title ? sub : "Drill to 8,500 ft"; $("mcount").textContent = title ? count : "OBJECTIVE";
+    $("mission").style.display = "block";
   }
+  idleObjective = false;
+  /** change just the second line of the objective (live progress) */
+  setSub(text: string) { $("msub").textContent = text; }
+  /** keep the standing objective current (depth to go) while no job is active */
+  tickIdleObjective(text: string) { if (this.idleObjective) $("msub").textContent = text; }
   setPrompt(label: string | null) {
     const el = $("prompt");
     if (!label) { el.style.display = "none"; return; }
@@ -171,16 +201,18 @@ export class UI {
     c.scale(1, 1);
     rect(-3.5, 40, 3.5, 400, "#6b665d");           // road
     rect(-60, -66, 60, 62, "#d8c8a6");               // pad
-    rect(-6.5, -6, 6.5, 6, "#2c5d8a");               // substructure
-    rect(-1, 6, 1, 34, "#7a5a38");                   // catwalk
-    rect(-11, 17, -2, 34, "#8a4b2b"); rect(2, 17, 11, 34, "#8a4b2b"); // pipe racks
+    rect(-6, -6.5, 6, 6.5, "#2c5d8a");               // substructure
+    rect(-34, -1, -6, 1, "#7a5a38");                   // catwalk
+    rect(-34, -11, -17, -2, "#8a4b2b"); rect(-34, 2, -17, 11, "#8a4b2b"); // pipe racks
     rect(-18, -26, 18, -19.6, "#6b747c");            // tanks
-    rect(-12, -14.5, 0, -9.5, "#a8221c");            // pumps
-    rect(-33, -28, -26, 0, "#1d6fb5");               // gensets
-    rect(-17, 9, -9.5, 14, "#2e7a45");               // accumulator
-    rect(8.5, 6.5, 15.5, 11.5, "#a8221c");           // choke
-    rect(30, 8, 33.6, 36, "#e0dccb"); rect(37, 8, 43, 28, "#9aa6b2"); // trailers
-    rect(43, 40, 49, 44, "#2f9a4a");                 // muster
+    rect(9.5, -14.5, 21.5, -9.5, "#a8221c");         // pumps
+    rect(-11, -14.4, -4, -9.4, "#8a2a2a");           // choke
+    rect(11.75, -5.5, 39.25, 0.5, "#1d6fb5");        // gensets
+    rect(43, -9, 51, 1, "#7a1a14"); rect(22, 3.2, 34, 6.4, "#e9eef3");   // VFD, diesel
+    rect(10.4, -63.4, 30.6, -59.4, "#8a6a40"); rect(0, -64.4, 10.4, -56, "#3aa0c8");   // mud yard, frac tanks
+    rect(8.5, 7, 16, 12, "#2e7a45");                 // accumulator
+    rect(-46, 42, -18, 45.6, "#e0dccb"); rect(-27, 50.7, -17, 53.3, "#9aa6b2"); rect(-38, 49, -30, 55, "#b6c0c9"); // trailers
+    rect(27, 40, 33, 44, "#2f9a4a");                 // muster
     rect(5, 94, 8.4, 98, "#e0dccb");
     c.restore();
     // task markers are drawn in screen space (always upright) and clamped to the map edge
@@ -191,6 +223,12 @@ export class UI {
       const d = Math.hypot(tx, tz), mr = S / 2 - 12, k = d > mr ? mr / d : 1;
       c.save(); c.translate(S / 2 + tx * k, S / 2 + tz * k); c.rotate(Math.PI / 4);
       c.fillStyle = t.color; c.strokeStyle = "#fff"; c.lineWidth = 2; c.fillRect(-5, -5, 10, 10); c.strokeRect(-5, -5, 10, 10); c.restore();
+    }
+    // a plain square map: just a small N tab on the edge, in the direction of north (the map turns with you)
+    {
+      const cs = Math.cos(-yaw), sn = Math.sin(-yaw), dx = 0, dz = -1, vx = dx * cs - dz * sn, vy = dx * sn + dz * cs, m = S / 2 - 14, k = m / Math.max(Math.abs(vx), Math.abs(vy));
+      c.save(); c.fillStyle = "rgba(10,14,20,.8)"; c.fillRect(S / 2 + vx * k - 11, S / 2 + vy * k - 11, 22, 22);
+      c.fillStyle = "#ff7a3d"; c.font = "bold 15px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("N", S / 2 + vx * k, S / 2 + vy * k + 1); c.restore();
     }
     // player arrow (always up)
     c.save(); c.translate(S / 2, S / 2); c.fillStyle = "#fff"; c.strokeStyle = "#111"; c.lineWidth = 2;

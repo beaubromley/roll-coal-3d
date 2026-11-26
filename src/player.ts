@@ -14,8 +14,13 @@ export class Player {
   cam: FreeCamera;
   body: Human;
   keys = new Set<string>();
+  /** ground height over the hills (flat everywhere else) */
+  terrain: ((x: number, z: number) => number) | null = null;
+  /** the edge of the world: you can't walk past this distance from the rig (null = no limit, e.g. on the asteroid) */
+  bound: number | null = null;
   locked = false;
   touch = false;                       // touch device: no pointer lock, on-screen controls
+  lastLookT = 0;                       // when a finger last dragged the view (touch)
   touchMove = { x: 0, y: 0 };          // analog joystick, x = strafe right, y = forward
   onLockLost: () => void = () => {};   // pointer lock dropped without us asking (browser Esc)
   private intentionalUnlock = false;
@@ -29,14 +34,15 @@ export class Player {
   /** keep the body visible during a get-in / get-out animation */
   bodyHold = false;
   /** touch: RUN button latched / stick pushed hard */
-  sprintLatch = false; stickSprint = false; sprinting = false;
+  speedMul = 1; sprintLatch = false; stickSprint = false; sprinting = false;
   gScale = 1;
   private camY: number | null = null;
   moved = 0;
   private fallStart = 0;
   onFall: (m: number) => void = () => {};
   /** the V-door ramp is greased: you cannot walk up it, you slide down, and sliding down from height is an incident */
-  slick = { x0: -1.0, x1: 1.0, z0: 6.4, z1: 18.0 };
+  // (the rig is turned a quarter turn, so the ramp runs along world x: high at the rig floor (x = -6), down to the ground at x = -18)
+  slick = { x0: -18.2, x1: -6.2, z0: -1.2, z1: 1.2, dx: -1, dz: 0, end: 18.0 };
   slideV = 0; private slipTop = 0; private sliding = false;
   onRampFall: (heightFt: number) => void = () => {};
   onJump: () => void = () => {};
@@ -60,6 +66,7 @@ export class Player {
     document.addEventListener("pointerlockchange", () => {
       const was = this.locked;
       this.locked = document.pointerLockElement === canvas;
+      if (this.locked && !this.canLock()) { this.intentionalUnlock = true; document.exitPointerLock?.(); return; }
       if (was && !this.locked) { const wanted = this.intentionalUnlock; this.intentionalUnlock = false; if (!wanted) this.onLockLost(); }
     });
     // Pointer-lock look (normal browsers).
@@ -82,9 +89,11 @@ export class Player {
     });
   }
 
+  /** the game says when the mouse must stay free (a panel is open, or paused): a lock request that lands late is given straight back */
+  canLock: () => boolean = () => true;
   private failLock() { if (!this.lockFailed) { this.lockFailed = true; this.onLockFailed(); } }
   lock() {
-    if (this.locked || this.touch) return;
+    if (this.locked || this.touch || !this.canLock()) return;
     try {
       const r: any = this.canvas.requestPointerLock?.();
       if (r && typeof r.catch === "function") r.catch(() => this.failLock());
@@ -107,6 +116,7 @@ export class Player {
 
   support(x: number, z: number, feet: number): number {
     let best = 0;
+    if (this.terrain) { const t = Math.max(this.terrain(x, z), -1.5); if (t <= feet + STEP + 0.001) best = t; }   // deep water: you tread water, you don't walk the bottom
     for (const c of this.colliders) {
       if (c.y1 > feet + STEP + 0.001 || c.y1 <= best) continue;
       if (x > c.x0 - R * 0.55 && x < c.x1 + R * 0.55 && z > c.z0 - R * 0.55 && z < c.z1 + R * 0.55) best = c.y1;
@@ -147,10 +157,16 @@ export class Player {
       if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) ix -= 1;
     }
     const joy = this.enabled && (this.touchMove.x !== 0 || this.touchMove.y !== 0);
-    if (joy) { ix += this.touchMove.x; iz += this.touchMove.y; }
+    // touch has no mouse: unless a finger has just dragged the view, pushing the stick sideways turns the camera (and you) that way, and the view settles to a natural tilt
+    if (joy) {
+      if (this.touch && !this.ride && performance.now() - this.lastLookT > 700) { this.yaw += this.touchMove.x * 2.1 * dt; this.pitch += (0.2 - this.pitch) * Math.min(1, dt * 1.2); }
+      else ix += this.touchMove.x;
+      iz += this.touchMove.y;
+    }
     const len = Math.hypot(ix, iz);
     const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.sprintLatch || this.stickSprint;
-    const speed = (sprint ? 9.0 : 3.4) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
+    const wet = this.pos.y < -0.4;   // wading or swimming: slow, no sprint, no jumping
+    const speed = (sprint && !wet ? 10.5 : 6.0) * this.speedMul * (wet ? 0.55 : 1) * (joy ? Math.min(1, Math.max(0.35, len)) : 1);
     let vx = 0, vz = 0;
     if (len > 0) {
       ix /= len; iz /= len;
@@ -161,15 +177,18 @@ export class Player {
     const k = this.slick, onRamp = this.pos.y > 0.3 && this.pos.x > k.x0 - 0.2 && this.pos.x < k.x1 + 0.2 && this.pos.z > k.z0 && this.pos.z < k.z1 && this.grounded;
     if (onRamp) {
       this.slideV = Math.min(7.5, this.slideV + 9 * dt);
-      vz = Math.max(vz, 0) * 0.4 + this.slideV; vx *= 0.5;                        // any uphill effort is lost; the grease takes you down
+      // resolve the walking input along (down the ramp) and across it: any uphill effort is lost, the grease takes you down
+      const px = -k.dz, pz = k.dx, along = vx * k.dx + vz * k.dz, across = vx * px + vz * pz;
+      const a2 = Math.max(along, 0) * 0.4 + this.slideV, c2 = across * 0.5;
+      vx = a2 * k.dx + c2 * px; vz = a2 * k.dz + c2 * pz;
       this.sliding = true; this.slipTop = Math.max(this.slipTop, this.pos.y);
     } else {
       this.slideV = Math.max(0, this.slideV - 20 * dt);
-      if (this.sliding && (this.pos.y < 0.6 || this.pos.z >= k.z1 - 0.05)) { const h = this.slipTop; this.sliding = false; this.slipTop = 0; if (h > 1.5) this.onRampFall(h); }
+      if (this.sliding && (this.pos.y < 0.6 || (this.pos.x * k.dx + this.pos.z * k.dz) >= k.end - 0.05)) { const h = this.slipTop; this.sliding = false; this.slipTop = 0; if (h > 1.5) this.onRampFall(h); }
       else if (this.sliding && !this.grounded) { /* airborne off the side: let the fall logic judge it */ this.sliding = false; this.slipTop = 0; }
     }
     // jump
-    if (this.enabled && this.grounded && this.keys.has("Space")) { this.vel.y = 5.0; this.grounded = false; this.fallStart = this.pos.y; this.onJump(); }
+    if (this.enabled && this.grounded && !wet && this.keys.has("Space")) { this.vel.y = 5.0; this.grounded = false; this.fallStart = this.pos.y; this.onJump(); }
     this.vel.y -= G * this.gScale * dt;
 
     const feet0 = this.pos.y;
@@ -177,8 +196,11 @@ export class Player {
     // tread two or three steps up as a wall. Each substep resolves collisions and steps up onto the tread under it.
     const nSub = Math.max(1, Math.ceil(Math.hypot(vx, vz) * dt / 0.1));
     for (let i = 0; i < nSub; i++) {
+      const ox = this.pos.x, oz = this.pos.z;
       this.pos.x += (vx * dt) / nSub; this.pos.z += (vz * dt) / nSub;
       this.resolveXZ(this.pos.y);
+      if (this.terrain && this.terrain(this.pos.x, this.pos.z) > this.pos.y + STEP + 0.05) { this.pos.x = ox; this.pos.z = oz; }
+      if (this.bound) { const r = Math.hypot(this.pos.x, this.pos.z); if (r > this.bound) { this.pos.x *= this.bound / r; this.pos.z *= this.bound / r; } }   // the foot of the cliffs: that's as far as the world goes   // a cliff face: you can't walk into it
       if (this.grounded && this.vel.y <= 0) { const up = this.support(this.pos.x, this.pos.z, this.pos.y); if (up > this.pos.y + 0.001 && up - this.pos.y <= STEP) this.pos.y = up; }
     }
     const feet = feet0; void feet;
@@ -242,7 +264,7 @@ export class Player {
       // march the camera back until it hits something
       for (let d = 0.4; d <= 3.6; d += 0.2) {
         const p = anchor.add(back.scale(d));
-        let hit = p.y < 0.25;
+        let hit = p.y < 0.25 + (this.terrain ? this.terrain(p.x, p.z) : 0);
         if (!hit) for (const c of this.colliders) {
           if (p.x > c.x0 - 0.15 && p.x < c.x1 + 0.15 && p.y > c.y0 - 0.1 && p.y < c.y1 + 0.15 && p.z > c.z0 - 0.15 && p.z < c.z1 + 0.15) { hit = true; break; }
         }

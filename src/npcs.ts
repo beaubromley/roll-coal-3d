@@ -15,6 +15,9 @@ function m(scene: Scene, hex: string) {
   return x;
 }
 
+/** a hex colour pushed toward white by t (0..1) */
+function lighten(hex: string, t: number): string { return Color3.Lerp(Color3.FromHexString(hex), Color3.White(), t).toHexString(); }
+
 export interface HumanOpts {
   shirt: string; pants: string; hat: string | null; skin?: string; vest?: boolean; scale?: number;
   /** extra face / clothing detail (the player's own body) */
@@ -26,11 +29,70 @@ export interface HumanOpts {
 }
 
 
+/** Full-brim hard hat (MSA V-Gard style): one smooth lathed shell with a tall dome, a wide brim that droops a little toward the edge, and a raised ridge
+ *  running front to back over the crown. Parts are positioned relative to the brim line (y = 0) at the centre of the head. */
+function hardHatParts(sc: Scene): { mesh: Mesh; x: number; y: number; z: number }[] {
+  const prof: [number, number][] = [[0.205, -0.016], [0.205, -0.007], [0.17, 0.0], [0.145, 0.006], [0.139, 0.016], [0.137, 0.04], [0.133, 0.066], [0.124, 0.09], [0.108, 0.109], [0.085, 0.123], [0.055, 0.132], [0.025, 0.136], [0.0, 0.1365]];
+  const shell = MeshBuilder.CreateLathe("hardhat", { shape: prof.map(([r, y]) => new Vector3(r, y, 0)), tessellation: 32, sideOrientation: 2 }, sc);
+  shell.scaling.z = 1.12;
+  const out: { mesh: Mesh; x: number; y: number; z: number }[] = [{ mesh: shell, x: 0, y: 0, z: -0.006 }];
+  // the crown ridge: short raised segments that follow the curve of the dome from the front to the back
+  const crown = (r: number) => { for (let i = 0; i < prof.length - 1; i++) { const [r0, y0] = prof[i], [r1, y1] = prof[i + 1]; if (r <= r0 && r >= r1) return y1 + ((y0 - y1) * (r - r1)) / (r0 - r1); } return 0.1365; };
+  for (const zz of [-0.125, -0.085, -0.045, -0.005, 0.035, 0.075, 0.115]) {
+    const r = Math.abs(zz) / 1.12, h = crown(Math.min(0.139, r)), h2 = crown(Math.min(0.139, r + 0.02));
+    const seg = MeshBuilder.CreateBox("hhridge", { width: 0.034, height: 0.013, depth: 0.05 }, sc);
+    seg.rotation.x = Math.atan2(h2 - h, 0.02) * (zz > 0 ? 1 : -1) * -1;
+    out.push({ mesh: seg, x: 0, y: h + 0.004, z: zz - 0.006 });
+  }
+  // a slim, lighter band around the base of the dome where it meets the brim, and a small green maker mark on the right side
+  const band = MeshBuilder.CreateCylinder("hhband", { diameter: 0.29, height: 0.012, tessellation: 28 }, sc); band.scaling.z = 1.12;
+  out.push({ mesh: band, x: 0, y: 0.012, z: -0.006 });
+  const mark = MeshBuilder.CreateBox("hhmark", { width: 0.004, height: 0.016, depth: 0.04 }, sc);
+  out.push({ mesh: mark, x: 0.142, y: 0.03, z: -0.03 });
+  return out;
+}
+
+/** the unlockable hats: each is its own shape, built from simple solids and positioned from the brim line of the head (y = 0 is where a hard hat's brim sits) */
+export type HatKind = "hardhat" | "cone" | "beanie" | "cowboy" | "cap" | "helmet" | "tophat" | "tinfoil" | "sombrero" | "fur" | "bucket" | "party" | "robot" | "crown";
+function hatParts(sc: Scene, kind: HatKind): { mesh: Mesh; x: number; y: number; z: number; hex: string; shine?: boolean; glow?: boolean; alpha?: number }[] {
+  type P = { mesh: Mesh; x: number; y: number; z: number; hex: string; shine?: boolean; glow?: boolean; alpha?: number };
+  const out: P[] = [];
+  const cyl = (n: string, top: number, bot: number, h: number, y: number, hex: string, o: Partial<P> & { z?: number; sz?: number } = {}) => { const mm = MeshBuilder.CreateCylinder(n, { diameterTop: top, diameterBottom: bot, height: h, tessellation: 24 }, sc); if (o.sz) mm.scaling.z = o.sz; out.push({ mesh: mm, x: 0, y, z: o.z ?? 0, hex, shine: o.shine, glow: o.glow, alpha: o.alpha }); return mm; };
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: string, o: Partial<P> = {}) => { const mm = MeshBuilder.CreateBox("hatb", { width: w, height: h, depth: d }, sc); out.push({ mesh: mm, x, y, z, hex, shine: o.shine, glow: o.glow }); return mm; };
+  const ball = (d: number, x: number, y: number, z: number, hex: string, o: Partial<P> & { sy?: number } = {}) => { const mm = MeshBuilder.CreateSphere("hatS", { diameter: d, segments: 12 }, sc); if (o.sy) mm.scaling.y = o.sy; out.push({ mesh: mm, x, y, z, hex, shine: o.shine, glow: o.glow, alpha: o.alpha }); return mm; };
+  switch (kind) {
+    case "cone": cyl("cone", 0.05, 0.3, 0.36, 0.2, "#ff7a1a"); cyl("conebase", 0.4, 0.4, 0.03, 0.01, "#ff7a1a"); cyl("conestripe1", 0.12, 0.2, 0.07, 0.24, "#ffffff"); cyl("conestripe2", 0.19, 0.24, 0.05, 0.1, "#ffffff"); break;
+    case "beanie": ball(0.32, 0, 0.07, 0, "#ff7a1a", { sy: 0.85 }); cyl("beaniecuff", 0.3, 0.3, 0.07, 0.02, "#d9540a"); ball(0.08, 0, 0.22, 0, "#ffffff"); break;
+    case "cowboy": cyl("cbrim", 0.56, 0.56, 0.014, 0.0, "#7a4a28", { sz: 1.1 }); cyl("ccrown", 0.2, 0.26, 0.14, 0.08, "#8a5a32"); cyl("cpinch", 0.1, 0.2, 0.05, 0.17, "#8a5a32"); cyl("cband", 0.27, 0.27, 0.03, 0.03, "#2b1f18"); box(0.04, 0.035, 0.012, 0, 0.03, 0.135, "#d8b640", { shine: true }); for (const s of [-1, 1]) box(0.05, 0.03, 0.34, s * 0.255, 0.02, 0, "#7a4a28"); break;
+    case "cap": ball(0.31, 0, 0.05, -0.005, "#c4231c", { sy: 0.8 }); box(0.2, 0.012, 0.2, 0, 0.0, 0.2, "#a31a14"); ball(0.03, 0, 0.17, 0, "#8a1510"); box(0.1, 0.05, 0.01, 0, 0.09, 0.155, "#ffffff"); break;
+    case "helmet": ball(0.5, 0, -0.04, 0, "#bfe8ff", { alpha: 0.32, shine: true }); cyl("neckring", 0.4, 0.42, 0.06, -0.24, "#cfd8e0", { shine: true }); cyl("antenna", 0.012, 0.012, 0.18, 0.3, "#8a96a6"); ball(0.04, 0, 0.4, 0, "#ff3a2a", { glow: true }); break;
+    case "tophat": cyl("tbrim", 0.38, 0.38, 0.012, 0.0, "#15171a", { shine: true }); cyl("tcrown", 0.21, 0.21, 0.28, 0.14, "#15171a", { shine: true }); cyl("tband", 0.215, 0.215, 0.045, 0.04, "#c4231c"); break;
+    case "tinfoil": cyl("tin", 0.015, 0.3, 0.38, 0.19, "#cfd8e0", { shine: true }); cyl("tinbase", 0.3, 0.3, 0.02, 0.0, "#aab4be", { shine: true }); break;
+    case "sombrero": cyl("sbrim", 0.74, 0.74, 0.012, 0.0, "#e8c860", { sz: 1.05 }); cyl("scrown", 0.1, 0.22, 0.2, 0.1, "#e8c860"); cyl("sband", 0.225, 0.225, 0.04, 0.03, "#c4231c"); cyl("sedge", 0.74, 0.74, 0.02, 0.0, "#2f9e5a", { sz: 1.05 }).scaling.x = 0.97; break;
+    case "fur": ball(0.38, 0, 0.06, 0, "#4a3322", { sy: 0.78 }); for (const s of [-1, 1]) ball(0.1, s * 0.17, 0.0, 0.0, "#4a3322"); ball(0.18, 0, 0.0, 0.14, "#5a4030", { sy: 0.7 }); break;
+    case "bucket": cyl("bk", 0.22, 0.28, 0.13, 0.07, "#3a7a8a"); cyl("bkbrim", 0.46, 0.46, 0.014, 0.0, "#3a7a8a"); box(0.03, 0.06, 0.012, 0.1, 0.03, 0.14, "#ff7a1a"); box(0.02, 0.07, 0.012, 0.12, 0.02, 0.14, "#e8e8d0"); break;
+    case "party": cyl("pcone", 0.012, 0.24, 0.32, 0.17, "#ff8ad8"); cyl("pstripe1", 0.07, 0.15, 0.04, 0.17, "#ffffff"); cyl("pstripe2", 0.13, 0.19, 0.04, 0.08, "#ffd24a"); ball(0.07, 0, 0.34, 0, "#ffd24a", { glow: true }); break;
+    case "robot": box(0.44, 0.44, 0.42, 0, -0.04, 0, "#9aa4b0", { shine: true }); box(0.34, 0.1, 0.02, 0, 0.0, 0.215, "#10151c"); for (const s of [-1, 1]) ball(0.05, s * 0.07, 0.0, 0.225, "#2ee6ff", { glow: true }); box(0.2, 0.025, 0.02, 0, -0.14, 0.215, "#2a3446"); cyl("rant", 0.012, 0.012, 0.16, 0.26, "#cfd8e0"); ball(0.045, 0, 0.35, 0, "#ff3ad6", { glow: true }); for (const s of [-1, 1]) cyl("rear", 0.07, 0.07, 0.06, -0.04, "#6a7480").rotation.z = Math.PI / 2; break;
+    case "crown": cyl("crown", 0.28, 0.24, 0.12, 0.06, "#f2c230", { shine: true }); for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; const sp = MeshBuilder.CreateCylinder("cpt", { diameterTop: 0.0, diameterBottom: 0.06, height: 0.09, tessellation: 6 }, sc); out.push({ mesh: sp, x: Math.cos(a) * 0.125, y: 0.15, z: Math.sin(a) * 0.125, hex: "#f2c230", shine: true }); ball(0.03, Math.cos(a) * 0.125, 0.21, Math.sin(a) * 0.125, "#c4231c", { glow: true }); } break;
+    default: break;
+  }
+  return out;
+}
+const hatMatCache = new Map<string, StandardMaterial>();
+function hatMat(sc: Scene, hex: string, shine?: boolean, glow?: boolean, alpha?: number) {
+  const k = hex + (shine ? "s" : "") + (glow ? "g" : "") + (alpha ?? "");
+  let x = hatMatCache.get(k);
+  if (!x) { x = new StandardMaterial("hatm" + k, sc); x.diffuseColor = Color3.FromHexString(hex); x.specularColor = shine ? new Color3(0.9, 0.9, 0.95) : new Color3(0.06, 0.06, 0.06); x.specularPower = shine ? 40 : 16; if (glow) x.emissiveColor = Color3.FromHexString(hex).scale(0.7); if (alpha !== undefined) { x.alpha = alpha; x.backFaceCulling = false; } hatMatCache.set(k, x); }
+  return x;
+}
+
 export class Human {
   root: TransformNode;
   legL!: TransformNode; legR!: TransformNode; armL!: TransformNode; armR!: TransformNode;
   /** set by main once the Blender kit has loaded; Humans built afterwards use the jointed model */
   static kit: Kit | null = null;
+  /** use the smooth hand-built character (rounded limbs, soft shading) instead of the faceted rigged model; ?rigged=1 brings the old one back */
+  static smooth = true;
   /** rigged character model; when present it replaces the Blender kit / procedural body */
   static char: CharKit | null = null;
   private ch: CharInstance | null = null;
@@ -41,12 +103,28 @@ export class Human {
   meshes: Mesh[] = [];
   /** hard hat, vest, safety glasses: toggled together */
   ppe: Mesh[] = [];
+  /** the hair cap: hidden under a hard hat so strands never poke through it */
+  hairCap: Mesh | null = null; hairBack: Mesh | null = null;
+  /** rigged model: the hair meshes (hidden under a hard hat so they cannot clip through the dome as the head moves) */
+  hairMeshes: Mesh[] = [];
+  /** the spacesuit for the finale: a glass helmet, neck ring and life-support pack, with the clothes turned white and the hard hat, vest and glasses put away */
+  suitParts: Mesh[] = []; suitOn = false; private ppeOn = false;
+  private suitBase: { re: RegExp; hex: string }[] = []; private suitCloth: any[] = [];
+  private suitSwap: { mesh: Mesh; orig: any }[] = [];
+  setSuit(on: boolean) {
+    this.suitOn = on;
+    if (this.suitSwap.length) { const white = m(this.scene, "#eef1f4"); for (const s of this.suitSwap) s.mesh.material = on ? white : s.orig; }
+    this.suitParts.forEach((p) => p.setEnabled(on));
+    for (const mt of this.suitCloth) { const base = this.suitBase.find((s) => s.re.test(String(mt.name).replace(/_c\d+$/, ""))); mt.set(on ? "#eef1f4" : base?.hex ?? "#808080"); }
+    if (on) this.ppe.forEach((x) => x.setEnabled(false)); else this.setPPE(this.ppeOn);
+  }
   phase = Math.random() * 6;
   walking = false;
   /** sitting pose (thighs forward, knees bent, hands on the controls) */
   seated = false;
   constructor(public scene: Scene, o: HumanOpts) {
     this.root = new TransformNode("human", scene);
+    if (Human.smooth) { this.fromSmooth(o); return; }
     if (Human.char) { this.fromChar(Human.char, o); return; }
     if (Human.kit) { this.fromKit(Human.kit, o); return; }
     const mk = (mesh: Mesh, hex: string, parent: TransformNode) => {
@@ -76,14 +154,10 @@ export class Human {
     const buckle = MeshBuilder.CreateBox("bk", { width: 0.07, height: 0.05, depth: 0.02 }, scene);
     buckle.position.set(0, 0.82, 0.155); mk(buckle, "#b8b8b8", this.root);
     if (o.hat) {
-      const hat = MeshBuilder.CreateSphere("hat", { diameter: 0.31, segments: 16, slice: 0.55 }, scene);
-      hat.position.y = 1.68; this.ppe.push(mk(hat, o.hat, this.root));
-      const brim = MeshBuilder.CreateCylinder("brim", { diameter: 0.38, height: 0.025, tessellation: 20 }, scene);
-      brim.position.y = 1.68; this.ppe.push(mk(brim, o.hat, this.root));
-      const bill = MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, scene);
-      bill.position.set(0, 1.675, 0.2); this.ppe.push(mk(bill, o.hat, this.root));
-      const ridge = MeshBuilder.CreateBox("rdg", { width: 0.035, height: 0.025, depth: 0.28 }, scene);
-      ridge.position.set(0, 1.84, 0); this.ppe.push(mk(ridge, o.hat, this.root));
+      for (const p of hardHatParts(scene)) {
+        p.mesh.position.set(p.x, 1.672 + p.y, p.z);
+        mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root); this.ppe.push(p.mesh);
+      }
     }
     const limb = (name: string, w: number, h: number, d: number, x: number, y: number, hex: string) => {
       const pivot = new TransformNode(name, scene);
@@ -118,6 +192,127 @@ export class Human {
     this.addDetail(o);
     this.root.scaling.setAll(o.scale ?? 1);
   }
+  /** The smooth character: capsule limbs with proper knees and elbows, a tapered torso, a real head with hair, ears, nose, brows and eyes, a collared shirt, belt,
+   *  trousers and shoes, all with soft shading. Hard hat, vest, glasses and the spacesuit are separate parts. Proportions: about 1.78 m, facing +z. */
+  private fromSmooth(o: HumanOpts) {
+    const sc = this.scene, skin = o.skin ?? "#d9a77f";
+    const seed = ++Human.count, rnd = (n: number) => { const x = Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453; return x - Math.floor(x); };
+    const hairCol = o.hair ?? ["#1c130c", "#3b2616", "#5a3a20", "#8a6a3a", "#c9a45a", "#6a2e14", "#7d7d7d", "#0b0b0b"][Math.floor(rnd(1) * 8) % 8];
+    const mk = (mesh: Mesh, hex: string, parent: TransformNode = this.root) => { mesh.material = m(sc, hex); mesh.parent = parent; mesh.isPickable = false; this.meshes.push(mesh); return mesh; };
+    const cap = (r: number, h: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {
+      const c = MeshBuilder.CreateCapsule("cap", { radius: r, height: h, tessellation: 16, subdivisions: 2, capSubdivisions: 6 }, sc); c.position.set(x, y, z); c.scaling.set(sx, sy, sz); return mk(c, hex, parent);
+    };
+    const ball = (dia: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, seg = 16) => {
+      const b = MeshBuilder.CreateSphere("ball", { diameter: dia, segments: seg }, sc); b.position.set(x, y, z); b.scaling.set(sx, sy, sz); return mk(b, hex, parent);
+    };
+    const cyl = (dTop: number, dBot: number, h: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sz = 1) => {
+      const c = MeshBuilder.CreateCylinder("cy", { diameterTop: dTop, diameterBottom: dBot, height: h, tessellation: 20 }, sc); c.position.set(x, y, z); c.scaling.z = sz; return mk(c, hex, parent);
+    };
+    const swap: Mesh[] = [];   // the clothes that turn white under a spacesuit
+    const cloth = (mesh: Mesh) => { swap.push(mesh); return mesh; };
+    const shoeCol = "#3a2a1c", beltCol = "#2a1d12";
+    // ---- limbs are continuous tapered tubes: each joint is a sphere exactly as wide as the limb, so there are no bulbs at the knees, elbows or shoulders
+    const tube = (rTop: number, rBot: number, len: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sz = 1) => {
+      const c = MeshBuilder.CreateCylinder("tube", { diameterTop: rTop * 2, diameterBottom: rBot * 2, height: len, tessellation: 20 }, sc); c.position.set(x, y, z); c.scaling.z = sz; return mk(c, hex, parent);
+    };
+    const joint = (r: number, hex: string, parent: TransformNode, x: number, y: number, z: number, sz = 1) => ball(r * 2, hex, parent, x, y, z, 1, 1, sz, 14);
+    // legs: hip pivot at 0.92 m, thigh 0.42, knee, shin 0.42, so the ankle is 0.08 m off the ground and the shoe sits right on the shin
+    const leg = (side: number) => {
+      const hip = new TransformNode("hip", sc); hip.parent = this.root; hip.position.set(side * 0.092, 0.92, 0);
+      cloth(joint(0.088, o.pants, hip, 0, 0, 0));
+      cloth(tube(0.088, 0.064, 0.42, o.pants, hip, 0, -0.21, 0));
+      const knee = new TransformNode("knee", sc); knee.parent = hip; knee.position.set(0, -0.42, 0);
+      cloth(joint(0.064, o.pants, knee, 0, 0, 0));
+      cloth(tube(0.064, 0.05, 0.42, o.pants, knee, 0, -0.21, 0));
+      cloth(tube(0.058, 0.066, 0.05, o.pants, knee, 0, -0.395, 0));                          // hem, a touch fuller than the shin
+      ball(1, shoeCol, knee, 0, -0.455, 0.052, 0.104, 0.072, 0.25);                          // heel and arch
+      ball(1, shoeCol, knee, 0, -0.455, 0.145, 0.095, 0.064, 0.14);                          // toe box
+      const sole = tube(0.052, 0.053, 0.02, "#161210", knee, 0, -0.488, 0.08); sole.scaling.z = 2.7;
+      return { hip, knee };
+    };
+    const L = leg(-1), R = leg(1);
+    this.legL = L.hip; this.legR = R.hip; this.kneeL = L.knee; this.kneeR = R.knee;
+    // torso: one lofted body (hips, waist, chest, shoulder line) so it flows from the trousers into the neck
+    {
+      const prof: [number, number][] = [[0.0, 0.9], [0.125, 0.92], [0.128, 0.97], [0.118, 1.05], [0.122, 1.14], [0.136, 1.26], [0.146, 1.36], [0.13, 1.43], [0.085, 1.47], [0.06, 1.49], [0.0, 1.495]];
+      const lathe = MeshBuilder.CreateLathe("torso", { shape: prof.map(([r, y]) => new Vector3(r, y, 0)), tessellation: 28 }, sc);
+      lathe.scaling.set(1.5, 1, 0.8); cloth(mk(lathe, o.shirt));
+      const seat = MeshBuilder.CreateLathe("seat", { shape: [[0.0, 0.82], [0.12, 0.85], [0.135, 0.92], [0.13, 0.99], [0.0, 1.0]].map(([r, y]) => new Vector3(r, y, 0)), tessellation: 24 }, sc);
+      seat.scaling.set(1.45, 1, 0.82); cloth(mk(seat, o.pants));
+    }
+    cyl(0.416, 0.41, 0.06, beltCol, this.root, 0, 1.0, 0, 0.58);                             // belt: wide enough to sit outside the hips and shirt at the sides
+    { const bk = MeshBuilder.CreateBox("bk", { width: 0.06, height: 0.045, depth: 0.014 }, sc); bk.position.set(0, 1.0, 0.126); mk(bk, "#c8c8c8"); }
+    cyl(0.07, 0.078, 0.1, skin, this.root, 0, 1.52, 0.004);                                  // neck
+    cloth(cyl(0.15, 0.17, 0.04, o.shirt, this.root, 0, 1.485, 0.004, 0.95));                 // collar
+    for (const s of [-1, 1]) { const cf = MeshBuilder.CreateBox("cf", { width: 0.05, height: 0.012, depth: 0.075 }, sc); cf.position.set(s * 0.034, 1.482, 0.07); cf.rotation.set(0.5, 0, -s * 0.5); cloth(mk(cf, o.shirt)); }   // collar points
+    { const pk = MeshBuilder.CreateBox("pk", { width: 0.075, height: 0.075, depth: 0.012 }, sc); pk.position.set(-0.09, 1.3, 0.108); cloth(mk(pk, o.shirt)); }                                                                  // shirt pocket
+    // arms: shoulder pivot, upper arm 0.29, elbow, forearm 0.26, hand
+    const arm = (side: number) => {
+      const sh = new TransformNode("shoulder", sc); sh.parent = this.root; sh.position.set(side * 0.215, 1.385, 0);
+      cloth(joint(0.054, o.shirt, sh, 0, 0, 0));
+      cloth(tube(0.054, 0.045, 0.29, o.shirt, sh, 0, -0.145, 0));
+      const el = new TransformNode("elbow", sc); el.parent = sh; el.position.set(0, -0.29, 0);
+      cloth(joint(0.045, o.shirt, el, 0, 0, 0));
+      cloth(tube(0.045, 0.036, 0.26, o.shirt, el, 0, -0.13, 0));
+      cloth(tube(0.04, 0.042, 0.03, o.shirt, el, 0, -0.245, 0));                              // cuff
+      ball(0.082, "#2b2118", el, 0, -0.29, 0.006, 1, 1.2, 0.85);                              // gloved hand
+      return { sh, el };
+    };
+    const AL = arm(-1), AR = arm(1);
+    this.armL = AL.sh; this.armR = AR.sh; this.elbowL = AL.el; this.elbowR = AR.el;
+    // ---- head: skull, jaw, ears, nose, brows, eyes, mouth, hair
+    const HY = 1.665, HAIR_TILT = 0.55;
+    ball(0.225, skin, this.root, 0, HY, 0, 0.9, 1.1, 1.0, 22);                              // skull
+    ball(0.19, skin, this.root, 0, HY - 0.06, 0.012, 0.95, 0.88, 0.98, 20);                 // lower face: a soft rounded jaw that blends into the skull, no pointy chin
+    for (const s of [-1, 1]) {
+      ball(0.05, skin, this.root, s * 0.102, HY - 0.005, -0.004, 0.45, 1, 0.8, 10);       // ears
+      ball(0.026, "#f4f4f2", this.root, s * 0.04, HY + 0.012, 0.099, 1, 0.8, 0.5, 10);     // eye whites
+      ball(0.015, "#2a1d12", this.root, s * 0.04, HY + 0.012, 0.105, 1, 1, 0.6, 10);      // irises
+      const br = MeshBuilder.CreateBox("br", { width: 0.05, height: 0.01, depth: 0.016 }, sc); br.position.set(s * 0.042, HY + 0.044, 0.1); br.rotation.z = -s * 0.08; mk(br, hairCol);
+    }
+    ball(0.034, skin, this.root, 0, HY - 0.025, 0.114, 0.85, 1.3, 1.25, 10);                // nose
+    { const mo = MeshBuilder.CreateBox("mo", { width: 0.05, height: 0.008, depth: 0.012 }, sc); mo.position.set(0, HY - 0.074, 0.1); mk(mo, "#8a4a3a"); }
+    {   // hair: a front cap with a clean hairline above the brows, and the back half of the head covered down to the nape, both a hair's width outside the skull
+      const cap = MeshBuilder.CreateSphere("hair", { diameter: 1, segments: 28, slice: 0.256 }, sc);   // concentric with the skull, cut off at the hairline
+      cap.scaling.set(0.216, 0.262, 0.238); cap.position.set(0, HY, 0); this.hairCap = mk(cap, hairCol);
+      const back = MeshBuilder.CreateSphere("hairback", { diameter: 1, segments: 28, slice: 0.5 }, sc);
+      back.scaling.set(0.216, 0.232, 0.236); back.position.set(0, HY + 0.014, -0.002); back.rotation.x = -Math.PI / 2; mk(back, hairCol);
+      this.hairBack = back;
+    }
+    // ---- PPE: vest, hard hat, safety glasses (hidden until setPPE(true))
+    const ppeAdd = (mesh: Mesh) => { this.ppe.push(mesh); return mesh; };
+    if (o.vest) {
+      const v = cap(0.16, 0.5, "#e8f542", this.root, 0, 1.24, 0, 1.34, 1, 0.9); ppeAdd(v);
+      for (const y of [1.14, 1.3]) { const s = cyl(0.37, 0.37, 0.05, "#cfd3d6", this.root, 0, y, 0, 0.72); ppeAdd(s); }
+    }
+    if (o.hat) for (const p of hardHatParts(sc)) { p.mesh.position.set(p.x, HY + 0.072 + p.y, p.z); ppeAdd(mk(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : o.hat, this.root)); }
+    // safety glasses: one clear wraparound lens that follows the curve of the face, with a dark brow bar along the top edge and temple arms back to the ears
+    {
+      const gm = new StandardMaterial("lensglass", sc); gm.diffuseColor = new Color3(0.1, 0.17, 0.24); gm.emissiveColor = new Color3(0.03, 0.07, 0.11); gm.alpha = 0.5; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 80; gm.backFaceCulling = false;
+      const arcMesh = (h: number, dy: number, sx: number, sz: number, arc: number) => {
+        const c = MeshBuilder.CreateCylinder("lensarc", { diameter: 1, height: h, tessellation: 48, arc, enclose: false, sideOrientation: Mesh.DOUBLESIDE }, sc);
+        c.scaling.set(sx, 1, sz); c.position.set(0, HY + dy, 0); c.rotation.y = Math.PI + (Math.PI / 2 - arc * Math.PI); return c;   // centre the arc on the face
+      };
+      const lens = arcMesh(0.036, 0.008, 0.222, 0.246, 0.3); lens.material = gm; lens.parent = this.root; ppeAdd(lens);
+      ppeAdd(mk(arcMesh(0.011, 0.0285, 0.224, 0.248, 0.3), "#15171a"));      // brow bar
+      for (const s of [-1, 1]) {
+        const tp = MeshBuilder.CreateBox("temple", { width: 0.006, height: 0.01, depth: 0.1 }, sc); tp.position.set(s * 0.1, HY + 0.018, -0.012); tp.rotation.y = 0; ppeAdd(mk(tp, "#15171a"));
+      }
+    }
+    // ---- the finale's spacesuit parts (hidden), and what to whiten
+    {
+      const sp: Mesh[] = [];
+      const helm = ball(0.37, "#ffffff", this.root, 0, HY + 0.01, 0.01, 1, 1, 1, 18);
+      const gm = new StandardMaterial("helmglass", sc); gm.diffuseColor = new Color3(0.72, 0.86, 0.95); gm.alpha = 0.3; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 40; helm.material = gm; sp.push(helm);
+      sp.push(cyl(0.22, 0.24, 0.07, "#e6eaee", this.root, 0, 1.5, 0.004));
+      const pack = MeshBuilder.CreateBox("lpack", { width: 0.36, height: 0.5, depth: 0.2 }, sc); pack.position.set(0, 1.22, -0.2); sp.push(mk(pack, "#e6eaee"));
+      const chest = MeshBuilder.CreateBox("lchest", { width: 0.17, height: 0.12, depth: 0.04 }, sc); chest.position.set(0, 1.28, 0.125); sp.push(mk(chest, "#e07010"));
+      sp.forEach((x) => x.setEnabled(false)); this.suitParts = sp;
+      this.suitSwap = swap.map((mesh) => ({ mesh, orig: mesh.material }));
+    }
+    this.root.scaling.setAll(o.scale ?? 1);
+  }
+
   /** Rigged, skinned character: real animation clips, with PPE that follows the head / chest bones. */
   private fromChar(ck: CharKit, o: HumanOpts) {
     const sc = this.scene, c = ck.instantiate(1.78);
@@ -144,16 +339,19 @@ export class Human {
     // Boots: the model's own feet are hidden. Our own boots hang off the SHIN bone (the one thing every clip animates correctly):
     // planted at the shin's lower end, tilted with the shin, always facing the way the body faces. No foot bones, no skinning.
     for (const mesh of c.meshes) if (/feet/i.test(mesh.name)) mesh.setEnabled(false);
-    const bootParts: { node: TransformNode; knee: TransformNode | null | undefined; end: TransformNode | null | undefined }[] = [];
+    const bootParts: { node: TransformNode; knee: TransformNode | null | undefined; end: TransformNode | null | undefined; prev: Quaternion | null }[] = [];
     for (const side of ["Left", "Right"]) {
       const node = new TransformNode("boot", sc); node.parent = this.root;
-      const part = (mesh: Mesh, hex: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { mesh.material = m(sc, hex); mesh.parent = node; mesh.position.set(x, y, z); mesh.scaling.set(sx, sy, sz); this.meshes.push(mesh); };
-      part(MeshBuilder.CreateCylinder("bsh", { diameterTop: 0.125, diameterBottom: 0.115, height: 0.2, tessellation: 12 }, sc), boots, 0, 0.13, 0.01);       // shaft, under the pant cuff
-      part(MeshBuilder.CreateBox("bfo", { width: 0.115, height: 0.075, depth: 0.2 }, sc), boots, 0, 0.06, 0.1);                                           // foot
-      part(MeshBuilder.CreateSphere("bto", { diameter: 0.115, segments: 8 }, sc), boots, 0, 0.055, 0.2, 1, 0.7, 1.15);                                      // rounded toe
-      part(MeshBuilder.CreateBox("bhe", { width: 0.12, height: 0.03, depth: 0.1 }, sc), "#0c0b0a", 0, 0.015, -0.02);                                      // heel
-      part(MeshBuilder.CreateBox("bso", { width: 0.12, height: 0.026, depth: 0.31 }, sc), "#0c0b0a", 0, 0.013, 0.1);                                      // sole
-      bootParts.push({ node, knee: this.bones[side + "Leg"], end: this.bones[side + "LegEnd"] });
+      const part = (mesh: Mesh, hex: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => { mesh.material = m(sc, hex); mesh.parent = node; mesh.position.set(x, y, z); mesh.scaling.set(sx, sy, sz); this.meshes.push(mesh); return mesh; };
+      const toeCol = lighten(boots, 0.16), solCol = "#0c0b0a";
+      part(MeshBuilder.CreateCylinder("bsh", { diameterTop: 0.1, diameterBottom: 0.116, height: 0.17, tessellation: 18 }, sc), boots, 0, 0.12, 0.0);      // tapered shaft, under the pant cuff
+      part(MeshBuilder.CreateSphere("bfo", { diameter: 1, segments: 16 }, sc), boots, 0, 0.068, 0.085, 0.118, 0.098, 0.3);                               // rounded foot (an ellipsoid: no square edges)
+      part(MeshBuilder.CreateBox("bto2", { width: 0.05, height: 0.012, depth: 0.1 }, sc), "#b9a98c", 0, 0.118, 0.065).rotation.x = -0.5;                // tongue
+      for (let li = 0; li < 3; li++) part(MeshBuilder.CreateBox("bla", { width: 0.075, height: 0.008, depth: 0.012 }, sc), "#d8cfba", 0, 0.12 + li * 0.012, 0.045 + li * 0.04).rotation.x = -0.45;   // laces
+      part(MeshBuilder.CreateSphere("bto", { diameter: 1, segments: 14 }, sc), toeCol, 0, 0.056, 0.2, 0.112, 0.082, 0.13);                              // toe cap, a shade lighter
+      part(MeshBuilder.CreateCylinder("bhe", { diameter: 0.118, height: 0.034, tessellation: 18 }, sc), solCol, 0, 0.017, -0.035);                     // round heel block
+      part(MeshBuilder.CreateCylinder("bso", { diameter: 1, height: 0.028, tessellation: 28 }, sc), solCol, 0, 0.014, 0.1, 0.122, 1, 0.33);              // oval sole: round in plan, wider at the ball of the foot
+      bootParts.push({ node, knee: this.bones[side + "Leg"], end: this.bones[side + "LegEnd"], prev: null });
     }
     sc.onAfterAnimationsObservable.add(() => {
       if (!this.root.isEnabled()) return;
@@ -164,9 +362,14 @@ export class Human {
         bp.knee.computeWorldMatrix(true); bp.end.computeWorldMatrix(true);
         const e = Vector3.TransformCoordinates(bp.end.getAbsolutePosition(), inv), k = Vector3.TransformCoordinates(bp.knee.getAbsolutePosition(), inv);
         const up = k.subtract(e); if (up.lengthSquared() < 1e-6) continue; up.normalize();
+        // a foot does not swing as far as the shin does while running: blend the shin direction with straight up, so the boot stays under the leg instead of flicking
+        up.scaleInPlace(0.8).addInPlace(new Vector3(0, 0.2, 0)).normalize();
         const f = fwd.subtract(up.scale(Vector3.Dot(fwd, up))); if (f.lengthSquared() < 1e-6) continue; f.normalize();   // body-forward made perpendicular to the shin
         Quaternion.FromLookDirectionLHToRef(f.scale(-1), up, q);   // (this helper points -z along the look direction here, so give it the opposite)
-        bp.node.position.copyFrom(e); bp.node.rotationQuaternion = q.clone();
+        // low-pass the orientation too, so a fast shin swing cannot make the boot twitch
+        bp.node.position.copyFrom(e);
+        bp.prev = bp.prev ? Quaternion.Slerp(bp.prev, q, 0.75) : q.clone();
+        bp.node.rotationQuaternion = bp.prev.clone();
       }
     });
     if (band) tint(/^Red/, band);
@@ -174,15 +377,14 @@ export class Human {
     const sy = o.height ?? 0.95 + rnd(5) * 0.11, sx = 0.95 + rnd(6) * 0.14;
     this.chBuild = new Vector3(sy, sy, sy);   // uniform only: non-uniform scale on the root shears every rotating limb and foot (looks like smeared boots while running)
     for (const mesh of c.meshes) if (/head/i.test(mesh.name) && /^Beige/.test(String((mesh.material as any)?.name ?? "").replace(/_c\d+$/, ""))) mesh.setEnabled(false);
+    this.hairMeshes = c.meshes.filter((x) => /^Eyebrows/.test(String((x.material as any)?.name ?? "").replace(/_cd+$/, ""))) as Mesh[];
     const mk = (mesh: Mesh, hex: string) => { mesh.material = m(sc, hex); mesh.parent = this.root; this.meshes.push(mesh); this.ppe.push(mesh); return mesh; };
     const parts: { mesh: Mesh; bone: string; off: Vector3 }[] = [];
     const add = (mesh: Mesh, hex: string, bone: string, x: number, y: number, z: number) => { mk(mesh, hex); parts.push({ mesh, bone, off: new Vector3(x, y, z) }); return mesh; };
     const hatCol = o.hat ?? "#f4f4f4";
     if (o.hat) {
-      add(MeshBuilder.CreateSphere("hat", { diameter: 0.3, segments: 14, slice: 0.55 }, sc), hatCol, "Head", 0, -0.115, 0.0);
-      add(MeshBuilder.CreateCylinder("brim", { diameter: 0.37, height: 0.022, tessellation: 20 }, sc), hatCol, "Head", 0, -0.105, 0.01);
-      add(MeshBuilder.CreateBox("bill", { width: 0.2, height: 0.02, depth: 0.1 }, sc), hatCol, "Head", 0, -0.11, 0.17);
-      add(MeshBuilder.CreateBox("rdg", { width: 0.04, height: 0.02, depth: 0.24 }, sc), hatCol, "Head", 0, 0.032, 0.0);
+      const BRIM_Y = -0.13;
+      for (const p of hardHatParts(sc)) add(p.mesh, p.mesh.name === "hhband" ? "#e6e9ec" : p.mesh.name === "hhmark" ? "#2fb37a" : hatCol, "Head", p.x, BRIM_Y + p.y, p.z);
     }
     if (o.vest) {
       add(MeshBuilder.CreateBox("v", { width: 0.4, height: 0.5, depth: 0.25 }, sc), "#e8f542", "Spine2", 0, -0.04, 0.02);
@@ -190,7 +392,25 @@ export class Human {
       add(MeshBuilder.CreateBox("vs2", { width: 0.41, height: 0.06, depth: 0.26 }, sc), "#cfd3d6", "Spine2", 0, 0.08, 0.02);
     }
     if (o.detail) {
-      add(MeshBuilder.CreateBox("gl", { width: 0.15, height: 0.05, depth: 0.03 }, sc), "#9fd3e8", "Head", 0, -0.18, 0.1);
+      for (const sx of [-1, 1]) {
+        add(MeshBuilder.CreateBox("gl", { width: 0.068, height: 0.04, depth: 0.018 }, sc), "#a9dcf0", "Head", sx * 0.042, -0.16, 0.105);
+        add(MeshBuilder.CreateBox("glr", { width: 0.074, height: 0.008, depth: 0.022 }, sc), "#15171a", "Head", sx * 0.042, -0.14, 0.106);
+        add(MeshBuilder.CreateBox("glt", { width: 0.01, height: 0.012, depth: 0.1 }, sc), "#15171a", "Head", sx * 0.092, -0.16, 0.055);
+      }
+      add(MeshBuilder.CreateBox("glb", { width: 0.03, height: 0.01, depth: 0.02 }, sc), "#15171a", "Head", 0, -0.153, 0.108);
+    }
+    // spacesuit parts (hidden until setSuit(true)); they are not part of the PPE set
+    {
+      const sp: Mesh[] = [];
+      const helm = add(MeshBuilder.CreateSphere("helm", { diameter: 0.4, segments: 18 }, sc), "#ffffff", "Head", 0, -0.115, 0.01);
+      const gm = new StandardMaterial("helmglass", sc); gm.diffuseColor = new Color3(0.72, 0.86, 0.95); gm.alpha = 0.3; gm.specularColor = new Color3(1, 1, 1); gm.specularPower = 40; helm.material = gm; sp.push(helm);
+      sp.push(add(MeshBuilder.CreateCylinder("hring", { diameter: 0.28, height: 0.07, tessellation: 20 }, sc), "#e6eaee", "Head", 0, -0.3, 0.0));
+      sp.push(add(MeshBuilder.CreateBox("lpack", { width: 0.38, height: 0.52, depth: 0.2 }, sc), "#e6eaee", "Spine2", 0, -0.02, -0.22));
+      sp.push(add(MeshBuilder.CreateBox("lpackb", { width: 0.3, height: 0.1, depth: 0.22 }, sc), "#9aa3ad", "Spine2", 0, -0.2, -0.22));
+      sp.push(add(MeshBuilder.CreateBox("lchest", { width: 0.18, height: 0.13, depth: 0.04 }, sc), "#e07010", "Spine2", 0, 0.04, 0.16));
+      sp.forEach((m) => m.setEnabled(false)); this.suitParts = sp; this.ppe = this.ppe.filter((x) => !sp.includes(x));
+      this.suitBase = [{ re: /^Brown(?!2)/, hex: o.shirt }, { re: /^Beige/, hex: o.shirt }, { re: /^LightBlue/, hex: o.pants }];
+      this.suitCloth = (c.materials as any[]).filter((mt) => this.suitBase.some((s) => s.re.test(String(mt.name).replace(/_c\d+$/, ""))));
     }
     this.chParts = parts;
     this.ppeLocal = new Vector3();
@@ -217,6 +437,7 @@ export class Human {
     bone.computeWorldMatrix(true);
   }
 
+  private chSatWait = 0;
   private animateChar(dt: number, speed: number) {
     const c = this.ch!;
     const next = this.seated ? "sit" : speed < 0.15 ? "idle" : speed < 4.4 ? "walk" : "run";
@@ -227,11 +448,12 @@ export class Human {
       this.chState = next;
       const g = grp[next]; g?.start(true, 1, g.from, g.to, false);
       if (next === "idle" && !c.idle && c.walk) { c.walk.start(true); c.walk.goToFrame(c.walk.from); c.walk.pause(); }
-      if (next === "sit") { g?.goToFrame(g.from); g?.pause(); this.chSat = false; }
+      if (next === "sit") { g?.goToFrame(g.from); g?.pause(); this.chSat = false; this.chSatWait = 3; }
     }
     if (next === "walk" && c.walk) c.walk.speedRatio = Math.max(0.6, Math.min(1.5, speed / 2.6));
     if (next === "run" && grp.run) grp.run.speedRatio = Math.max(0.7, speed / 5.2);
-    if (next === "sit" && !this.chSat) {
+    // wait a few frames before aiming the limbs: the bones only catch up with a freshly set body rotation after a render, and aiming off stale bone matrices left the legs pointing backward
+    if (next === "sit" && !this.chSat && this.chSatWait-- <= 0) {
       // freeze the idle pose, then aim each limb segment in world space (bone axes differ between rigs, so no hard-coded axes):
       // thighs point forward, shins straight down, upper arms forward-down, forearms forward
       this.root.computeWorldMatrix(true);
@@ -303,7 +525,37 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
-  setPPE(on: boolean) { this.ppe.forEach((x) => x.setEnabled(on)); }
+  /** re-skin the hard hat (the unlockable hats): shell, ridge and band colours, with an optional glow or a chrome shine */
+  private hatMats = new Map<string, StandardMaterial>();
+  setHatStyle(s: { shell: string; ridge: string; band: string; glow?: boolean; shine?: boolean }) {
+    const mat = (hex: string, glow: boolean, shine: boolean) => {
+      const k = hex + (glow ? "g" : "") + (shine ? "s" : ""); let x = this.hatMats.get(k);
+      if (!x) { x = new StandardMaterial("hatm" + k, this.scene); x.diffuseColor = Color3.FromHexString(hex); x.specularColor = shine ? new Color3(0.9, 0.9, 0.95) : new Color3(0.08, 0.08, 0.08); x.specularPower = shine ? 40 : 16; if (glow) x.emissiveColor = Color3.FromHexString(hex).scale(0.55); this.hatMats.set(k, x); }
+      return x;
+    };
+    for (const x of this.ppe) {
+      if (x.name === "hardhat") x.material = mat(s.shell, false, !!s.shine);
+      else if (x.name === "hhridge") x.material = mat(s.ridge, !!s.glow, !!s.shine);
+      else if (x.name === "hhband") x.material = mat(s.band, !!s.glow, false);
+    }
+  }
+  setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); this.refreshHat(); /* the hair stays: the hat sits over the top of it and the back still shows below the brim */ }
+  /** wear a different hat: the company hard hat, or one of the unlockables (a cowboy hat, a robot head, a crown...) */
+  private hatKind: HatKind = "hardhat"; private hats = new Map<HatKind, Mesh[]>();
+  setHat(kind: HatKind) {
+    if (kind === this.hatKind) return; this.hatKind = kind;
+    if (kind !== "hardhat" && !this.hats.has(kind)) {
+      const HY = 1.665, parts = hatParts(this.scene, kind), meshes: Mesh[] = [];
+      for (const p of parts) { p.mesh.material = hatMat(this.scene, p.hex, p.shine, p.glow, p.alpha); p.mesh.parent = this.root; p.mesh.position.set(p.x, HY + 0.072 + p.y, p.z); p.mesh.isPickable = false; p.mesh.setEnabled(false); meshes.push(p.mesh); }
+      this.hats.set(kind, meshes);
+    }
+    this.refreshHat();
+  }
+  private refreshHat() {
+    const custom = this.hatKind !== "hardhat", show = this.ppeOn && !this.suitOn;
+    for (const x of this.ppe) if (x.name === "hardhat" || x.name === "hhridge" || x.name === "hhband" || x.name === "hhmark") x.setEnabled(show && !custom);
+    for (const [k, ms] of this.hats) for (const x of ms) x.setEnabled(show && custom && k === this.hatKind);
+  }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */
   private addDetail(o: HumanOpts) {
@@ -315,16 +567,16 @@ export class Human {
     const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: string, parent?: TransformNode, ppe = false) => {
       const b = MeshBuilder.CreateBox("dt", { width: w, height: h, depth: d }, sc); b.position.set(x, y, z); return add(b, hex, parent, ppe);
     };
-    const ball = (dia: number, x: number, y: number, z: number, hex: string, sx = 1, sy = 1, sz = 1, parent?: TransformNode) => {
-      const b = MeshBuilder.CreateSphere("dt", { diameter: dia, segments: 8 }, sc); b.position.set(x, y, z); b.scaling.set(sx, sy, sz); return add(b, hex, parent);
+    const ball = (dia: number, x: number, y: number, z: number, hex: string, sx = 1, sy = 1, sz = 1, parent?: TransformNode, ppe = false) => {
+      const b = MeshBuilder.CreateSphere("dt", { diameter: dia, segments: 10 }, sc); b.position.set(x, y, z); b.scaling.set(sx, sy, sz); return add(b, hex, parent, ppe);
     };
     const ring = (dia: number, hgt: number, y: number, hex: string, parent: TransformNode = this.root) => {
       const c = MeshBuilder.CreateCylinder("dt", { diameter: dia, height: hgt, tessellation: 14 }, sc); c.position.y = y; return add(c, hex, parent);
     };
     // head: hair, ears, brows, mouth, stubble
     const hair = MeshBuilder.CreateSphere("hair", { diameter: 0.268, segments: 12, slice: 0.58 }, sc);
-    hair.position.set(0, 1.645, -0.012); hair.scaling.set(0.92, 1, 1.02); add(hair, "#3b2a1c");
-    box(0.24, 0.07, 0.05, 0, 1.6, -0.1, "#3b2a1c");                       // hair down the back of the neck
+    hair.position.set(0, 1.645, -0.012); hair.scaling.set(0.92, 1, 1.02); add(hair, "#3b2a1c"); this.hairCap = hair;
+    box(0.13, 0.06, 0.045, 0, 1.612, -0.092, "#3b2a1c");                       // hair down the back of the neck
     for (const sx of [-1, 1]) {
       ball(0.05, sx * 0.118, 1.615, 0.0, skin, 0.5, 1, 0.8);               // ears
       box(0.05, 0.011, 0.014, sx * 0.046, 1.668, 0.112, "#2a1d12");        // eyebrows
@@ -356,12 +608,31 @@ export class Human {
     ring(0.15, 0.035, -0.5, "#1a1a1c", this.armL);
     box(0.07, 0.02, 0.07, 0, -0.5, 0.05, "#9aa0a8", this.armL);
     // safety glasses ride with the PPE
-    box(0.125, 0.04, 0.012, 0, 1.635, 0.122, "#9fd3e8", undefined, true);
-    for (const sx of [-1, 1]) box(0.012, 0.012, 0.11, sx * 0.0625, 1.64, 0.07, "#15171a", undefined, true);
-    box(0.014, 0.012, 0.014, 0, 1.64, 0.126, "#15171a", undefined, true);
+    // wraparound lenses (slightly curved: flattened ellipsoids that follow the face), a dark brow rim, a bridge, and temples that hug the head to the ears
+    for (const sx of [-1, 1]) {
+      const lens = ball(0.072, sx * 0.043, 1.664, 0.119, "#a9dcf0", 1, 0.5, 0.3, undefined, true);
+      lens.rotation.y = sx * 0.28;
+      box(0.072, 0.007, 0.012, sx * 0.044, 1.681, 0.126, "#15171a", undefined, true).rotation.y = sx * 0.28;   // upper rim
+      box(0.07, 0.005, 0.01, sx * 0.044, 1.645, 0.122, "#2a2d31", undefined, true).rotation.y = sx * 0.28;     // lower rim, thinner
+      const tp = box(0.009, 0.012, 0.11, sx * 0.098, 1.668, 0.06, "#15171a", undefined, true); tp.rotation.y = sx * -0.38;   // temple arm
+      ball(0.016, sx * 0.012, 1.652, 0.127, "#d9d9d9", 0.6, 1, 0.6, undefined, true);                           // nose pad
+    }
+    box(0.026, 0.008, 0.012, 0, 1.667, 0.129, "#15171a", undefined, true);                                        // bridge
   }
   setShadow(gen: { addShadowCaster(m: Mesh): void }) { this.meshes.forEach((x) => gen.addShadowCaster(x)); }
-  animate(dt: number, speed: number) {
+  /** raise the right hand to use what it holds: the phone to the ear, the tally book up to write in, the gas monitor out in front */
+  handPose: "phone" | "tally" | "gas" | "rod" | null = null; private handLeft = 0; private handW = 0;
+  useHand(kind: "phone" | "tally" | "gas" | "rod", secs: number) { this.handPose = kind; this.handLeft = secs; }
+  private applyHand(dt: number) {
+    if (this.handLeft > 0) this.handLeft -= dt;
+    this.handW += ((this.handLeft > 0 ? 1 : 0) - this.handW) * Math.min(1, dt * 9);
+    if (this.handW < 0.01 || !this.handPose || !this.armR || !this.elbowR || this.ch) return;
+    const T = { phone: { s: -0.35, z: 0.45, e: -2.45 }, tally: { s: -0.95, z: 0.1, e: -1.5 }, gas: { s: -1.25, z: 0.05, e: -0.35 }, rod: { s: -1.0, z: 0.08, e: -0.6 } }[this.handPose];
+    const w = this.handW;
+    this.armR.rotation.x += (T.s - this.armR.rotation.x) * w; this.armR.rotation.z = T.z * w; this.elbowR.rotation.x += (T.e - this.elbowR.rotation.x) * w;
+  }
+  animate(dt: number, speed: number) { this.baseAnimate(dt, speed); this.applyHand(dt); }
+  private baseAnimate(dt: number, speed: number) {
     if (this.ch) { this.animateChar(dt, speed); return; }
     if (this.seated) {
       this.phase += dt * 1.2;

@@ -1,3 +1,4 @@
+import { openSlotPicker, openFeedback, openHighScores } from "./titlemenus";
 import {
   Engine, Scene, Color4, Color3, Vector3, HemisphericLight, DirectionalLight, ShadowGenerator, GlowLayer, Mesh,
 } from "@babylonjs/core";
@@ -7,7 +8,7 @@ import { Sim, WELL } from "./sim";
 import { Sfx } from "./audio";
 import { UI, $ } from "./ui";
 import { Game } from "./game";
-import { TitleFx } from "./titlefx";
+import { TitleScene } from "./title";
 import { TouchControls, detectTouch } from "./touch";
 import { Graphics, QUALITY_NAMES } from "./graphics";
 import { Kit } from "./models";
@@ -40,6 +41,7 @@ sun.shadowMinZ = 1; sun.shadowMaxZ = 400;
 // Blender-authored props and jointed crew (falls back to procedural geometry if the models can't load)
 const kit = await Kit.load(scene);
 Human.kit = kit;
+Human.smooth = new URLSearchParams(location.search).get("rigged") === null;
 Human.char = await CharKit.load(scene, new URLSearchParams(location.search).get("char") ?? "worker.glb");
 const rig = buildRig(scene, { bump: !isTouch, kit });
 const player = new Player(scene, canvas, rig.colliders);
@@ -62,7 +64,7 @@ kit?.casters.forEach((m) => sg.addShadowCaster(m));
 player.body.setShadow(sg);
 game.veh.setShadow(sg);
 Object.values(rig.humans).forEach((h) => h.setShadow(sg));
-scene.meshes.forEach((m) => { if (m.name === "ground" || m.name === "padmesh" || m.name === "road") m.receiveShadows = true; });
+scene.meshes.forEach((m) => { if (m.name === "ground") m.receiveShadows = true; });   // the pad and the road take no shadows: long shadows from the thin rig steel streaked them
 
 const glow = new GlowLayer("glow", scene, { mainTextureFixedSize: 512, blurKernelSize: 24 });
 glow.intensity = 0.45;
@@ -70,8 +72,8 @@ glow.intensity = 0.45;
 // post-processing / detail level (LOW on phones by default; change it from the pause menu)
 const gfx = new Graphics(scene, player.cam, glow, rig);
 const gfxLabel = () => { $("pGfx").textContent = "GRAPHICS: " + QUALITY_NAMES[gfx.level]; };
-gfx.set(Graphics.saved(isTouch, String((engine.getGlInfo?.() ?? {}).renderer ?? ""))); gfxLabel();
-$("pGfx").addEventListener("click", () => { gfx.cycle(); gfxLabel(); });
+gfx.set(0); gfxLabel();   // the game runs on the LOW setting only
+$("pGfx").style.display = "none";
 (window as any).__gfx = gfx;
 
 // spawn at the lease-road gate looking at the rig
@@ -102,14 +104,13 @@ if (isTouch) {
 $("buildid").textContent = (import.meta.env.VITE_BUILD ?? "dev");
 $("loading").style.display = "none";
 $("intro").style.display = "grid";
-const fx = new TitleFx($("titleFx") as HTMLCanvasElement);
-fx.onThunder = () => {
-  const st = $("stage"); st.classList.remove("shake"); void st.offsetWidth; st.classList.add("shake");
-  setTimeout(() => sfx.thunder(), 120);
-};
+// the title is the real rig in a lightning storm, rendered at chunky pixel resolution
+const fx = new TitleScene(scene, engine, rig, hemi, sun, player.cam, isTouch);
+fx.onThunder = (delay) => { setTimeout(() => sfx.thunder(), delay * 1000); };
 fx.start();
+(window as any).__title = fx;
 const introOpen = () => $("intro").style.display !== "none";
-$("ctrlBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("controls").style.display = "flex"; $("btnrow").style.visibility = "hidden"; $("pressstart").style.visibility = "hidden"; });
+$("hsBtn").addEventListener("click", () => { sfx.init(); sfx.click(); openHighScores(); });
 $("ctrlBack").addEventListener("click", () => { sfx.click(); $("controls").style.display = "none"; $("btnrow").style.visibility = "visible"; $("pressstart").style.visibility = "visible"; });
 window.addEventListener("keydown", (e) => {
   if (!introOpen() || e.repeat) return;
@@ -120,9 +121,10 @@ window.addEventListener("keydown", (e) => {
 const tutorial = new Tutorial(game, player, isTouch);
 const story = new Story();
 ($("contBtn") as HTMLButtonElement).disabled = !game.hasSave();
-const begin = (cont: boolean) => {
+const begin = (cont: boolean, slot = 1) => {
   sfx.init(); sfx.good(); fx.stop();
-  if (cont) game.load(); else game.clearSave();
+  game.slot = slot;
+  if (cont) game.load(slot); else game.clearSave(slot);
   $("intro").style.display = "none";
   $("hud").style.display = "block";
   game.started = true;
@@ -130,17 +132,25 @@ const begin = (cont: boolean) => {
   ui.toast(cont ? "WELCOME BACK" : "ROLL COAL, MAKE HOLE 2", cont ? "Progress restored. Pick up where you left off." : isTouch ? "Stick to move, drag to look. Walk to the gate shack." : "Walk to the gate shack and sign in.");
   if (!cont) tutorial.start();
 };
-$("startBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("intro").style.display = "none"; fx.stop(); story.play(() => begin(false)); });
-$("contBtn").addEventListener("click", () => { if (!($("contBtn") as HTMLButtonElement).disabled) begin(true); });
+$("startBtn").addEventListener("click", () => { sfx.init(); sfx.click(); openSlotPicker(game, "new", (slot) => { $("intro").style.display = "none"; fx.stop(); story.play(() => begin(false, slot)); }); });
+$("contBtn").addEventListener("click", () => { sfx.init(); sfx.click(); if (!($("contBtn") as HTMLButtonElement).disabled) openSlotPicker(game, "continue", (slot) => begin(true, slot)); });
+$("fbBtn").addEventListener("click", () => { sfx.init(); sfx.click(); openFeedback(String(import.meta.env.VITE_BUILD ?? "dev")); });
 player.onLockFailed = () => ui.toast("MOUSE CAPTURE UNAVAILABLE", "Click and drag to look around");
 canvas.addEventListener("click", () => { if (game.started && !ui.panelOpen && !game.paused) player.lock(); });
+document.getElementById("logbtn")?.addEventListener("click", () => game.openLog());
 
 // ---- pause: Esc / P, lost mouse capture, or the tab going to the background ----
 player.onLockLost = () => { if (game.started && !ui.panelOpen && !game.flags.finish) game.togglePause(true); };
 document.addEventListener("visibilitychange", () => { if (document.hidden && game.started && !game.flags.finish) game.togglePause(true, { allowPanel: true }); });
+let wheelAt = 0;
+const handsFree = () => game.started && !game.paused && !ui.panelOpen && (!game.veh.riding || game.veh.inChair()) && !game.astMode;
+// left click is E when the reticle has locked onto something you can use
+window.addEventListener("mousedown", (e) => { if (e.button === 0 && handsFree() && player.locked) { if (game.nearest) game.interact(true); } });
 window.addEventListener("keydown", (e) => {
+  if ((e.code === "AltLeft" || e.code === "AltRight") && game.started) { e.preventDefault(); if (!e.repeat && !game.paused) player.unlock(); return; }
   if (e.repeat) return;
   if (e.code === "KeyE") game.interact();
+  if (e.code === "KeyL" && game.started && !game.paused && !ui.panelOpen && !e.repeat) game.openLog();
   if (e.code === "KeyM") { sfx.setMuted(!sfx.muted); if (game.paused) $("pSound").textContent = sfx.muted ? "SOUND: OFF" : "SOUND: ON"; }
   if ((e.code === "Escape" || e.code === "KeyP") && game.started && !game.flags.finish) {
     if (game.paused) game.togglePause(false);
@@ -160,16 +170,24 @@ engine.runRenderLoop(() => {
   let left = dt * ts;
   while (left > 0) { const step = Math.min(1, left); sim.step(step); left -= step; }
   const s = sim.s;
-  rig.update(dt, {
+  const frame: any = {
     depth: s.depth, startDepth: WELL.startDepth,
     rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
-    connecting: s.mode === "connection", tripping: s.mode === "tripping", tripFrac: 0,
-    standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true,
-    near: Math.hypot(player.pos.x - 4.8, player.pos.z + 3) < 22 && player.pos.y > 4,
+    laser: sim.laser && s.mode === "drilling" && s.rop > 0, connecting: s.mode === "connection", tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), tripFrac: 0,
+    standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true, kicking: s.kick.active || s.kick.shut || s.mode === "killing",
+    near: (Math.hypot(player.pos.x - 4.8, player.pos.z + 3) < 22 && player.pos.y > 4) || (game.astMode && !!game.arm.site && Math.hypot(player.pos.x - game.arm.console.x, player.pos.z - game.arm.console.z) < 40),
     screens: { depth: s.depth, wob: s.wob, rop: s.rop, spp: s.spp, flow: s.flow, pit: s.pit, mw: s.mw, mode: s.mode, rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
-      kicking: s.kick.active, dd: game.veh.dd, t: clock },
-  });
+      kicking: s.kick.active, dd: game.dd, t: clock,
+      wobSet: s.auto.on ? s.auto.wob : s.wobTarget,   // the set point, not the autodriller's moment-to-moment output
+      motor: s.motor, dp: s.dp, torque: s.torque, tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), tripOut: s.mode === "tripping" ? sim.tripGoingOut : false, bitDepth: s.mode === "casing" ? s.depth * (s.casing.phase === "run" ? s.casing.progress : 1) : sim.bitDepth, casing: s.mode === "casing" || s.mode === "done" ? s.casing.phase : "none",
+      auto: { on: s.auto.on, limit: s.auto.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: s.auto.rop, wob: s.auto.wob, dp: s.auto.dp, tq: s.auto.torque ?? 10000 } } },
+  };
+  if (fx.running) Object.assign(frame, fx.frameOverride());
+  game.dd.update(dt);
+  game.scrData = frame.screens;
+  rig.update(dt, frame);
   game.update(dt, dt);
+  fx.update(dt);                       // after game.update so the storm owns sky, fog and light while the title is up
   tutorial.update(dt);
   game.veh.postCamera(dt);
   touch?.update();
@@ -178,3 +196,13 @@ engine.runRenderLoop(() => {
   sun.position = player.pos.subtract(sun.direction.scale(110));
   scene.render();
 });
+
+// dev only: a file changed. Do not reload (that wipes the game); offer it instead.
+if (import.meta.hot) {
+  import.meta.hot.on("rc-files-changed", () => {
+    if (document.getElementById("rcreload")) return;
+    const b = document.createElement("button"); b.id = "rcreload"; b.textContent = "New build ready: click to reload (your game is not saved if you are mid-run)";
+    b.style.cssText = "position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:99;padding:6px 12px;font:700 12px system-ui,sans-serif;background:#f4c04a;color:#111;border:2px solid #000;cursor:pointer";
+    b.onclick = () => location.reload(); document.body.appendChild(b);
+  });
+}

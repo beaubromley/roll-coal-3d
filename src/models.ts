@@ -90,11 +90,11 @@ export class Kit {
   }
 
   /** many copies of a prop as GPU thin instances (drill pipe on the racks): one draw call per material. */
-  instances(prefixes: string[], positions: Vector3[], shadow = false) {
+  instances(prefixes: string[], positions: Vector3[], shadow = false, rotY = 0) {
     for (const p of prefixes) for (const [n, t] of this.templates) {
       if (n !== p && !n.startsWith(p + "_primitive")) continue;
       const c = t.clone(n + "_inst") as Mesh; c.setEnabled(true); c.isPickable = false; c.receiveShadows = true;
-      for (const pos of positions) c.thinInstanceAdd(Matrix.Translation(pos.x, pos.y, pos.z));
+      for (const pos of positions) { const mt = Matrix.RotationY(rotY); mt.setTranslationFromFloats(pos.x, pos.y, pos.z); c.thinInstanceAdd(mt); }
       c.thinInstanceRefreshBoundingInfo(true);
       if (shadow) this.casters.push(c);
     }

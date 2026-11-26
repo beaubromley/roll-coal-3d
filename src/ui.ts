@@ -56,7 +56,12 @@ export class UI {
   }
   closable = true;
 
+  /** while this says true (a catch card is on screen) new toasts wait their turn */
+  toastGate: (() => boolean) | null = null; private toastWait = 0;
+  hideToast() { const t = $("toast"); if (t) t.classList.remove("show"); }
   toast(title: string, sub = "") {
+    if (this.toastGate && this.toastGate() && this.toastWait < 30) { this.toastWait++; window.setTimeout(() => this.toast(title, sub), 600); return; }
+    this.toastWait = 0;
     const t = $("toast");
     t.innerHTML = `${title}${sub ? `<small>${sub}</small>` : ""}`;
     t.classList.add("show");

@@ -365,6 +365,7 @@ export class Game {
     // everything past the fence: its colliders join the world before the vehicles take their snapshot of it
     this.outskirts = new Outskirts(this);
     this.items = new Items(this, this.scene);
+    this.ui.toastGate = () => this.outskirts.catchShowing();
     for (const c of this.outskirts.colliders) this.rig.colliders.push(c);
     this.player.terrain = this.outskirts.terrain;
     this.veh = new Vehicles(this.scene, this.rig.colliders, this.player, this);
@@ -1103,7 +1104,7 @@ export class Game {
       const p = this.player, onFoot = !this.veh.riding;
       localStorage.setItem(Game.slotKey(this.slot), JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
         approval: this.approval, morale: this.morale, incidents: this.incidents, flags, depthLog: this.depthLog, done: [...this.doneIds], realT: this.realT, fishing: this.outskirts.fishSave(),
-        ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled(false) : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null,
+        ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled(false) : false, pos: onFoot && !this.outskirts.boat.aboard ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null, boat: this.outskirts.boatSave(),
         veh: !onFoot && this.veh.active && this.veh.active.kind !== "drone" ? { id: this.veh.active.id, x: this.veh.active.x, z: this.veh.active.z, yaw: this.veh.active.yaw } : null }));
     } catch { /* storage full or blocked */ }
   }
@@ -1116,7 +1117,7 @@ export class Game {
       this.active = null; this.stack = []; this.ui.setMission("", "", "");   // jobs are re-evaluated from the restored state
       this.sim.hold = d.hold ?? null; this.sim.accumDead = !!d.accumDead;
       this.approval = d.approval; this.morale = d.morale; this.incidents = d.incidents; this.flags = d.flags ?? {}; this.realT = d.realT ?? 0;
-      this.outskirts.fishLoad(d.fishing); this.outskirts.afterLoad();
+      this.outskirts.fishLoad(d.fishing); this.outskirts.afterLoad(); this.outskirts.boatLoad(d.boat);
       this.doneIds = new Set<string>(d.done ?? []); this.depthLog = d.depthLog ?? [];
       this.queue = this.allMissions.filter((m) => !this.doneIds.has(m.id));
       this.missionNo = this.doneIds.size;

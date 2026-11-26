@@ -15,26 +15,31 @@ export class Items {
 
   constructor(private g: Game, private scene: Scene) {
     const d = document.createElement("div"); d.id = "itembar";
-    d.style.cssText = "position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:6;display:none;gap:8px;font:700 12px system-ui,sans-serif;color:#fff;pointer-events:auto";
+    d.style.cssText = "position:fixed;right:14px;bottom:150px;z-index:6;display:none;flex-direction:column;gap:6px;font:700 12px system-ui,sans-serif;color:#fff;pointer-events:auto;min-width:136px";
     document.body.appendChild(d); this.bar = d;
+    // Q (or the mouse wheel) cycles through what is in your hands; a click uses it
+    const ok = () => g.started && !g.paused && !g.ui.panelOpen && !g.veh.riding && !g.astMode && !g.flags.finish && !g.outskirts.isFishing();
     window.addEventListener("keydown", (e) => {
-      if (e.repeat || !g.started || g.paused || g.ui.panelOpen || g.veh.riding || g.astMode || g.flags.finish) return;
-      if (e.code === "Digit1") this.phone();
-      else if (e.code === "Digit2") this.toggleGun();
+      if (e.repeat || !ok()) return;
+      if (e.code === "KeyQ") this.cycle(1);
+      else if (e.code === "Digit1") this.select("phone"); else if (e.code === "Digit2") this.select("shotgun"); else if (e.code === "Digit0") this.select("none");
     });
-    document.addEventListener("mousedown", (e) => { if (e.button === 0 && this.held === "shotgun" && g.player.locked) this.fire(); });
+    window.addEventListener("wheel", (e) => { if (ok() && g.player.locked && Math.abs(e.deltaY) > 4) this.cycle(e.deltaY > 0 ? 1 : -1); }, { passive: true });
+    document.addEventListener("mousedown", (e) => { if (e.button !== 0 || !g.player.locked || !ok()) return; if (this.held === "shotgun") this.fire(); else if (this.held === "phone") this.phone(); });
   }
 
+  private slots(): Held[] { return this.has("shotgun") ? ["none", "phone", "shotgun"] : ["none", "phone"]; }
+  cycle(d: number) { const s = this.slots(), i = s.indexOf(this.held); this.setHeld(s[(i + d + s.length) % s.length]); }
+  select(h: Held) { if (h === "shotgun" && !this.has("shotgun")) { this.g.ui.toast("NO SHOTGUN", "You don't have one. Hank might lend you his."); return; } this.setHeld(this.held === h ? "none" : h); }
+  private setHeld(h: Held) {
+    if (h === this.held) return; this.held = h; this.g.sfx.click();
+    if (h === "phone") this.g.ui.toast("PHONE OUT", "Click to make a call. Q or the mouse wheel changes what you hold.");
+    else if (h === "shotgun") this.g.ui.toast("SHOTGUN READY", this.huntOk() ? "Click to fire." : "You are too close to people to fire it. Take it out where the animals are.");
+  }
   has(id: "phone" | "shotgun") { return id === "phone" || !!(this.g.flags.items && this.g.flags.items[id]); }
   give(id: "shotgun") { (this.g.flags.items ??= {})[id] = true; this.g.ui.toast("ITEM: SHOTGUN", "Hank gave you a shotgun. Press 2 to ready it. It only fires out where the animals are."); }
 
   // ---------------------------------------------------------------------------------------------- the shotgun
-  toggleGun() {
-    const g = this.g;
-    if (!this.has("shotgun")) { g.ui.toast("NO SHOTGUN", "You don't have one. Hank might lend you his."); return; }
-    this.held = this.held === "shotgun" ? "none" : "shotgun"; g.sfx.click();
-    if (this.held === "shotgun") g.ui.toast("SHOTGUN READY", this.huntOk() ? "Click to fire." : "You are too close to people to fire it. Take it out where the animals are.");
-  }
   /** shooting is only allowed out in the country where the animals are: not on the lease, the farm, the taco truck or the other company's fence */
   huntOk(): boolean {
     const p = this.g.player.pos, o = this.g.outskirts;
@@ -142,9 +147,14 @@ export class Items {
   update(dt: number) {
     const g = this.g, p = g.player; this.cool -= dt;
     const show = g.started && !g.astMode && !g.flags.finish && !g.veh.riding;
-    // the item bar
-    const html = show ? `<div style="padding:5px 9px;background:rgba(10,16,24,.85);border:2px solid ${this.held === "phone" ? "#f4c04a" : "#3a4a62"}"><kbd>1</kbd> PHONE</div>` + (this.has("shotgun") ? `<div style="padding:5px 9px;background:rgba(10,16,24,.85);border:2px solid ${this.held === "shotgun" ? "#f4c04a" : "#3a4a62"}"><kbd>2</kbd> SHOTGUN${this.held === "shotgun" ? (this.huntOk() ? " · click to fire" : " · not here") : ""}</div>` : "") : "";
-    if (this.bar.dataset.h !== html) { this.bar.dataset.h = html; this.bar.innerHTML = html; this.bar.style.display = html ? "flex" : "none"; this.bar.querySelectorAll("kbd").forEach((k) => ((k as HTMLElement).style.cssText = "background:#f1f4f7;color:#111;padding:1px 5px;border-radius:3px;margin-right:4px;font:700 11px ui-monospace,Consolas,monospace")); }
+    // the item bar: your hands, the phone and the shotgun down the right side. Click one to take it out (a second click on the phone calls)
+    const names: Record<Held, string> = { none: "HANDS", phone: "PHONE", shotgun: "SHOTGUN" };
+    const html = show ? this.slots().map((s) => `<div data-s="${s}" style="cursor:pointer;padding:6px 10px;background:rgba(10,16,24,.88);border:2px solid ${this.held === s ? "#f4c04a" : "#3a4a62"};opacity:${this.held === s ? 1 : 0.75}">${this.held === s ? "▶ " : ""}${names[s]}${this.held === s && s === "shotgun" ? (this.huntOk() ? " · click to fire" : " · not here") : this.held === s && s === "phone" ? " · click to call" : ""}</div>`).join("") + `<div style="font-size:10px;opacity:.75;text-align:center"><kbd>Q</kbd> or wheel to switch</div>` : "";
+    if (this.bar.dataset.h !== html) {
+      this.bar.dataset.h = html; this.bar.innerHTML = html; this.bar.style.display = html ? "flex" : "none";
+      this.bar.querySelectorAll("kbd").forEach((k) => ((k as HTMLElement).style.cssText = "background:#f1f4f7;color:#111;padding:1px 5px;border-radius:3px;font:700 11px ui-monospace,Consolas,monospace"));
+      this.bar.querySelectorAll<HTMLElement>("[data-s]").forEach((el) => { el.onclick = () => { const s = el.dataset.s as Held; if (this.held === s && s === "phone") this.phone(); else this.setHeld(s); }; });
+    }
     if (!show && this.held === "shotgun") this.held = "none";
     // the gun in hand: on the camera in first person, on the body in third
     if (this.held === "shotgun") {
@@ -152,6 +162,6 @@ export class Items {
       if (!this.gunCam) { this.gunCam = this.makeGun(); this.gunCam.parent = p.cam; this.gunCam.position.set(0.3, -0.26, 0.85); this.gunCam.rotation.set(0.05, -0.08, 0); }
       this.gunBody.setEnabled(p.third); this.gunCam.setEnabled(!p.third);
       p.body.root.rotation.y = p.yaw; p.body.useHand("gas", 0.4);
-    } else { this.gunBody?.setEnabled(false); this.gunCam?.setEnabled(false); }
+    } else { this.gunBody?.setEnabled(false); this.gunCam?.setEnabled(false); if (this.held === "phone") p.body.useHand("phone", 0.4); }
   }
 }

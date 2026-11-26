@@ -257,6 +257,12 @@ export class Outskirts {
     const dk = B.dock; if (Math.abs(B.z - dk.z) < 4.5 && B.x > dk.x0 && B.x < dk.x1) return new Vector3(B.x, 0.95, dk.z);
     return null;
   }
+  boatSave() { const B = this.boat; return { x: B.x, z: B.z, yaw: B.yaw, aboard: B.aboard }; }
+  boatLoad(d: { x: number; z: number; yaw: number; aboard: boolean } | undefined) {
+    const B = this.boat; if (!d || !B.node || B.aboard) return;
+    B.x = d.x; B.z = d.z; B.yaw = d.yaw; B.v = 0; B.node.position.set(B.x, WATER_Y, B.z); B.node.rotation.y = B.yaw;
+    if (d.aboard) { this.g.player.teleport(B.x, WATER_Y + 0.5, B.z); B.aboard = true; B.spd = this.g.player.speedMul || 1; this.g.player.speedMul = 0; }
+  }
   private boardBoat() {
     const g = this.g, B = this.boat, p = g.player; if (!B.node) return;
     B.aboard = true; B.spd = p.speedMul; p.speedMul = 0; g.ui.toast("IN THE BOAT", "W / S row, A / D turn. Fish from here, and take it out to the deep end. E at a shore to climb out.");
@@ -320,6 +326,9 @@ export class Outskirts {
     return near(FOREST_CAMP.x, FOREST_CAMP.z, 70) || near(RIVAL.x, RIVAL.z, 95) || near(POND.x, POND.z, POND.rx + 30) || near(FARM.x, FARM.z, 70) || near(TACO.x, TACO.z, 60) || near(SILOS.x, SILOS.z, 60) || this.turbs.some((t) => near(t.x, t.z, 40));
   }
   /** is a spot too close to people to fire a gun (the farm, the taco truck, the other company)? */
+  /** a catch card is showing */
+  catchShowing(): boolean { return this.catchT > 0; }
+  isFishing(): boolean { return this.fish.st !== "idle"; }
   nearPeople(x: number, z: number): boolean { return Math.hypot(x - FARM.x, z - FARM.z) < 95 || Math.hypot(x - TACO.x, z - TACO.z) < 70 || Math.hypot(x - RIVAL.x, z - RIVAL.z) < 75; }
   shotFx(o: Vector3, to: Vector3, puffAt: Vector3 | null) {
     const f = this.fx, d = to.subtract(o), len = d.length(); if (len < 0.1) return;
@@ -885,6 +894,7 @@ export class Outskirts {
   private catchEl: HTMLDivElement | null = null; private catchT = 0;
   /** a card with a picture of what you caught */
   private showCatch(name: string, sub: string, id: string, deep: boolean, head?: string) {
+    this.g.ui.hideToast();
     if (!this.catchEl) {
       const d = document.createElement("div"); d.id = "catchcard";
       d.style.cssText = "position:fixed;left:50%;top:88px;transform:translateX(-50%);z-index:30;width:300px;padding:10px;border:3px solid #000;border-radius:10px;background:rgba(10,16,24,.92);box-shadow:0 0 0 2px rgba(244,192,74,.9),4px 6px 0 2px rgba(0,0,0,.6);color:#fff;text-align:center;font-family:inherit;pointer-events:none;transition:opacity .3s;opacity:0";
@@ -924,8 +934,8 @@ export class Outskirts {
     { const K = this.sinkKeys, dn = (K.has("KeyR") ? 1 : 0) - (K.has("KeyF") ? 1 : 0); if (dn) f.depth = Math.max(0.5, Math.min(Math.max(0.5, f.bed - 0.15), f.depth + dn * 1.5 * dt)); }
     { const frac = Math.min(1, f.depth / Math.max(1, f.bed)), deep = f.depth >= 5;
       hud.innerHTML = (f.st === "bite" ? '<div style="color:#ff6a3d;font-size:17px;font-weight:900">BITE! CLICK NOW</div>' : '<div style="font-size:10px;letter-spacing:2px;color:#4fd6ff">LINE OUT</div>')
-        + '<div style="display:flex;gap:10px;align-items:stretch;margin:8px 0"><div style="position:relative;width:20px;height:74px;background:linear-gradient(#5fb4d8,#0d3a52 70%,#04141f);border:2px solid #1b2836"><div style="position:absolute;left:-4px;right:-4px;top:' + Math.round(frac * 64) + 'px;height:8px;background:' + (deep ? "#ffd24a" : "#fff") + ';border:1px solid #000"></div><div style="position:absolute;left:24px;top:' + Math.round(Math.min(1, 5 / Math.max(5, f.bed)) * 70) + 'px;font-size:9px;white-space:nowrap;color:#ffd24a">5 m: old fish</div></div>'
-        + '<div style="text-align:left;font-size:13px;line-height:1.6"><div>Bait depth: <b style="font-size:18px">' + f.depth.toFixed(1) + ' m</b> <span style="opacity:.7">of ' + f.bed.toFixed(1) + ' m</span></div><div style="color:#7fe08a"><b>HOLD R</b> to SINK the bait</div><div style="color:#9fd3e8"><b>HOLD F</b> to raise it (or the mouse wheel)</div></div></div>'; }
+        + '<div style="display:flex;gap:10px;align-items:stretch;margin:8px 0"><div style="position:relative;width:20px;height:74px;background:linear-gradient(#5fb4d8,#0d3a52 70%,#04141f);border:2px solid #1b2836"><div style="position:absolute;left:-4px;right:-4px;top:' + Math.round(frac * 64) + 'px;height:8px;background:' + (deep ? "#ffd24a" : "#fff") + ';border:1px solid #000"></div></div>'
+        + '<div style="text-align:left;font-size:13px;line-height:1.6"><div>Bait depth: <b style="font-size:18px">' + f.depth.toFixed(1) + ' m</b> <span style="opacity:.7">of ' + f.bed.toFixed(1) + ' m</span></div><div style="color:#7fe08a"><b>HOLD R</b> to SINK the bait</div><div style="color:#9fd3e8"><b>HOLD F</b> to raise it (or the mouse wheel)</div><div style="opacity:.7;font-size:11px">Big fish live below 5 m</div></div></div>'; }
     if (f.st === "fly") {
       f.t += dt / 0.6; const u = Math.min(1, f.t);
       this.bobber.position.set(tip.x + (f.bx - tip.x) * u, tip.y + (WATER_Y + 0.08 - tip.y) * u + Math.sin(Math.PI * u) * 2.4, tip.z + (f.bz - tip.z) * u);

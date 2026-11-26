@@ -114,7 +114,7 @@ export class Sim {
   private dist = 0;
   /** ROP multiplier from the directional driller: sliding and oscillating cost penetration rate */
   ropMul = 1;
-  /** laser drilling (stolen from AGI Drilling): a flat 300 ft/hr, no weight on bit, no bit wear, no motor wear */
+  /** laser drilling (stolen from AGI Drilling): a flat 500 ft/hr, no weight on bit, no bit wear, no motor wear */
   laser = false;
   /** the finale: the same well engine, drilling 800 ft of asteroid */
   astMode = false; private ropBase = 1;
@@ -333,7 +333,7 @@ export class Sim {
         this.ropN = this.ropN * 0.93 + (Math.random() - 0.5) * 0.11;
         if (s.auto.on && s.auto.limit === "ROP") rop = Math.min(rop, s.auto.rop);   // held at the limit: dead flat
         else rop *= 1 + this.ropN * (1 + this.bounce);                                 // otherwise it wanders around with the rock and the bit
-        if (this.laser) rop = 300;                                                     // 300 ft/hr, dead steady
+        if (this.laser) rop = 500;                                                     // 500 ft/hr, dead steady
         if (s.needTrip || s.fuel <= 0) rop = 0;
         s.rop = rop;
         const dd = (rop / 60) * dt;

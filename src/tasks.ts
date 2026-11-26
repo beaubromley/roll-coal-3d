@@ -77,12 +77,19 @@ export function defineMissions(g: Game) {
     end: () => { g.rig.deerNode.setEnabled(false); g.radio("earl", "That deer has more seniority than you at this company, and it still left."); } });
 
   // ================================================================ 16. ARMAGEDDON (finale)
-  M({ id: "armageddon", title: "Save the World", sub: "Drill to TD, then run casing and cement.", trigger: () => g.flags.chainDone === true, a: 1.0, m: 20,
+  // ================================================================ 15. the well: TD, run pipe, rig release (the finale only comes after this is done)
+  M({ id: "welldone", title: "Finish the Well", sub: "Drill to TD, run the pipe, and release the rig. Then you are done with the well.", trigger: () => g.flags.chainDone === true, a: 0.6, m: 8,
     start: () => { g.hold = null; sim.hold = null; g.radio("dale", "Released the hold. We're drilling to TD, boss.", 8000); },
     steps: [
-      { text: "Drill to TD (8,500 ft): set weight at the driller's console", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.depth >= WELL.td - 0.5 && (s.mode === "idle" || s.mode === "casing" || s.mode === "done") },   // (casing may already be running or finished by the time the finale begins)
-      { text: "Run the casing & cement at the console", at: sy(S.cabin), label: "Driller's console — run casing", r: 3.5, act: () => g.openCabin(), watch: () => s.mode === "casing" || s.mode === "done" },
-      { text: "Casing & cement in the hole…", watch: () => s.casing.phase === "done" || s.mode === "done" },
+      { text: "TD: drill to 8,500 ft (set weight at the driller's console)", at: sy(S.cabin), label: "Driller's console", r: 3.5, act: () => g.openCabin(), watch: () => s.depth >= WELL.td - 0.5 && (s.mode === "idle" || s.mode === "casing" || s.mode === "done") },   // (casing may already be running or finished by the time the first step is looked at)
+      { text: "Run Pipe: run the casing & cement at the console", at: sy(S.cabin), label: "Driller's console — run casing", r: 3.5, act: () => g.openCabin(), watch: () => s.mode === "casing" || s.mode === "done" },
+      { text: "Run Pipe: casing & cement in the hole…", watch: () => s.casing.phase === "done" || s.mode === "done" },
+      { text: "Rig Release: sign the rig release in the doghouse", at: sy(S.doghouse), label: "Sign the rig release", r: 3.5, act: (done) => g.mini.signSheet({ eyebrow: "Doghouse", title: "Rig Release", intro: "The well is done. Earl slides the rig release across the desk. \"Sign on the line, boss. The rig is yours. Well, not yours. Nobody's. It's released.\"" }, () => { g.radio("earl", "Rig released. Good well, boss. Don't go anywhere. Houston's about to call.", 8000); done(); }) },
+    ] });
+
+  // ================================================================ 16. ARMAGEDDON (finale): only after the well is done
+  M({ id: "armageddon", title: "Save the World", sub: "The well is done. Now the president is calling about an asteroid.", trigger: () => g.doneIds.has("welldone"), a: 1.0, m: 20,
+    steps: [
       { text: "Answer the phone (the one in your trailer)", at: sy(S.phone), label: "Answer the phone", r: 3, enter: () => { g.sfx.horn(); g.spawnAsteroid(); g.sim.s.paused = true; g.flags.ringing = true; g.flags.ringT = 0; g.flags.ringLast = 0; g.flags.ringNag = false; g.ui.toast("YOUR PHONE IS RINGING", "Answer it at the phone in your trailer."); g.radio("earl", "Boss, your phone's ringing. Caller ID says… the White House? Pick it up.", 11000); }, act: (done0) => {
         g.flags.ringing = false; const done = () => done0();
         g.say("president", "We are faced with the very gravest of challenges. An asteroid the size of Texas is on a collision course with Earth. NASA's best astronauts can't drill. You're the best Company Man we've got, and you just delivered an 8,500-foot hole under budget-ish.", [
@@ -108,7 +115,7 @@ export function defineMissions(g: Game) {
       { text: "Climb either staircase to the rig floor (front or back)", at: () => g.outskirts.stairsBase(), watch: () => g.player.pos.y > 7.4 },
       { text: "Grab the secrets from the data terminal on the north side of the floor", at: () => g.outskirts.terminalPos(), watch: () => !!g.flags.secretsGot },
       { text: "RUN for the gate. Don't get caught.", at: () => g.outskirts.gatePos(), watch: () => g.outskirts.outsideGate() },
-    ], end: () => { g.flags.raidOn = false; g.flags.laserUnlocked = true; g.flags.laserOn = false; g.logBonus("Laser drilling unlocked", "300 ft/hr, no bit wear"); g.radio("dale", "You got the LASER?! Boss, there's a laser switch on the driller's console now. Three hundred feet an hour and the bit never wears. I need to sit down.", 12000); g.ui.toast("LASER DRILLING UNLOCKED", "Driller's console: Switch to LASER drilling."); } });
+    ], end: () => { g.flags.raidOn = false; g.flags.laserUnlocked = true; g.flags.laserOn = false; g.logBonus("Laser drilling unlocked", "500 ft/hr, no bit wear"); g.radio("dale", "You got the LASER?! Boss, there's a laser switch on the driller's console now. Five hundred feet an hour and the bit never wears. I need to sit down.", 12000); g.ui.toast("LASER DRILLING UNLOCKED", "Driller's console: Switch to LASER drilling."); } });
 
   // ================================================================ side: derrick inspection with the drone
   SD({ id: "inspect", title: "Derrick Inspection", sub: "Safety wants the mast inspected, and nobody wants to climb it. Fly the drone up the derrick and photograph the five defects.", trigger: () => false, auto: () => g.sinceDone() >= 5 && s.depth > 1200 && !g.flags.finish, a: 0.45, m: 3,

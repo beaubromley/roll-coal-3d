@@ -567,7 +567,7 @@ export class Game {
               <div class="hint">Set points: WOB (klb) · ROP (ft/hr) · DIFF (psi, motor stalls at 2,100) · TQ (ft-lb, string twists off at 16,500)</div>
               <div class="hint" id="a_lim" style="min-height:18px"></div>
               <div class="btns"><button class="b ${a.on ? "red" : "green"}" id="a_toggle">${a.on ? "Disengage" : "Engage autodriller"}</button></div>
-              ${this.flags.laserUnlocked ? `<div class="btns"><button class="b ${this.flags.laserOn ? "red" : "alt"}" id="a_laser" style="border-color:#2ee6ff" ${!this.flags.laserOn && s.mode !== "drilling" ? "disabled" : ""}>${this.flags.laserOn ? "LASER DRILLING: ON (300 ft/hr) · switch off" : s.mode === "drilling" ? "Switch to LASER drilling (instead of the autodriller)" : "LASER drilling: only while drilling"}</button></div>` : ""}
+              ${this.flags.laserUnlocked ? `<div class="btns"><button class="b ${this.flags.laserOn ? "red" : "alt"}" id="a_laser" style="border-color:#2ee6ff" ${!this.flags.laserOn && s.mode !== "drilling" ? "disabled" : ""}>${this.flags.laserOn ? "LASER DRILLING: ON (500 ft/hr) · switch off" : s.mode === "drilling" ? "Switch to LASER drilling (instead of the autodriller)" : "LASER drilling: only while drilling"}</button></div>` : ""}
             </div>
             <div class="cab-manual"><div class="hint" style="margin-top:8px">Manual WOB: <b id="wv">${s.wobTarget}</b> klbs ${a.on ? "(autodriller in control)" : ""}</div>
             <input type="range" id="wob" min="0" max="60" step="1" value="${s.wobTarget}" ${busy || a.on ? "disabled" : ""}/>
@@ -614,7 +614,7 @@ export class Game {
       holdBtn("wobUp", 1); holdBtn("wobDn", -1);
       q<HTMLInputElement>("wob").onchange = () => { if (s.wobTarget > 40) this.radio("dale", "Forty-plus by hand? Your funeral, boss. Bit's gonna scream.", 6000); };
       q("c_sweep").onclick = () => { const r = this.sim.sweep(); if (r) { this.ui.toast("NO SWEEP", r); return; } this.sfx.click(); this.ui.toast("LCM SWEEP AWAY", "A 30 lb/bbl pill is going down the pipe. It will fade as it circulates out."); this.radio("marcus", "The pill is pumped. Watch the pits and the returns.", 6000); };
-      const lz = p.querySelector<HTMLElement>("#a_laser"); if (lz) lz.onclick = () => { if (!this.flags.laserOn && s.mode !== "drilling") { this.ui.toast("NOT NOW", "The laser only fires while you are drilling."); return; } this.flags.laserOn = !this.flags.laserOn; if (this.flags.laserOn) { this.award("pew"); s.auto.on = false; } this.sfx.click(); this.radio("dale", this.flags.laserOn ? "Laser is firing. No weight on bit. 300 an hour and nothing wears out. This feels illegal." : "Back to the bit. It missed us.", 7000); this.rerenderCabin(p, render, bind); };
+      const lz = p.querySelector<HTMLElement>("#a_laser"); if (lz) lz.onclick = () => { if (!this.flags.laserOn && s.mode !== "drilling") { this.ui.toast("NOT NOW", "The laser only fires while you are drilling."); return; } this.flags.laserOn = !this.flags.laserOn; if (this.flags.laserOn) { this.award("pew"); s.auto.on = false; } this.sfx.click(); this.radio("dale", this.flags.laserOn ? "Laser is firing. No weight on bit. 500 an hour and nothing wears out. This feels illegal." : "Back to the bit. It missed us.", 7000); this.rerenderCabin(p, render, bind); };
       q("a_toggle").onclick = () => {
         const a = s.auto;
         if (a.on) { a.on = false; this.sfx.click(); this.radio("dale", "Autodriller off. I've got the brake.", 4000); this.rerenderCabin(p, render, bind); return; }
@@ -1520,7 +1520,7 @@ export class Game {
       if (st.watch && st.watch()) this.stepDone();
     }
     // release the hold chain: once all scripted jobs before the finale are done
-    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.queue.some((m) => !m.priority && m.id !== "armageddon") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
+    if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.queue.some((m) => !m.priority && m.id !== "armageddon" && m.id !== "welldone") && !this.active) { this.flags.chainDone = true; this.holdPending = false; }
     // hold the bit off bottom while the cast of characters is still queued
     if (this.sim.s.depth > 8000 && !this.flags.chainDone && !this.flags.nearTD) { this.flags.nearTD = true; this.radio("dale", "Two hundred feet to TD, boss. Keep drilling. Wrap up whatever's on your plate and the finale starts when you're clear.", 11000); }
     if (this.sim.hold === 8300) this.sim.hold = null;   // saves from the old version came back stuck at 8,300 ft
@@ -1671,7 +1671,7 @@ export class Game {
     else if (s.fuel <= 0) alert = "BLACKOUT — OUT OF DIESEL";
     else if (s.needTrip && s.mode !== "tripping") alert = "BIT DEAD — TRIP REQUIRED";
     else if (s.pit < 120 && (s.mode === "drilling" || s.mode === "connection")) alert = "PITS RUN DRY — DRILLING STOPPED · TRANSFER FROM THE FRAC TANKS";
-    else if (this.active?.m.id === "armageddon" && this.active.i === 0 && s.mode === "drilling" && s.wobTarget <= 0 && !s.auto.on && s.depth < WELL.td - 1) alert = "NO WEIGHT ON BIT — SET IT AT THE DRILLER'S CONSOLE (OR ENGAGE THE AUTODRILLER)";
+    else if (this.active?.m.id === "welldone" && this.active.i === 0 && s.mode === "drilling" && s.wobTarget <= 0 && !s.auto.on && s.depth < WELL.td - 1) alert = "NO WEIGHT ON BIT — SET IT AT THE DRILLER'S CONSOLE (OR ENGAGE THE AUTODRILLER)";
     this.ui.setAlert(alert);
     this.sfx.alarmTick(dt, !!(k.active && !k.shut) || s.fuel <= 0);
 
@@ -1751,7 +1751,7 @@ export class Game {
     this.ui.drawMap(p.pos.x, p.pos.z, p.yaw, markers.map((m) => ({ x: m.pos.x, z: m.pos.z, color: m.color })));
     const target = markers[0]?.pos ?? null; void target;
 
-    if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(this.sim.s.depth > 8000 && !this.flags.chainDone ? `Drill to TD, and finish the open jobs (${this.queue.filter((m) => !m.priority && m.id !== "armageddon").length} left)` : `Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
+    if (!this.active && this.started && !this.astMode && !this.flags.finish) this.ui.tickIdleObjective(this.sim.s.depth > 8000 && !this.flags.chainDone ? `Drill to TD, and finish the open jobs (${this.queue.filter((m) => !m.priority && m.id !== "armageddon" && m.id !== "welldone").length} left)` : `Drill to TD: ${fmt(this.sim.s.depth)} / 8,500 ft`);
     // roofs vanish while you are inside the room under them
     { const pp = p.pos; for (const r of this.rig.roofs) { const inside = pp.x > r.x0 && pp.x < r.x1 && pp.z > r.z0 && pp.z < r.z1 && pp.y > r.y0 && pp.y < r.y1; if (inside === r.mesh.isEnabled()) r.mesh.setEnabled(!inside); } }
     // casing and cement: show live progress, since there is nothing to click while it runs

@@ -100,15 +100,15 @@ export function defineMissions(g: Game) {
       { text: "Watch the Freedom lift off", watch: () => !!g.flags.finish },
     ] });
 
-  // ================================================================ side: steal Singularity's laser secrets (a run-around, not a sneak)
-  SD({ id: "secrets", title: "Steal the Laser", sub: "Singularity's laser drills 14,000 feet in nine minutes. Their rig floor has the schematics. Run in, climb up, grab them, run out. The androids will try to throw you out. Try as many times as it takes.", trigger: () => false, auto: () => g.sinceDone() >= 8 && s.depth > 3500 && !g.flags.finish, a: 0.4, m: 10,
+  // ================================================================ side: steal AGI Drilling's laser secrets (a run-around, not a sneak)
+  SD({ id: "secrets", title: "Steal the Laser", sub: "AGI Drilling's laser drills 14,000 feet in nine minutes. Their rig floor has the schematics. Run in, climb up, grab them, run out. The androids will try to throw you out. Try as many times as it takes.", trigger: () => false, auto: () => g.sinceDone() >= 8 && s.depth > 3500 && !g.flags.finish, a: 0.4, m: 10,
     start: () => { g.flags.raidOn = true; g.flags.secretsGot = false; g.radio("earl", "Don't sneak, they see everything. RUN. Gate, stairs, grab the files, and out again.", 8000); },
     steps: [
-      { text: "Run through Singularity's gate", at: () => g.outskirts.gatePos(), watch: () => g.outskirts.inLease() },
+      { text: "Run through AGI Drilling's gate", at: () => g.outskirts.gatePos(), watch: () => g.outskirts.inLease() },
       { text: "Climb either staircase to the rig floor (front or back)", at: () => g.outskirts.stairsBase(), watch: () => g.player.pos.y > 7.4 },
       { text: "Grab the secrets from the data terminal on the north side of the floor", at: () => g.outskirts.terminalPos(), watch: () => !!g.flags.secretsGot },
       { text: "RUN for the gate. Don't get caught.", at: () => g.outskirts.gatePos(), watch: () => g.outskirts.outsideGate() },
-    ], end: () => { g.flags.raidOn = false; g.flags.laserUnlocked = true; g.flags.laserOn = false; g.radio("dale", "You got the LASER?! Boss, there's a laser switch on the driller's console now. Three hundred feet an hour and the bit never wears. I need to sit down.", 12000); g.ui.toast("LASER DRILLING UNLOCKED", "Driller's console: Switch to LASER drilling."); } });
+    ], end: () => { g.flags.raidOn = false; g.flags.laserUnlocked = true; g.flags.laserOn = false; g.logBonus("Laser drilling unlocked", "300 ft/hr, no bit wear"); g.radio("dale", "You got the LASER?! Boss, there's a laser switch on the driller's console now. Three hundred feet an hour and the bit never wears. I need to sit down.", 12000); g.ui.toast("LASER DRILLING UNLOCKED", "Driller's console: Switch to LASER drilling."); } });
 
   // ================================================================ side: derrick inspection with the drone
   SD({ id: "inspect", title: "Derrick Inspection", sub: "Safety wants the mast inspected, and nobody wants to climb it. Fly the drone up the derrick and photograph the five defects.", trigger: () => false, auto: () => g.sinceDone() >= 5 && s.depth > 1200 && !g.flags.finish, a: 0.45, m: 3,
@@ -120,15 +120,12 @@ export function defineMissions(g: Game) {
     ], end: () => { g.flags.inspOn = false; g.rig.inspect.marks.forEach((m) => m.setEnabled(false)); g.radio("earl", "Five defects, all documented. Maintenance will fix three of them. We'll see about the bird.", 8000); } });
 
   // ================================================================ side: hunting with Hank (you spot, he shoots)
-  SD({ id: "hunt", title: "Hunt with Hank", sub: "Hank wants company in the forest. You spot, he shoots. His aim is a known problem.", trigger: () => false, auto: () => g.daytime() && !!g.flags.hankFriend && g.sinceDone() >= 8 && s.depth > 3000 && !g.flags.finish, a: 0.3, m: 8,
-    start: () => { g.radio("hank" as any, "Company Man. You and me, hunters' camp in the south forest. I shoot, you spot. Don't tell anybody what happens next. Bring your good eyes.", 11000); },
+  SD({ id: "hunt", title: "Hunt with Hank", sub: "Hank wants company in the south forest. He hands you a shotgun and wants three animals bagged. Anything counts. The prize buck is out there somewhere.", trigger: () => false, auto: () => g.daytime() && !!g.flags.hankFriend && g.sinceDone() >= 8 && s.depth > 3000 && !g.flags.finish, a: 0.3, m: 8,
+    start: () => { g.flags.huntBag = 0; g.radio("hank" as any, "Company Man. Hunters' camp, south forest. I'll hand you a shotgun. Don't tell anybody what happens next.", 8000); },
     steps: [
-      { text: "Meet Hank at the hunters' camp in the south forest", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z), label: "Hunters' camp", r: 7, act: (done) => { g.ui.toast("HANK", "About time. Binoculars up."); done(); } },
-      { text: "Spot the game for Hank (three of them)", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z), label: "Spot the game", r: 7, act: (done) => g.mini.reaction({ eyebrow: "The Hunt", title: "Spot the Deer", intro: "Hank is on the rifle. Something moves between the trees. Call it the instant you see it.", rounds: 3, goText: "THERE!" }, (r: any) => {
-        if (r && r.skipped) { g.radio("hank" as any, "You didn't see one thing. Not one. The deer saw YOU.", 6000); done(); return; }
-        if (r.score >= 0.6) g.radio("hank" as any, "Good eyes. I shot at two of 'em. Neither noticed.", 7000); else g.radio("hank" as any, "You pointed at a bush. I shot the bush. It was a good bush.", 7000);
-        setTimeout(() => { g.radio("hank" as any, "…And that's the Henderson's cow. Whoops. That was a good one too. Put it on the rig's tab.", 8000); g.sim.addCost(1800); g.ui.toast("COW DAMAGE", "$1,800 to a neighbour. Hank sends his regards."); }, 7500);
-        done(); }) },
+      { text: "Meet Hank at the hunters' camp in the south forest", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z), label: "Hunters' camp", r: 7, act: (done) => { g.items.give("shotgun"); g.radio("hank" as any, "There she is. Pump action. Don't point it at me, the cows or the taco truck.", 7000); done(); } },
+      { text: "Bag three animals in the forest: press 2 to ready the shotgun, click to fire (anything counts)", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z - 60), watch: () => (g.flags.huntBag ?? 0) >= 3 },
+      { text: "Bring Hank his share (the camp)", at: () => v3(FOREST_CAMP.x, 1, FOREST_CAMP.z), label: "Report to Hank", r: 7, act: (done) => { g.radio("hank" as any, "Three. Not bad. And that stray over by the fence? That was the Henderson's cow. Whoops. Put it on the rig's tab. You keep the shotgun.", 10000); g.sim.addCost(1800); g.ui.toast("COW DAMAGE", "$1,800 to a neighbour. Hank sends his regards."); done(); } },
     ] });
 
   // ================================================================ side: windmill shutdown (four turbines, each a lockout / tagout)

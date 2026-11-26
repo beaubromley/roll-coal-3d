@@ -114,7 +114,7 @@ export class Sim {
   private dist = 0;
   /** ROP multiplier from the directional driller: sliding and oscillating cost penetration rate */
   ropMul = 1;
-  /** laser drilling (stolen from Singularity): a flat 300 ft/hr, no weight on bit, no bit wear, no motor wear */
+  /** laser drilling (stolen from AGI Drilling): a flat 300 ft/hr, no weight on bit, no bit wear, no motor wear */
   laser = false;
   /** the finale: the same well engine, drilling 800 ft of asteroid */
   astMode = false; private ropBase = 1;

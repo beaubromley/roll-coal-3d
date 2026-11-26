@@ -1,3 +1,4 @@
+import { openSlotPicker, openFeedback } from "./titlemenus";
 import {
   Engine, Scene, Color4, Color3, Vector3, HemisphericLight, DirectionalLight, ShadowGenerator, GlowLayer, Mesh,
 } from "@babylonjs/core";
@@ -120,9 +121,10 @@ window.addEventListener("keydown", (e) => {
 const tutorial = new Tutorial(game, player, isTouch);
 const story = new Story();
 ($("contBtn") as HTMLButtonElement).disabled = !game.hasSave();
-const begin = (cont: boolean) => {
+const begin = (cont: boolean, slot = 1) => {
   sfx.init(); sfx.good(); fx.stop();
-  if (cont) game.load(); else game.clearSave();
+  game.slot = slot;
+  if (cont) game.load(slot); else game.clearSave(slot);
   $("intro").style.display = "none";
   $("hud").style.display = "block";
   game.started = true;
@@ -130,8 +132,9 @@ const begin = (cont: boolean) => {
   ui.toast(cont ? "WELCOME BACK" : "ROLL COAL, MAKE HOLE 2", cont ? "Progress restored. Pick up where you left off." : isTouch ? "Stick to move, drag to look. Walk to the gate shack." : "Walk to the gate shack and sign in.");
   if (!cont) tutorial.start();
 };
-$("startBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("intro").style.display = "none"; fx.stop(); story.play(() => begin(false)); });
-$("contBtn").addEventListener("click", () => { if (!($("contBtn") as HTMLButtonElement).disabled) begin(true); });
+$("startBtn").addEventListener("click", () => { sfx.init(); sfx.click(); openSlotPicker(game, "new", (slot) => { $("intro").style.display = "none"; fx.stop(); story.play(() => begin(false, slot)); }); });
+$("contBtn").addEventListener("click", () => { sfx.init(); sfx.click(); if (!($("contBtn") as HTMLButtonElement).disabled) openSlotPicker(game, "continue", (slot) => begin(true, slot)); });
+$("fbBtn").addEventListener("click", () => { sfx.init(); sfx.click(); openFeedback(String(import.meta.env.VITE_BUILD ?? "dev")); });
 player.onLockFailed = () => ui.toast("MOUSE CAPTURE UNAVAILABLE", "Click and drag to look around");
 canvas.addEventListener("click", () => { if (game.started && !ui.panelOpen && !game.paused) player.lock(); });
 document.getElementById("logbtn")?.addEventListener("click", () => game.openLog());

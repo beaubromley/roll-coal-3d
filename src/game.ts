@@ -1,4 +1,4 @@
-import { Scene, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture, VertexBuffer, VertexData, Quaternion, ParticleSystem, Color4 } from "@babylonjs/core";
+import { Scene, TransformNode, Vector3, Matrix, MeshBuilder, StandardMaterial, Color3, Mesh, DirectionalLight, HemisphericLight, Viewport, DynamicTexture, VertexBuffer, VertexData, Quaternion, ParticleSystem, Color4 } from "@babylonjs/core";
 import { Rig, F } from "./rig";
 import { Finale } from "./finale";
 import { Player } from "./player";
@@ -6,7 +6,8 @@ import { drawAutoBars } from "./recorder";
 import { setupBoard } from "./scores";
 import { drawEdr, Screens, type ScreenData } from "./screens";
 import { drawMissionArt } from "./cards";
-import { ACHIEVEMENTS, checkAchievements } from "./achievements";
+import { Items } from "./items";
+import { ACHIEVEMENTS, HATS, checkAchievements } from "./achievements";
 import { Dd, OFFSETS, DEFAULT_WPS, presetWps, planStats } from "./dd";
 import { drawPlanEditor, planEditorMap } from "./ddscreens";
 import { Sim, WELL, clockString, formationAt, poreAt, fracAt, STALL_DP, TORQUE_MAX } from "./sim";
@@ -233,6 +234,29 @@ export class Game {
   }
   closeBtn(p: HTMLElement) { p.querySelector<HTMLButtonElement>("[data-close]")?.addEventListener("click", () => this.ui.closePanel()); }
   sinceDone() { return this.realT - this.lastDone; }
+  /** run stats (steps, miles, calls, shots...) kept in the save and shown at the end */
+  stat(k: string, n = 1) { const s = (this.flags.stats ??= {}); s[k] = (s[k] ?? 0) + n; }
+  statGet(k: string): number { return (this.flags.stats && this.flags.stats[k]) || 0; }
+  private statLast: { x: number; z: number } | null = null; private statAir = 0;
+  private trackStats(dt: number) {
+    const p = this.player.pos, last = this.statLast; this.statLast = { x: p.x, z: p.z };
+    if (!last || this.paused || !this.started) return;
+    const d = Math.hypot(p.x - last.x, p.z - last.z); if (d > 8) return;   // teleports are not walking
+    const v = this.veh.active;
+    if (v) { if (v.kind === "drone") this.stat("droneM", d); else this.stat("drivenM", d); this.stat("rideSec", dt); }
+    else { this.stat("walkedM", d); if (this.player.sprinting) this.stat("sprintSec", dt); }
+    this.stat("playSec", dt);
+  }
+  /** a bonus paid by a side job or a find, listed in the breakdown at the end */
+  logBonus(title: string, note: string) { (this.flags.bonusLog ??= []).push({ t: title, n: note }); }
+  /** the chosen hard hat */
+  private hatApplied = "";
+  hatOwned(id: string) { const h = HATS.find((x) => x.id === id); return !!h && (!h.ach || this.hasAward(h.ach)); }
+  applyHat() {
+    let id = this.flags.hat ?? "white"; if (!this.hatOwned(id)) id = "white";
+    if (id === this.hatApplied) return; this.hatApplied = id;
+    const h = HATS.find((x) => x.id === id)!; this.player.body.setHatStyle(h);
+  }
   /** achievements */
   private achT = 1;
   hasAward(id: string) { return !!(this.flags.ach && this.flags.ach[id]); }
@@ -258,9 +282,12 @@ export class Game {
     const main = this.allMissions, side = this.sideList, sd = side.filter((m) => this.doneIds.has(m.id)).length, md = main.filter((m) => this.doneIds.has(m.id)).length;
     if (tab === "main") body = `<div class="tmarks">${mark(md)}</div>${main.map(row).join("")}`;
     else if (tab === "side") body = `<div class="tmarks">${mark(sd)}</div>${side.map(row).join("")}`;
+    else if (tab === "hats") { const have = HATS.filter((h) => this.hatOwned(h.id)).length; const cur = this.flags.hat ?? "white"; body = `<div class="tmarks">${have} / ${HATS.length} hard hats</div><div class="agrid">${HATS.map((h) => { const own = this.hatOwned(h.id), req = h.ach ? ACHIEVEMENTS.find((a) => a.id === h.ach) : null; return `<button class="hatb ${own ? "own" : ""} ${cur === h.id && own ? "on" : ""}" data-hat="${h.id}" ${own ? "" : "disabled"}><i style="background:${h.shell};box-shadow:inset 0 -6px 0 ${h.band}, inset 0 6px 0 ${h.ridge}"></i><div><div class="tt">${own ? h.name : "???"}</div><div class="ts">${own ? (cur === h.id ? "Wearing it" : "Click to wear") : "Unlock: " + (req ? req.name : "")}</div></div></button>`; }).join("")}</div>`; }
+    else if (tab === "items") { body = `<div class="trow ok"><b>☎</b><div><div class="tt">Cell phone</div><div class="ts">Press 1. Call the driller (shut in, weight on bit, trip), the engineer for help on what to do next, the directional driller, the superintendent, Houston, or Mom.</div></div><em>OWNED</em></div><div class="trow ${this.items.has("shotgun") ? "ok" : "wait"}"><b>${this.items.has("shotgun") ? "✔" : "?"}</b><div><div class="tt">${this.items.has("shotgun") ? "Shotgun" : "???"}</div><div class="ts">${this.items.has("shotgun") ? "Press 2 to ready it, click to fire. It only fires out in the country where the animals are, never around people." : "Somebody out there might lend you one."}</div></div><em>${this.items.has("shotgun") ? "OWNED" : ""}</em></div>`; }
     else if (tab === "ach") { const n = ACHIEVEMENTS.filter((a) => this.hasAward(a.id)).length; body = `<div class="tmarks">${n} / ${ACHIEVEMENTS.length}</div><div class="agrid">${ACHIEVEMENTS.map((a) => { const on = this.hasAward(a.id); return `<div class="ach ${on ? "on" : ""}"><b>${on ? "★" : "☆"}</b><div><div class="tt">${on || !a.secret ? a.name : "???"}</div><div class="ts">${on || !a.secret ? a.desc : "A secret."}</div></div></div>`; }).join("")}</div>`; }
-    box.innerHTML = `<div class="ttabs">${[["main", "MAIN JOBS"], ["side", "SIDE JOBS"], ["ach", "ACHIEVEMENTS"], ["depth", "DEPTH"]].map(([k, l]) => `<button class="ttab ${tab === k ? "on" : ""}" data-t="${k}">${l}</button>`).join("")}</div><div class="tbody">${body}</div>`;
+    box.innerHTML = `<div class="ttabs">${[["main", "MAIN JOBS"], ["side", "SIDE JOBS"], ["ach", "ACHIEVEMENTS"], ["hats", "HARD HATS"], ["items", "ITEMS"], ["depth", "DEPTH"]].map(([k, l]) => `<button class="ttab ${tab === k ? "on" : ""}" data-t="${k}">${l}</button>`).join("")}</div><div class="tbody">${body}</div>`;
     box.querySelectorAll<HTMLButtonElement>(".ttab").forEach((b) => b.onclick = () => { this.tallyTab = b.dataset.t!; this.renderTally(); });
+    box.querySelectorAll<HTMLButtonElement>(".hatb.own").forEach((b) => b.onclick = () => { this.flags.hat = b.dataset.hat; this.applyHat(); this.sfx.click(); this.renderTally(); });
     box.querySelectorAll<HTMLButtonElement>(".tact").forEach((b) => b.onclick = () => { this.togglePause(false); this.activateSide(b.dataset.act!); });
     $("curvewrap").style.display = tab === "depth" ? "block" : "none"; if (tab === "depth") this.drawCurve();
   }
@@ -330,13 +357,14 @@ export class Game {
   }
 
   // ---------- ambient interactables ----------
-  outskirts!: Outskirts;
+  outskirts!: Outskirts; items!: Items;
   dd!: Dd;
   buildAmbient() {
     this.dd = new Dd(this);
     const S = this.rig.spots, H = this.rig.humans;
     // everything past the fence: its colliders join the world before the vehicles take their snapshot of it
     this.outskirts = new Outskirts(this);
+    this.items = new Items(this, this.scene);
     for (const c of this.outskirts.colliders) this.rig.colliders.push(c);
     this.player.terrain = this.outskirts.terrain;
     this.veh = new Vehicles(this.scene, this.rig.colliders, this.player, this);
@@ -1019,8 +1047,26 @@ export class Game {
     starT.uScale = 2; starT.vScale = 1; starT.wrapU = 1; starT.wrapV = 1;   // repeat (dynamic textures clamp by default, which left the second half of the sky empty)
     this.sky = { sun, sunMat, moon, glow, stars, starMat };
   }
+  /** clouds: flat lumpy white puffs that drift across the sky on the wind, going grey and dark at dusk and night */
+  private clouds: { root: TransformNode; speed: number }[] = []; private cloudMat: StandardMaterial | null = null; private cloudT = 0;
+  private cloudStep(dt: number, night: number, dk: number) {
+    if (!this.clouds.length) {
+      const m = new StandardMaterial("cloudm", this.scene); m.diffuseColor = Color3.Black(); m.specularColor = Color3.Black(); m.emissiveColor = new Color3(1, 1, 1); m.alpha = 0.9; m.fogEnabled = false; m.disableLighting = true; this.cloudMat = m;
+      const base = MeshBuilder.CreateSphere("cloudbase", { diameter: 1, segments: 6 }, this.scene); base.material = m; base.isPickable = false; base.setEnabled(false);
+      let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 16; i++) {
+        const root = new TransformNode("cloud", this.scene); root.position.set((R() - 0.5) * 1500, 150 + R() * 110, (R() - 0.5) * 1500);
+        const puffs = 4 + ((R() * 4) | 0), W = 50 + R() * 70;
+        for (let k = 0; k < puffs; k++) { const p = base.createInstance("cp"); p.parent = root; p.isPickable = false; const r = W * (0.35 + R() * 0.4); p.scaling.set(r * 1.5, r * 0.55, r); p.position.set((k - puffs / 2) * W * 0.32 + (R() - 0.5) * 12, (R() - 0.3) * 8, (R() - 0.5) * W * 0.4); }
+        this.clouds.push({ root, speed: 2 + R() * 3 });
+      }
+    }
+    const m = this.cloudMat!; m.emissiveColor = Color3.Lerp(new Color3(1, 1, 1), new Color3(0.1, 0.13, 0.2), clamp(night * 1.15, 0, 1)); m.alpha = this.astMode ? 0 : 0.9 * (1 - dk);
+    for (const c of this.clouds) { c.root.position.x += c.speed * dt; if (c.root.position.x > 800) c.root.position.x = -800; c.root.setEnabled(!this.astMode); }
+  }
   private updateSky(hour: number, night: number) {
     const k = this.sky; if (!k) return;
+    this.cloudStep(0.016, night, this.asteroidT >= 0 ? Math.min(1, this.asteroidT / 6) : 0);
     const a = ((hour - 6.5) / 13.25) * Math.PI, d = new Vector3(Math.cos(a) * 0.8, Math.sin(a) * 0.95, 0.45).normalize();
     k.sun.position.copyFrom(d.scale(1000)); k.moon.position.copyFrom(d.scale(-1000));
     const dk = this.asteroidT >= 0 ? Math.min(1, this.asteroidT / 6) : 0;
@@ -1040,22 +1086,30 @@ export class Game {
     this.beginMission(m, { ask: true }); return true;
   }
   onInteract: () => void = () => {};
-  hasSave(): boolean { try { return !!localStorage.getItem(Game.SAVE_KEY); } catch { return false; } }
-  clearSave() { try { localStorage.removeItem(Game.SAVE_KEY); } catch { /* ignore */ } }
+  /** three save slots: slot 1 is the original save key, so old saves are still there */
+  slot = 1;
+  static slotKey(n: number) { return n === 1 ? Game.SAVE_KEY : Game.SAVE_KEY + "." + n; }
+  hasSave(n?: number): boolean { try { return n ? !!localStorage.getItem(Game.slotKey(n)) : [1, 2, 3].some((i) => !!localStorage.getItem(Game.slotKey(i))); } catch { return false; } }
+  clearSave(n = this.slot) { try { localStorage.removeItem(Game.slotKey(n)); } catch { /* ignore */ } }
+  /** what is in a slot, for the picker */
+  slotInfo(n: number): { day: number; depth: number; at: number; done: number } | null {
+    try { const raw = localStorage.getItem(Game.slotKey(n)); if (!raw) return null; const d = JSON.parse(raw); return { day: clockString(d.s?.t ?? 0).day, depth: d.s?.depth ?? 0, at: d.at ?? 0, done: Array.isArray(d.done) ? d.done.length : 0 }; } catch { return null; }
+  }
   save() {
     if (!this.started || this.flags.finish || this.astMode || this.sleeping) return;
     try {
       const flags: Record<string, any> = {};
       for (const [k, v] of Object.entries(this.flags)) { try { JSON.stringify(v); flags[k] = v; } catch { /* skip things that can't be saved */ } }
       const p = this.player, onFoot = !this.veh.riding;
-      localStorage.setItem(Game.SAVE_KEY, JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
+      localStorage.setItem(Game.slotKey(this.slot), JSON.stringify({ v: 1, at: Date.now(), s: this.sim.s, hold: this.sim.hold, accumDead: this.sim.accumDead,
         approval: this.approval, morale: this.morale, incidents: this.incidents, flags, depthLog: this.depthLog, done: [...this.doneIds], realT: this.realT, fishing: this.outskirts.fishSave(),
         ppe: p.body.ppe.length ? p.body.ppe[0].isEnabled(false) : false, pos: onFoot ? [p.pos.x, p.pos.y, p.pos.z, p.yaw] : null }));
     } catch { /* storage full or blocked */ }
   }
-  load(): boolean {
+  load(n = this.slot): boolean {
     try {
-      const raw = localStorage.getItem(Game.SAVE_KEY); if (!raw) return false;
+      this.slot = n;
+      const raw = localStorage.getItem(Game.slotKey(n)); if (!raw) return false;
       const d = JSON.parse(raw); if (d.v !== 1) return false;
       Object.assign(this.sim.s, d.s);      // keep the same state object: the job definitions hold a reference to it
       this.active = null; this.stack = []; this.ui.setMission("", "", "");   // jobs are re-evaluated from the restored state
@@ -1356,7 +1410,15 @@ export class Game {
       ["Office approval", this.approval.toFixed(1) + " ★"], ["Crew morale", Math.round(this.morale) + "%"], ["Incidents", String(this.incidents)], ["Kicks killed", String(s.stats.kicksKilled)],
     ];
     $("endgrade").textContent = grade;
-    $("endstats").innerHTML = rows.map((r) => `<div class="row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
+    const st = (k: string) => this.statGet(k), mi = (m: number) => (m / 1609.34).toFixed(2) + " mi", hm = (sec: number) => Math.floor(sec / 3600) + "h " + Math.floor((sec % 3600) / 60) + "m";
+    const stats: [string, string][] = [["Steps walked", fmt(st("walkedM") / 0.75)], ["Distance on foot", mi(st("walkedM"))], ["Distance driven", mi(st("drivenM"))], ["Drone distance", mi(st("droneM"))], ["Time on your feet at a sprint", hm(st("sprintSec"))],
+      ["Fish caught", String(this.outskirts.fishSave().caught)], ["Tacos eaten", String(this.flags.tacoAte ?? this.flags.taco ?? 0)], ["Phone calls made", String(st("calls"))], ["Shots fired", String(st("shots"))], ["Animals bagged", String(st("bagged"))], ["Time in the game", hm(st("playSec"))]]
+      .filter((r) => r[1] !== "0" && r[1] !== "0.00 mi" && r[1] !== "0h 0m") as [string, string][];
+    const bl: { t: string; n: string }[] = this.flags.bonusLog ?? [];
+    const ach = ACHIEVEMENTS.filter((a) => this.hasAward(a.id)).length;
+    $("endstats").innerHTML = rows.map((r) => `<div class="row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("")
+      + `<div class="endh">SIDE JOB BONUSES</div>` + (bl.length ? bl.map((b) => `<div class="row"><span>${b.t}</span><b style="font-size:13px">${b.n}</b></div>`).join("") : `<div class="row"><span>None. You only drilled.</span><b></b></div>`)
+      + `<div class="endh">YOUR RUN</div>` + stats.map((r) => `<div class="row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("") + `<div class="row"><span>Achievements</span><b>${ach} / ${ACHIEVEMENTS.length}</b></div>`;
     $("endtitle").innerHTML = over <= 0 ? `Under <em>AFE</em>` : `Planet <em>Saved</em>`;
     $("end").style.display = "grid"; this.player.unlock(); this.started = false;
     void setupBoard({ score, grade, depth: s.stats.feetDrilled, hours: Math.floor(hours), cost: s.cost, approval: this.approval, incidents: this.incidents, signature: this.flags.sig });
@@ -1415,6 +1477,7 @@ export class Game {
     if (a.i >= a.m.steps.length) {
       const m = a.m; m.end?.(); this.doneIds.add(m.id);
       this.gain(m.a ?? 0, m.m ?? 0); this.sfx.good(); this.ui.toast("JOB COMPLETE", m.title);
+      if (m.side) this.logBonus(m.title, (m.a ? "+" + m.a + " approval" : "") + (m.a && m.m ? " · " : "") + (m.m ? "+" + m.m + " morale" : ""));
       this.active = null; this.lastDone = this.realT; this.save();
       if (!(m.priority)) { /* keep order */ }
       this.ui.setMission("", "", "");
@@ -1546,8 +1609,8 @@ export class Game {
     }
     this.daleTweak(realDt);
     this.inspectStep();
-    this.pumpRadio();
-    if ((this.achT -= realDt) <= 0) { this.achT = 1; if (this.started) checkAchievements(this); }
+    this.pumpRadio(); this.trackStats(realDt); this.items.update(realDt);
+    if ((this.achT -= realDt) <= 0) { this.achT = 1; if (this.started) checkAchievements(this); this.applyHat(); }
     if (this.flags.laserOn && this.sim.s.mode !== "drilling" && this.sim.s.mode !== "connection") { this.flags.laserOn = false; this.ui.toast("LASER OFF", "The laser only fires while you are drilling. Switch it back on when you are."); }
     this.sim.laser = !!this.flags.laserUnlocked && !!this.flags.laserOn && !this.astMode;
     if (this.started && !this.paused && !this.astMode && !this.flags.finish) this.supplyNotes(realDt); else if (this.supplyEl) this.supplyEl.innerHTML = "";

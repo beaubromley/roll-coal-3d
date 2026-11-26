@@ -5,12 +5,16 @@ import type { Game } from "./game";
  * The critters out past the fence: deer that bolt, bears that charge if you bother them, snakes that rattle and bite, and birds wheeling overhead.
  * They are what the shotgun is for (it will not fire at people).
  */
-export type Species = "deer" | "bear" | "snake" | "bird";
-export const SPECIES_NAME: Record<Species, string> = { deer: "Whitetail Buck", bear: "Black Bear", snake: "Rattlesnake", bird: "Turkey Vulture" };
+export type Species = "deer" | "bear" | "snake" | "bird" | "rabbit" | "turkey" | "coyote" | "hog" | "doe" | "buck" | "prize";
+export const SPECIES_NAME: Record<Species, string> = { deer: "Whitetail Buck", bear: "Black Bear", snake: "Rattlesnake", bird: "Turkey Vulture", rabbit: "Jackrabbit", turkey: "Wild Turkey", coyote: "Coyote", hog: "Feral Hog", doe: "Whitetail Doe", buck: "Eight-Point Buck", prize: "PRIZE BUCK" };
+/** about how much each weighs, for the toast (the animals run from tiny to enormous) */
+export const SPECIES_LB: Record<Species, number> = { deer: 150, bear: 320, snake: 6, bird: 4, rabbit: 4, turkey: 16, coyote: 38, hog: 190, doe: 105, buck: 170, prize: 265 };
+const FLEE = new Set<Species>(["deer", "rabbit", "turkey", "coyote", "hog", "doe", "buck", "prize"]);
 
 interface Animal {
   kind: Species; n: TransformNode; x: number; z: number; y: number; h: number; sp: number; t: number; hp: number; down: number; r: number;
   state: "roam" | "flee" | "charge" | "retreat" | "dead"; cx: number; cz: number; ph: number; segs?: Mesh[]; wings?: Mesh[]; alt?: number; rad?: number; cool: number;
+  hy?: number; hp0?: number; fs?: number; tr?: number;   // aim height, hit points to come back with, flee speed, how close is too close
 }
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -24,6 +28,7 @@ export class Wildlife {
     for (const [x, z] of [[140, -60], [170, -20], [215, -100], [260, 40], [130, 180], [250, 150], [180, 300], [90, 340]] as [number, number][]) this.deer(x, z);
     for (const [x, z] of [[235, 10], [262, 232]] as [number, number][]) this.bear(x, z);
     for (let i = 0; i < 14; i++) { const near = i < 5; this.snake(near ? -93 + rnd(-45, 45) : rnd(100, 320), near ? 262 + rnd(-40, 40) : rnd(-120, 330)); }
+    this.fauna();
     for (const [x, z, n] of [[150, -60, 4], [215, 150, 4], [-175, 165, 4], [-93, 262, 3]] as [number, number, number][]) for (let i = 0; i < n; i++) this.bird(x, z);
   }
 
@@ -42,6 +47,46 @@ export class Wildlife {
       this.box(n, pale, 0.14, 0.2, 0.08, 0, 1.0, -0.62);
       if (i === 0) for (const sx of [-1, 1]) { const ant = this.box(n, "#e0d2b0", 0.04, 0.5, 0.04, sx * 0.1, 1.9, 0.78); ant.rotation.z = -sx * 0.35; this.box(n, "#e0d2b0", 0.04, 0.3, 0.04, sx * 0.2, 1.92, 0.7).rotation.z = -sx * 0.9; }
     }
+  }
+  /** the forest's game, from a jackrabbit to a prize buck */
+  private fauna() {
+    const spot = (): [number, number] => { for (let i = 0; i < 60; i++) { const x = rnd(-330, 300), z = rnd(-170, -540); if (!(x > 30 && z > -250) && Math.hypot(x + 420, z + 300) > 165 && Math.hypot(x + 40, z + 330) > 40 && Math.hypot(x, z) < 530) return [x, z]; } return [-100, -400]; };
+    const deerLike = (a: Animal, c: string, pale: string, ant: 0 | 1 | 2, sc: number) => {
+      const n = a.n;
+      this.box(n, c, 0.55, 0.5, 1.15, 0, 0.95, 0); this.box(n, pale, 0.45, 0.2, 0.9, 0, 0.74, 0.02);
+      this.box(n, c, 0.2, 0.5, 0.22, 0, 1.3, 0.58).rotation.x = -0.4; this.box(n, c, 0.22, 0.22, 0.4, 0, 1.58, 0.82); this.box(n, pale, 0.12, 0.1, 0.06, 0, 1.55, 1.05);
+      for (const sx of [-1, 1]) for (const sz of [-0.42, 0.42]) this.box(n, "#6a4e32", 0.1, 0.72, 0.1, sx * 0.17, 0.36, sz);
+      this.box(n, pale, 0.14, 0.2, 0.08, 0, 1.0, -0.62);
+      if (ant) for (const sx of [-1, 1]) {
+        const ac = ant === 2 ? "#efe4c2" : "#e0d2b0"; this.box(n, ac, 0.05, 0.6, 0.05, sx * 0.1, 1.95, 0.78).rotation.z = -sx * 0.3;
+        for (const [h, o, ang] of (ant === 2 ? [[0.3, 0.2, 0.9], [0.4, 0.28, 0.5], [0.5, 0.34, 0.2], [0.3, 0.12, 1.1]] : [[0.3, 0.2, 0.9], [0.2, 0.28, 0.5]]) as number[][]) this.box(n, ac, 0.04, h, 0.04, sx * (0.12 + o * 0.5), 2.0 + o * 0.5, 0.78 - o * 0.1).rotation.z = -sx * ang;
+      }
+      n.scaling.setAll(sc);
+    };
+    const mk = (kind: Species, r: number, hp: number, hy: number, fs: number, tr: number): Animal => { const [x, z] = spot(); const a = this.base(kind, x, z, r, hp); a.hy = hy; a.hp0 = hp; a.fs = fs; a.tr = tr; return a; };
+    for (let i = 0; i < 8; i++) {   // jackrabbits: tiny and fast
+      const a = mk("rabbit", 0.42, 1, 0.22, 13, 22), n = a.n;
+      this.box(n, "#a89478", 0.22, 0.2, 0.4, 0, 0.2, 0); this.box(n, "#a89478", 0.16, 0.16, 0.2, 0, 0.3, 0.24); for (const s of [-1, 1]) this.box(n, "#8a7a62", 0.04, 0.26, 0.05, s * 0.05, 0.5, 0.2).rotation.x = -0.15;
+      this.box(n, "#f2ecd8", 0.1, 0.1, 0.1, 0, 0.26, -0.24); for (const s of [-1, 1]) this.box(n, "#8a7a62", 0.07, 0.16, 0.22, s * 0.1, 0.08, -0.08);
+    }
+    for (let i = 0; i < 6; i++) {   // wild turkeys
+      const a = mk("turkey", 0.5, 1, 0.4, 8, 24), n = a.n;
+      this.box(n, "#4a3322", 0.34, 0.32, 0.55, 0, 0.5, 0); this.box(n, "#2a1c10", 0.4, 0.4, 0.06, 0, 0.62, -0.32).rotation.x = -0.4; this.box(n, "#6a4a30", 0.1, 0.34, 0.1, 0, 0.78, 0.28); this.box(n, "#b8423a", 0.12, 0.12, 0.16, 0, 0.98, 0.34); this.box(n, "#d8a050", 0.04, 0.04, 0.1, 0, 0.96, 0.44);
+      for (const s of [-1, 1]) this.box(n, "#c88a50", 0.04, 0.3, 0.04, s * 0.08, 0.15, 0.02);
+    }
+    for (let i = 0; i < 3; i++) {   // coyotes
+      const a = mk("coyote", 0.65, 1, 0.5, 9, 28), n = a.n;
+      this.box(n, "#8a7a62", 0.28, 0.3, 0.8, 0, 0.55, 0); this.box(n, "#8a7a62", 0.22, 0.24, 0.3, 0, 0.7, 0.5); this.box(n, "#6a5a48", 0.12, 0.1, 0.22, 0, 0.66, 0.74); this.box(n, "#a89a82", 0.2, 0.2, 0.5, 0, 0.5, -0.55).rotation.x = 0.4;
+      for (const s of [-1, 1]) { for (const z of [-0.28, 0.3]) this.box(n, "#6a5a48", 0.07, 0.42, 0.07, s * 0.1, 0.21, z); this.box(n, "#6a5a48", 0.06, 0.14, 0.05, s * 0.07, 0.88, 0.45); }
+    }
+    for (let i = 0; i < 4; i++) {   // feral hogs
+      const a = mk("hog", 0.8, 2, 0.5, 8, 20), n = a.n;
+      this.box(n, "#3a2c22", 0.7, 0.62, 1.1, 0, 0.55, 0); this.box(n, "#3a2c22", 0.52, 0.5, 0.5, 0, 0.6, 0.72); this.box(n, "#7a6a5a", 0.3, 0.26, 0.24, 0, 0.5, 1.04);
+      for (const s of [-1, 1]) { for (const z of [-0.4, 0.4]) this.box(n, "#2a1f18", 0.12, 0.3, 0.12, s * 0.22, 0.15, z); this.box(n, "#e8e0c8", 0.04, 0.12, 0.04, s * 0.12, 0.52, 1.1).rotation.x = -0.5; }
+    }
+    for (let i = 0; i < 5; i++) { const a = mk("doe", 1.0, 1, 1.1, 10, 40); deerLike(a, "#9a7a55", "#d4bc94", 0, 1.0); }
+    for (let i = 0; i < 3; i++) { const a = mk("buck", 1.1, 1, 1.2, 10, 42); deerLike(a, "#7a5a3a", "#cdb48a", 1, 1.12); }
+    { const a = this.base("prize", -190, -470, 1.7, 3); a.hy = 1.9; a.hp0 = 3; a.fs = 11; a.tr = 55; deerLike(a, "#5a3e26", "#c8b088", 2, 1.6); }   // the prize buck, out where the forest is thickest
   }
   private bear(x: number, z: number) {
     const a = this.base("bear", x, z, 1.5, 2), n = a.n;
@@ -65,7 +110,7 @@ export class Wildlife {
     let best: Animal | null = null, bt = 140;
     for (const a of this.animals) {
       if (a.state === "dead") continue;
-      const c = new Vector3(a.x, a.y + (a.kind === "bird" ? 0 : a.kind === "snake" ? 0.1 : a.kind === "bear" ? 1.2 : 1.1), a.z), v = c.subtract(o), t = Vector3.Dot(v, d);
+      const c = new Vector3(a.x, a.y + (a.hy ?? (a.kind === "bird" ? 0 : a.kind === "snake" ? 0.1 : a.kind === "bear" ? 1.2 : 1.1)), a.z), v = c.subtract(o), t = Vector3.Dot(v, d);
       if (t < 1 || t > bt) continue;
       const perp = Math.sqrt(Math.max(0, v.lengthSquared() - t * t));
       if (perp < a.r + 0.04 * t) { best = a; bt = t; }
@@ -87,9 +132,9 @@ export class Wildlife {
       if (d > 260 && a.state !== "dead") { a.n.setEnabled(false); continue; }
       a.n.setEnabled(true); a.cool -= dt;
       if (a.state === "dead") {
-        a.n.rotation.z = a.kind === "bird" ? 0 : 1.5; a.y = this.terrain(a.x, a.z) + (a.kind === "bird" ? 0.1 : a.kind === "snake" ? 0.04 : 0.45);
+        a.n.rotation.z = a.kind === "bird" ? 0 : 1.5; a.y = this.terrain(a.x, a.z) + (a.kind === "bird" ? 0.1 : a.kind === "snake" ? 0.04 : Math.min(0.45, (a.hy ?? 1) * 0.4));
         a.n.position.set(a.x, a.y, a.z); a.down -= dt;
-        if (a.down <= 0) { a.state = "roam"; a.hp = a.kind === "bear" ? 2 : 1; a.n.rotation.z = 0; a.x = a.cx + rnd(-20, 20); a.z = a.cz + rnd(-20, 20); }
+        if (a.down <= 0) { a.state = "roam"; a.hp = a.hp0 ?? (a.kind === "bear" ? 2 : 1); a.n.rotation.z = 0; a.x = a.cx + rnd(-20, 20); a.z = a.cz + rnd(-20, 20); }
         continue;
       }
       a.t -= dt;
@@ -101,10 +146,10 @@ export class Wildlife {
         continue;
       }
       let speed = 0, tgt = a.h;
-      if (a.kind === "deer") {
-        const threat = d < (riding ? 70 : 42);
+      if (FLEE.has(a.kind)) {
+        const threat = d < (riding ? 70 : (a.tr ?? 42));
         if (threat) { a.state = "flee"; a.t = 3; }
-        if (a.state === "flee") { tgt = Math.atan2(-dx, -dz) + Math.sin(this.t + a.ph) * 0.4; speed = 10; if (!threat && a.t <= 0) a.state = "roam"; }
+        if (a.state === "flee") { tgt = Math.atan2(-dx, -dz) + Math.sin(this.t + a.ph) * 0.4; speed = a.fs ?? 10; if (!threat && a.t <= 0) a.state = "roam"; }
         else { if (a.t <= 0) { a.t = rnd(2, 7); a.sp = Math.random() < 0.6 ? 0 : rnd(0.6, 1.2); a.h += rnd(-1.5, 1.5); } speed = a.sp; tgt = a.h; }
       } else if (a.kind === "bear") {
         if (a.state === "roam") { if (!riding && d < 16) { a.state = "charge"; a.t = 10; } else { if (a.t <= 0) { a.t = rnd(3, 8); a.sp = Math.random() < 0.5 ? 0 : 0.8; a.h += rnd(-1.5, 1.5); } speed = a.sp; tgt = a.h; } }

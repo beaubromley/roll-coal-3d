@@ -20,6 +20,7 @@ export class Player {
   bound: number | null = null;
   locked = false;
   touch = false;                       // touch device: no pointer lock, on-screen controls
+  lastLookT = 0;                       // when a finger last dragged the view (touch)
   touchMove = { x: 0, y: 0 };          // analog joystick, x = strafe right, y = forward
   onLockLost: () => void = () => {};   // pointer lock dropped without us asking (browser Esc)
   private intentionalUnlock = false;
@@ -156,7 +157,12 @@ export class Player {
       if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) ix -= 1;
     }
     const joy = this.enabled && (this.touchMove.x !== 0 || this.touchMove.y !== 0);
-    if (joy) { ix += this.touchMove.x; iz += this.touchMove.y; }
+    // touch has no mouse: unless a finger has just dragged the view, pushing the stick sideways turns the camera (and you) that way, and the view settles to a natural tilt
+    if (joy) {
+      if (this.touch && !this.ride && performance.now() - this.lastLookT > 700) { this.yaw += this.touchMove.x * 2.1 * dt; this.pitch += (0.2 - this.pitch) * Math.min(1, dt * 1.2); }
+      else ix += this.touchMove.x;
+      iz += this.touchMove.y;
+    }
     const len = Math.hypot(ix, iz);
     const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.sprintLatch || this.stickSprint;
     const wet = this.pos.y < -0.4;   // wading or swimming: slow, no sprint, no jumping

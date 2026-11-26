@@ -491,6 +491,20 @@ export class Human {
     this.root.scaling.setAll(o.scale ?? 1);
   }
   /** Show or hide the hard hat, vest and safety glasses (the player gets them at the gate). */
+  /** re-skin the hard hat (the unlockable hats): shell, ridge and band colours, with an optional glow or a chrome shine */
+  private hatMats = new Map<string, StandardMaterial>();
+  setHatStyle(s: { shell: string; ridge: string; band: string; glow?: boolean; shine?: boolean }) {
+    const mat = (hex: string, glow: boolean, shine: boolean) => {
+      const k = hex + (glow ? "g" : "") + (shine ? "s" : ""); let x = this.hatMats.get(k);
+      if (!x) { x = new StandardMaterial("hatm" + k, this.scene); x.diffuseColor = Color3.FromHexString(hex); x.specularColor = shine ? new Color3(0.9, 0.9, 0.95) : new Color3(0.08, 0.08, 0.08); x.specularPower = shine ? 40 : 16; if (glow) x.emissiveColor = Color3.FromHexString(hex).scale(0.55); this.hatMats.set(k, x); }
+      return x;
+    };
+    for (const x of this.ppe) {
+      if (x.name === "hardhat") x.material = mat(s.shell, false, !!s.shine);
+      else if (x.name === "hhridge") x.material = mat(s.ridge, !!s.glow, !!s.shine);
+      else if (x.name === "hhband") x.material = mat(s.band, !!s.glow, false);
+    }
+  }
   setPPE(on: boolean) { this.ppeOn = on; if (this.suitOn) return; this.ppe.forEach((x) => x.setEnabled(on)); /* the hair stays: the hat sits over the top of it and the back still shows below the brim */ }
 
   /** Extra face, clothing and gear detail. Parts hang off the root or the arm pivots so they work with both body builds. */

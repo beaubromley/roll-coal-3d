@@ -68,7 +68,7 @@ const SCENES: Record<string, Scene> = {
     sky(c, "#4a5a9a", "#f0b070"); ground(c, "#5a6a32", 70, "#6a7a3c"); derrick(c, 160, 70, 40, "#22262e");
     R(c, "#9aa0a8", 30, 66, 40, 5); R(c, "#e8a21c", 34, 58, 6, 8); deer(c, 84, 52, "#8a5a32", 1.5);
   },
-  // Singularity: a clean white tower, a cyan laser, an android
+  // AGI Drilling: a clean white tower, a cyan laser, an android
   secrets: (c) => {
     sky(c, "#050a18", "#10303f", 78); const r = rnd(9); for (let i = 0; i < 30; i++) R(c, "#cfeaff", r() * W, r() * 46, 1, 1);
     ground(c, "#0a1620", 78); for (let x = 0; x < W; x += 12) R(c, "#1b8aa0", x, 78, 1, H - 78);

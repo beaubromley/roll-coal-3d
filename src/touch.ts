@@ -66,6 +66,7 @@ export class TouchControls {
     });
     look.addEventListener("pointermove", (e) => {
       if (e.pointerId !== this.lookId || !this.player.enabled) return;
+      this.player.lastLookT = performance.now();
       this.player.yaw += (e.clientX - this.lx) * this.LOOK;
       this.player.pitch = Math.max(-1.3, Math.min(1.3, this.player.pitch + (e.clientY - this.ly) * this.LOOK));
       this.lx = e.clientX; this.ly = e.clientY;

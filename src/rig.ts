@@ -871,12 +871,13 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     for (const s of [-1, 1]) b.slab("steel", cx + s * 0.85 - 0.04, 1.3, -27.6, cx + s * 0.85 + 0.04, 3.2, -25.3);
   }
   // the moving parts of each shaker: a basket on its rubber mounts (deck, sides, screen frames, vibrators) that shakes while the pumps are on, and cuttings that ride the deck across when drilling
+  // (the yard is built in world axes, so these moving parts hang in world space too, not under the turned rig root)
   const shakerNodes: TransformNode[] = [];
   const cutMat = new StandardMaterial("cutm", scene); cutMat.diffuseColor = Color3.FromHexString("#5a4f45"); cutMat.specularColor = Color3.Black();
-  const cutSrc = MeshBuilder.CreateBox("cutsrc", { size: 1 }, scene); cutSrc.material = cutMat; cutSrc.isVisible = false; cutSrc.parent = rigRoot;
+  const cutSrc = MeshBuilder.CreateBox("cutsrc", { size: 1 }, scene); cutSrc.material = cutMat; cutSrc.isVisible = false;
   const SHX = [-16.6, -14.1, -11.6], DECK = { z0: -21.0, y0: 3.3, z1: -25.3, y1: 3.56 }, CHUTE_Z = -27.6, CHUTE_Y = 1.3;
   SHX.forEach((cx) => {
-    const n = new TransformNode("shaker", scene); n.parent = rigRoot; n.position.set(cx, 0, 0); shakerNodes.push(n);
+    const n = new TransformNode("shaker", scene); n.position.set(cx, 0, 0); shakerNodes.push(n);
     const mk = (m: Mesh, mat: string, x: number, y: number, z: number) => { m.material = b.getMat(mat); m.parent = n; m.position.set(x, y, z); m.isPickable = false; return m; };
     const ang = Math.atan2(DECK.y1 - DECK.y0, DECK.z0 - DECK.z1), len = Math.hypot(DECK.z0 - DECK.z1, DECK.y1 - DECK.y0), zm = (DECK.z0 + DECK.z1) / 2, ym = (DECK.y0 + DECK.y1) / 2;
     mk(MeshBuilder.CreateBox("deck", { width: 1.7, height: 0.1, depth: len }, scene), "black", 0, ym + 0.05, zm).rotation.x = ang;                                          // the screen deck, higher at the discharge end
@@ -886,7 +887,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     for (const s of [-1, 1]) { mk(MeshBuilder.CreateCylinder("vib", { diameter: 0.3, height: 0.55, tessellation: 12 }, scene), "orange", s * 0.4, 4.05, -23.2).rotation.z = Math.PI / 2; mk(MeshBuilder.CreateCylinder("vibc", { diameter: 0.36, height: 0.1, tessellation: 12 }, scene), "steel", s * 0.72, 4.05, -23.2).rotation.z = Math.PI / 2; }
   });
   type Cut = { m: ReturnType<typeof cutSrc.createInstance>; sh: number; u: number; x: number; s: number; on: boolean };
-  const cuts: Cut[] = []; for (let i = 0; i < 120; i++) { const m = cutSrc.createInstance("cut" + i); m.parent = rigRoot; m.isPickable = false; m.setEnabled(false); cuts.push({ m, sh: i % 3, u: 0, x: 0, s: 0.08, on: false }); }
+  const cuts: Cut[] = []; for (let i = 0; i < 120; i++) { const m = cutSrc.createInstance("cut" + i); m.isPickable = false; m.setEnabled(false); cuts.push({ m, sh: i % 3, u: 0, x: 0, s: 0.08, on: false }); }
   let shAmp = 0, shT = 0, cutAcc = 0;
   const shakerStep = (dt: number, f: RigFrame) => {
     shAmp += ((f.pumpsOn ? 1 : 0) - shAmp) * Math.min(1, dt * 3); shT += dt;

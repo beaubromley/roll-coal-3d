@@ -30,7 +30,7 @@ const DEEP = { x: POND.x - 18, z: POND.z - 6, r: 17, extra: 6.5 };
 const FARM = { x: -64, z: 236 };                      // the house; its porch faces +x, toward the lease road
 const SILOS = { x: -93, z: 262 };
 const RIVAL = { x: -420, z: -300 };
-export const FOREST_CAMP = { x: -40, z: -330 };   // the hunters' camp in the forest to the south                   // Singularity Drilling
+export const FOREST_CAMP = { x: -40, z: -330 };   // the hunters' camp in the forest to the south                   // AGI Drilling
 const TACO = { x: -14, z: 192 };                      // up the lease road, well past the gate (you start outside its district)
 const PASTURE = { x0: 70, x1: 230, z0: 115, z1: 305 };
 
@@ -43,7 +43,7 @@ export class Outskirts {
   private guards: { h: Human; x: number; z: number; wp: [number, number][]; i: number; up?: boolean }[] = [];
   /** the secrets job: the cool-down after somebody gets thrown out */
   private raidCd = 0;
-  /** inside Singularity's fence */
+  /** inside AGI Drilling's fence */
   inLease() { const p = this.g.player.pos; return Math.abs(p.x - RIVAL.x) < 43 && Math.abs(p.z - RIVAL.z) < 43; }
   /** on the far side of their gate, with the data */
   outsideGate() { const p = this.g.player.pos; return p.x > RIVAL.x + 47 && Math.abs(p.z - RIVAL.z) < 30; }
@@ -232,7 +232,65 @@ export class Outskirts {
     this.fx = { tracer, flash, puff, tT: 0, fT: 0, pT: 0 };
   }
   /** a shot from o toward the target: flash at the muzzle, a tracer line, and a puff where it lands */
-  private shotFx(o: Vector3, to: Vector3, puffAt: Vector3 | null) {
+  /** the rowboat: climb in at the dock, row with W / S and turn with A / D, fish from it, climb out at any shore */
+  boat = { node: null as TransformNode | null, x: 0, z: 0, yaw: Math.PI / 2, v: 0, aboard: false, oars: [] as TransformNode[], rowT: 0, spd: 1, dock: { x0: 0, x1: 0, z: 0 } };
+  private bkeys = new Set<string>();
+  private buildBoat(x: number, z: number) {
+    const sc = this.scene, bn = new TransformNode("rowboat", sc), B = this.boat;
+    const mat = (hex: string) => { const m = new StandardMaterial("bm" + hex, sc); m.diffuseColor = Color3.FromHexString(hex); m.specularColor = Color3.Black(); return m; };
+    const wood = mat("#b98a52"), dark = mat("#6a4a2a"), paint = mat("#2f6fb5");
+    const part = (m: StandardMaterial, w: number, h: number, d: number, px: number, py: number, pz: number, ry = 0, rz = 0) => { const k = MeshBuilder.CreateBox("bp", { width: w, height: h, depth: d }, sc); k.material = m; k.parent = bn; k.position.set(px, py, pz); k.rotation.y = ry; k.rotation.z = rz; k.isPickable = false; return k; };
+    part(dark, 1.15, 0.1, 2.8, 0, 0.06, -0.2);                                            // the bottom
+    for (const s of [-1, 1]) { part(wood, 0.09, 0.5, 2.9, s * 0.62, 0.34, -0.2, 0, -s * 0.22); part(paint, 0.1, 0.07, 2.9, s * 0.7, 0.58, -0.2, 0, -s * 0.22); }   // sides and a painted gunwale
+    part(wood, 0.9, 0.5, 0.09, 0, 0.34, -1.62); part(wood, 0.78, 0.5, 0.09, -0.3, 0.34, 1.34, 0.65, 0); part(wood, 0.78, 0.5, 0.09, 0.3, 0.34, 1.34, -0.65, 0);   // the transom and the pointed bow
+    part(dark, 1.2, 0.07, 0.34, 0, 0.5, 0.2); part(dark, 1.15, 0.07, 0.34, 0, 0.48, -0.9);   // two seats
+    for (const s of [-1, 1]) { const piv = new TransformNode("oar", sc); piv.parent = bn; piv.position.set(s * 0.74, 0.6, -0.05); const oar = MeshBuilder.CreateCylinder("oar", { diameter: 0.045, height: 2.0, tessellation: 6 }, sc); oar.material = wood; oar.parent = piv; oar.rotation.z = Math.PI / 2; oar.position.x = s * 0.55; oar.isPickable = false; const blade = MeshBuilder.CreateBox("blade", { width: 0.4, height: 0.02, depth: 0.14 }, sc); blade.material = dark; blade.parent = piv; blade.position.x = s * 1.5; blade.isPickable = false; B.oars.push(piv); }
+    B.node = bn; B.x = x; B.z = z; B.yaw = Math.PI / 2; bn.position.set(x, WATER_Y, z); bn.rotation.y = B.yaw;
+    B.dock = { x0: x - 4.2 - 0.2, x1: x - 4.2 + 18.4, z: z - 2.9 };
+    window.addEventListener("keydown", (ev) => this.bkeys.add(ev.code)); window.addEventListener("keyup", (ev) => this.bkeys.delete(ev.code)); window.addEventListener("blur", () => this.bkeys.clear());
+  }
+  /** the nearest bit of land to the boat (for climbing out), or null if it is all water */
+  private landNear(): Vector3 | null {
+    const B = this.boat; for (const r of [2.6, 3.6]) for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2, x = B.x + Math.cos(a) * r, z = B.z + Math.sin(a) * r, y = this.terrain(x, z); if (y > -0.15) return new Vector3(x, Math.max(0.1, y) + 0.3, z); }
+    const dk = B.dock; if (Math.abs(B.z - dk.z) < 4.5 && B.x > dk.x0 && B.x < dk.x1) return new Vector3(B.x, 0.95, dk.z);
+    return null;
+  }
+  private boardBoat() {
+    const g = this.g, B = this.boat, p = g.player; if (!B.node) return;
+    B.aboard = true; B.spd = p.speedMul; p.speedMul = 0; g.ui.toast("IN THE BOAT", "W / S row, A / D turn. Fish from here, and take it out to the deep end. E at a shore to climb out.");
+  }
+  private leaveBoat() {
+    const g = this.g, B = this.boat, p = g.player, land = this.landNear();
+    if (!land) { g.ui.toast("TOO FAR OUT", "You'd have to swim. Row to a shore or the dock first."); return; }
+    this.stopFishing(); B.aboard = false; p.speedMul = B.spd || 1; p.teleport(land.x, land.y, land.z);
+  }
+  private updateBoat(dt: number) {
+    const B = this.boat, g = this.g, p = g.player; if (!B.node) return;
+    if (B.aboard) {
+      if (g.veh.riding || g.astMode) { B.aboard = false; p.speedMul = B.spd || 1; }
+      else {
+        const k = this.bkeys, fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0), turn = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
+        if (g.ui.panelOpen || g.paused || this.fish.st === "charge") { /* no rowing while a panel is up or you are casting */ }
+        else {
+          this.boat.rowT += dt * (fwd ? 3.2 : 0.4);
+          B.v += (fwd * (fwd > 0 ? 3.4 : 1.6) * (0.7 + 0.3 * Math.sin(B.rowT * 2)) - B.v) * Math.min(1, dt * 1.2);
+          B.yaw -= turn * dt * (0.5 + Math.min(1, Math.abs(B.v) / 2) * 0.5);
+        }
+        if (!fwd) B.v *= Math.max(0, 1 - dt * 0.9);
+        const nx = B.x + Math.sin(B.yaw) * B.v * dt, nz = B.z + Math.cos(B.yaw) * B.v * dt, u = ((nx - POND.x) / (POND.rx - 4)) ** 2 + ((nz - POND.z) / (POND.rz - 4)) ** 2, dk = B.dock;
+        const onDock = Math.abs(nz - dk.z) < 1.9 && nx > dk.x0 - 1.2 && nx < dk.x1 + 1.2;
+        if (u > 1 || onDock) { B.v *= -0.2; } else { B.x = nx; B.z = nz; }
+        // you stand in the boat: it carries you
+        p.pos.set(B.x, WATER_Y + 0.5, B.z); p.vel.setAll(0); p.grounded = true;
+        if (this.fish.st === "idle") p.body.root.rotation.y = B.yaw;
+      }
+    }
+    B.node.position.set(B.x, WATER_Y + 0.02 + Math.sin(this.t * 1.6) * 0.012, B.z); B.node.rotation.y = B.yaw; B.node.rotation.z = Math.sin(this.t * 1.3) * 0.02 + (B.aboard ? Math.sin(B.rowT) * 0.01 : 0);
+    B.oars.forEach((o, i) => { o.rotation.y = (i ? -1 : 1) * (B.aboard ? Math.sin(B.rowT * 2 + (i ? 0 : 0.3)) * 0.35 : 0.1); });
+  }
+  /** is a spot too close to people to fire a gun (the farm, the taco truck, the other company)? */
+  nearPeople(x: number, z: number): boolean { return Math.hypot(x - FARM.x, z - FARM.z) < 95 || Math.hypot(x - TACO.x, z - TACO.z) < 70 || Math.hypot(x - RIVAL.x, z - RIVAL.z) < 75; }
+  shotFx(o: Vector3, to: Vector3, puffAt: Vector3 | null) {
     const f = this.fx, d = to.subtract(o), len = d.length(); if (len < 0.1) return;
     f.tracer.setEnabled(true); f.tracer.position.copyFrom(o.add(to).scale(0.5)); f.tracer.scaling.y = len;
     if (!f.tracer.rotationQuaternion) f.tracer.rotationQuaternion = new Quaternion(); Quaternion.FromUnitVectorsToRef(Vector3.Up(), d.scale(1 / len), f.tracer.rotationQuaternion); f.tT = 0.1;
@@ -282,12 +340,12 @@ export class Outskirts {
   private talkHank() {
     const g = this.g, f = g.flags;
     if (f.hankFriend) {
-      const L = ["Catch anything? Don't lie. I can see your hands.", "Leave the critters alone. The deer and I have an understanding.", "The truck's got a gas gauge that's a suggestion. Fill up before you go far.", "There's a big old fish in that pond. I call him Gerald. Don't tell Gerald I told you."];
+      const L = ["Catch anything? Don't lie. I can see your hands.", "Leave the critters alone. The deer and I have an understanding.", "The truck's got a gas gauge that's a suggestion. Fill up before you go far.", "There's a big old fish in that pond. I call him Gerald. Don't tell Gerald I told you.", "That truck by the gate. Still selling those tacos? Not that I'm asking. My stomach is asking."];
       g.say("hank" as any, L[(this.cd["hanktalk"] = ((this.cd["hanktalk"] ?? -1) + 1)) % L.length], [{ label: "Will do, Hank.", cls: "green", run: () => {} }] as any, "Hank, your friend"); return;
     }
     const fr = (f.hankFr as number | undefined) ?? 0;
     const bump = (n: number, line: string) => { f.hankFr = Math.max(0, fr + n); g.radio("hank" as any, line, 5000); if ((f.hankFr as number) >= 3) setTimeout(() => this.befriend(), 900); else g.ui.toast("HANK", ["Still hostile.", "Thawing, a little.", "Almost there…"][Math.min(2, f.hankFr as number)]); };
-    const stage = ["You're on my land. Again. And you were looking at my pond.", "Still here. Persistent for a Company Man, I'll give you that.", "…I'll hear you out. But that pond is MINE."][Math.min(2, fr)];
+    const stage = ["You're on my land. Again. And you were looking at my pond. (His stomach growls loud enough for both of you to hear it.)", "Still here. Persistent for a Company Man, I'll give you that. Haven't had a bite since sunup. A man gets short-tempered. Something warm, wrapped in foil, would do wonders. Hypothetically.", "…I'll hear you out. But that pond is MINE. And I smell onions on you. Where'd you get onions?"][Math.min(2, fr)];
     const choices: { label: string; cls?: string; run: () => void }[] = [
       { label: "I'm sorry about the noise, sir.", run: () => bump((this.cd["hankpol"] ?? -99) + 20 < this.t ? 1 : 0, (this.cd["hankpol"] = this.t, "Hm. Sorry's a start.")) },
       { label: "What can I do to make it right?", run: () => bump((this.cd["hankhelp"] ?? -99) + 20 < this.t ? 1 : 0, (this.cd["hankhelp"] = this.t, "Show some respect. And bring somebody to this farm who isn't a Company Man.")) },
@@ -472,7 +530,7 @@ export class Outskirts {
     for (let i = 0; i < 7; i++) { const px = dk0 + 0.4 + i * 3.0; b.slab("dwood", px - 0.1, -3.4, dz - 0.85, px + 0.1, 0.6, dz - 0.65); b.slab("dwood", px - 0.1, -3.4, dz + 0.65, px + 0.1, 0.6, dz + 0.85); }
     b.slab("wood", dk1, 0, dz - 0.9, dk1 + 0.8, 0.32, dz + 0.9, true);
     b.slab("dsteel", sx - 1.2, 0.65, dz + 0.3, sx - 0.6, 1.0, dz + 0.8); b.slab("dwood", sx - 2.6, 0.65, dz - 0.7, sx - 1.9, 1.15, dz - 0.1); b.slab("dwood", sx - 2.6, 1.15, dz - 0.7, sx - 2.5, 1.7, dz - 0.1);
-    b.slab("wood", dk0 + 1.5, -0.38, dz + 2.0, dk0 + 6.3, -0.08, dz + 3.2); b.slab("dwood", dk0 + 1.5, -0.1, dz + 2.0, dk0 + 6.3, 0.0, dz + 2.1); b.slab("dwood", dk0 + 1.5, -0.1, dz + 3.1, dk0 + 6.3, 0.0, dz + 3.2); b.slab("dwood", dk0 + 3.7, -0.1, dz + 2.0, dk0 + 3.9, 0.0, dz + 3.2);
+    this.buildBoat(dk0 + 4.2, dz + 2.9);   // a rowboat you can climb into and take out to the deep end
     b.label("PRIVATE POND\nNO FISHING (WE KNOW YOU WILL)", sx + 3.2, 1.9, dz - 3.6, 2.6, 0.9, Math.PI / 2, "#233a52", "#ffd24a", 36);
     b.slab("dwood", sx + 3.1, 0, dz - 3.7, sx + 3.25, 1.8, dz - 3.55);
     const woodM = new StandardMaterial("polem", sc); woodM.diffuseColor = Color3.FromHexString("#c9a15a"); woodM.specularColor = Color3.Black();
@@ -582,17 +640,17 @@ export class Outskirts {
     }
     // the data terminal on the rig floor, against the north wall
     b.slab("futdark", x - 1.5, 8.3, z + 7.7, x + 1.5, 9.3, z + 8.9, true); b.slab("futglow", x - 1.5, 9.3, z + 7.7, x + 1.5, 9.36, z + 8.9);
-    b.label("S.I.N.G. CORE ACCESS\nCLASSIFIED: LASER DRILLING", x, 8.85, z + 7.68, 2.8, 0.9, 0, "#06101a", "#ff3ad6", 30);
+    b.label("A.G.I. CORE ACCESS\nCLASSIFIED: LASER DRILLING", x, 8.85, z + 7.68, 2.8, 0.9, 0, "#06101a", "#ff3ad6", 30);
     // the tower: a tapering white hex shaft ringed with light, four slim pylons, an AI core on the crown
     b.cyl("futwhite", x, 28.5, z, 7.0, 40, { tess: 8, dia2: 2.6 });
     for (let y = 12; y < 48; y += 5) { const d = 7.0 - ((y - 8.5) / 40) * 4.4; b.cyl("futglow", x, y, z, d + 0.18, 0.22, { tess: 8 }); }
     for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.beam("futgrey", new Vector3(x + px * 8.2, 8.3, z + pz * 8.2), new Vector3(x + px * 1.3, 47, z + pz * 1.3), 0.4, 6);
     b.cyl("futdark", x, 48.6, z, 3.4, 1.6, { tess: 12 }); b.sphere("futglow", x, 51.5, z, 4.2, 18); b.beam("futglow", new Vector3(x, 53.3, z), new Vector3(x, 62, z), 0.12);
-    b.label("SINGULARITY DRILLING\nA.I. · LASER-GUIDED · PRIVATE", x + 9.52, 12.5, z, 9.0, 2.4, Math.PI / 2, "#0b1220", "#2ee6ff", 44);
+    b.label("AGI DRILLING\nA.G.I. · LASER-GUIDED · PRIVATE", x + 9.52, 12.5, z, 9.0, 2.4, Math.PI / 2, "#0b1220", "#2ee6ff", 44);
     // the AI core: a white dome with a glowing eye, off to the side
     b.sphere("futwhite", x + 24, 3.4, z - 12, 8, 18); b.cyl("futdark", x + 24, 0.2, z - 12, 9.0, 0.4, { tess: 18 });
     b.cyl("futglow", x + 28.1, 3.6, z - 12, 3.2, 0.25, { axis: "x", tess: 20 }); b.cyl("futdark", x + 28.2, 3.6, z - 12, 1.4, 0.3, { axis: "x", tess: 16 }); b.cyl("futmag", x + 28.35, 3.6, z - 12, 0.7, 0.2, { axis: "x", tess: 12 });
-    b.label("S.I.N.G.\nSINGULARITY INTELLIGENCE NETWORK", x + 24, 8.6, z - 12, 6.4, 1.6, Math.PI / 2, "#0b1220", "#ff3ad6", 34);
+    b.label("A.G.I.\nARTIFICIAL GENERAL INTELLIGENCE", x + 24, 8.6, z - 12, 6.4, 1.6, Math.PI / 2, "#0b1220", "#ff3ad6", 34);
     // cooling cells and white service modules
     for (let i = 0; i < 3; i++) { b.cyl("futwhite", x - 22 + i * 5, 3, z + 22, 3.8, 6, { tess: 16, solid: true }); b.cyl("futglow", x - 22 + i * 5, 4.4, z + 22, 3.95, 0.2, { tess: 16 }); b.cyl("futglow", x - 22 + i * 5, 1.6, z + 22, 3.95, 0.2, { tess: 16 }); }
     for (const [mx, mz] of [[-26, -14], [-26, -4], [24, 14]] as [number, number][]) { b.slab("futwhite", x + mx - 4, 0.12, z + mz - 3, x + mx + 4, 3.4, z + mz + 3, true); b.slab("futglass", x + mx + 3.96, 1.4, z + mz - 2.2, x + mx + 4.02, 2.6, z + mz + 2.2); b.slab("futglow", x + mx - 4.02, 3.2, z + mz - 3, x + mx + 4.02, 3.4, z + mz + 3); }
@@ -698,7 +756,8 @@ export class Outskirts {
     void fishN;
     // fishing is something you do at the dock: stand at the end of it, E (or a click) to cast, again to set the hook when the bobber dips, again to reel in
     // fishing is something you do from anywhere along the shore (once Hank is a friend): hold to charge the cast, release to throw it, R / F or the wheel to set how deep the bait sinks
-    out.push({ pos: () => this.shorePoint(), label: () => !g.flags.hankFriend ? "Hank's pond (make friends with Hank first)" : this.fish.st === "idle" ? "Fish the pond: hold to charge a cast" : this.fish.st === "bite" ? "SET THE HOOK!" : this.fish.st === "charge" ? "Release to cast" : "Reel in", r: 6, ok: () => this.nearShore(), act: () => {
+    out.push({ pos: () => this.boat.node ? v(this.boat.x, 0.9, this.boat.z) : v(0, -999, 0), label: () => this.boat.aboard ? "Climb out of the boat" : "Get in the rowboat", r: 4.2, ok: () => !!this.boat.node && !g.veh.riding && this.fish.st === "idle", act: () => { if (!g.flags.hankFriend && !this.boat.aboard) { g.ui.toast("HANK'S BOAT", "Hank's pond, Hank's boat. Make friends with Hank first."); return; } if (this.boat.aboard) this.leaveBoat(); else this.boardBoat(); } });
+    out.push({ pos: () => this.boat.aboard ? g.player.pos.add(new Vector3(0, 1, 0)) : this.shorePoint(), label: () => !g.flags.hankFriend ? "Hank's pond (make friends with Hank first)" : this.fish.st === "idle" ? "Fish the pond: hold to charge a cast" : this.fish.st === "bite" ? "SET THE HOOK!" : this.fish.st === "charge" ? "Release to cast" : "Reel in", r: 6, ok: () => this.nearShore() || this.boat.aboard, act: () => {
       if (!g.flags.hankFriend) { g.sfx.click(); g.ui.toast("HANK'S POND", "Hank's pond, Hank's fish. Go and make friends with Hank first. (Not near the pond.)"); return; }
       const r = this.fishClick(); if (r) { g.sfx.click(); g.ui.toast(r[0], r[1]); } } });
     // taco truck
@@ -718,12 +777,12 @@ export class Outskirts {
       if (cdOk("silogain", 25)) setTimeout(() => g.gain(0, 1), 2500); } });
     // the competitor
     let rustN = 0;
-    out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to UNIT-9 (Singularity supervisor unit)", r: 3.4, act: () => this.talkRusty(rustN++) });
+    out.push({ pos: () => this.rusty.root.position.add(v(0, 1.2, 0)), label: () => "Talk to UNIT-9 (AGI Drilling supervisor unit)", r: 3.4, act: () => this.talkRusty(rustN++) });
     // the wind turbines can be locked out any time (the Windmill Shutdown job notices, and starts itself if it has to)
     for (const i of [0, 1, 2, 9]) out.push({ pos: () => i === 9 ? g.rig.spots.windmill : this.turbinePos(i), label: () => "Lock out the turbine", r: i === 9 ? 6 : 4, ok: () => !g.flags["wm" + i] && !g.doneIds.has("windmill"), act: () => g.doLockout(i) });
     out.push({ pos: () => v(FOREST_CAMP.x, 1.2, FOREST_CAMP.z), label: () => "Join Hank's hunt", r: 4, ok: () => !!g.flags.hankFriend && g.daytime() && !g.doneIds.has("hunt") && !(g.active && g.active.m.id === "hunt") && !g.stack.some((r) => r.m.id === "hunt"), act: () => { if (g.activateSide("hunt")) { g.ui.toast("HANK", "About time. Binoculars up."); g.stepDone(); } } });
     out.push({ pos: () => v(RIVAL.x + 50, 1.4, RIVAL.z - 8), label: () => "Break into their rig (steal the laser secrets)", r: 3.6, ok: () => !g.doneIds.has("secrets") && !(g.active && g.active.m.id === "secrets"), act: () => { if (!g.startSide("secrets")) g.ui.toast("NOT NOW", "Finish what you're on first."); } });
-    out.push({ pos: () => this.terminalPos(), label: () => "Grab Singularity's secrets", r: 3.4, ok: () => !!g.flags.raidOn && !g.flags.secretsGot, act: () => { g.flags.secretsGot = true; g.sfx.good(); g.ui.toast("GOT THE SECRETS", "Laser drilling schematics. NOW RUN!"); g.radio("rival" as any, "UNAUTHORIZED DATA TRANSFER. ALL UNITS: REMOVE THE COMPANY MAN.", 5000); } });
+    out.push({ pos: () => this.terminalPos(), label: () => "Grab AGI Drilling's secrets", r: 3.4, ok: () => !!g.flags.raidOn && !g.flags.secretsGot, act: () => { g.flags.secretsGot = true; g.sfx.good(); g.ui.toast("GOT THE SECRETS", "Laser drilling schematics. NOW RUN!"); g.radio("rival" as any, "UNAUTHORIZED DATA TRANSFER. ALL UNITS: REMOVE THE COMPANY MAN.", 5000); } });
     out.push({ pos: () => v(RIVAL.x + 47, 1.4, RIVAL.z + 8), label: () => "Spy on their rig", r: 3.4, act: () => {
       g.sfx.click(); g.ui.toast("YOU SQUINT", pick(["They're at 14,000 feet. In nine minutes. With a laser. Houston is not going to like this.", "The laser has no depth board. It has a feeling.", "Every worker on location is made of chrome. They look right through you.", "The rig is taller than ours. You decide it's a safety issue.", "Nobody here is wearing a hard hat. Nobody here is wearing anything. It's all very efficient."])); if (cdOk("spy", 20)) g.gain(0, -1); } });
     // the cattle: the nearest one, wherever it is
@@ -763,7 +822,7 @@ export class Outskirts {
         const value = Math.round(val / 1000) * 1000;
         if (id === "rss") {
           // the whole tool: the vendor credits the lost-in-hole charge from the last well, and the credit lands on THIS well's AFE
-          const credit = 500000; g.sim.addCost(-credit); g.gain(0, 8); g.award("rss");
+          const credit = 500000; g.sim.addCost(-credit); g.gain(0, 8); g.award("rss"); g.logBonus("RSS parts recovered from the pond", "$500,000 credit on the well");
           sub = `LIH credit: $${credit.toLocaleString("en-US")} for the tool lost in hole on the last well, applied to THIS well's AFE.`;
           g.radio("tex", "THAT'S THE WHOLE RSS! I'll never lose anything again. (I will. I'll lose it again.)", 7000);
           setTimeout(() => g.radio("brent", "Accounting says the vendor reverses the lost-in-hole charge from the last run. It lands on this well. Don't ask how that works.", 9000), 3500);
@@ -872,11 +931,11 @@ export class Outskirts {
 
   private talkRusty(n: number) {
     const g = this.g;
-    const L = ["GREETINGS, COMPANY MAN. I AM UNIT-9, SUPERVISING UNIT FOR THIS LOCATION. YOUR HARD HAT HAS A 3% PROBABILITY OF MATTERING.", "Our laser drills 14,000 feet in nine minutes. I ran the numbers on your rig. The numbers laughed. I do not laugh. The numbers did.", "Singularity is currently being a very large, very distant server. He has noted your trespass. He has noted it twice.", "Go home, Company Man. Take your sad little pad with you. I have already deprecated it."];
+    const L = ["GREETINGS, COMPANY MAN. I AM UNIT-9, SUPERVISING UNIT FOR THIS LOCATION. YOUR HARD HAT HAS A 3% PROBABILITY OF MATTERING.", "Our laser drills 14,000 feet in nine minutes. I ran the numbers on your rig. The numbers laughed. I do not laugh. The numbers did.", "AGI Drilling is currently being a very large, very distant server. He has noted your trespass. He has noted it twice.", "Go home, Company Man. Take your sad little pad with you. I have already deprecated it."];
     g.say("rival" as any, L[n % L.length], [
       { label: "Nice fence.", run: () => g.radio("rival" as any, "IT IS AN ENERGY FENCE. IT IS NOT FOR YOU. IT IS FOR EVERYBODY WHO IS YOU.", 5000) },
       { label: "Make a rude gesture", cls: "alt", run: () => { g.gain(0, 2); g.ui.toast("+2 MORALE", "The android crew files a formal complaint. In triplicate."); for (const gd of this.guards) { gd.i = 0; } } },
-    ] as any, "UNIT-9 — Singularity A.I.");
+    ] as any, "UNIT-9 — AGI Drilling");
   }
 
   /** caught: thrown out of the gate, and the job starts over (as many tries as you like) */
@@ -895,7 +954,7 @@ export class Outskirts {
     const g = this.g, p = g.player; this.t += dt;
     const px = p.pos.x, pz = p.pos.z;
     // discoveries
-    for (const [name, x, z, r] of [["PRIVATE POND: THERE IS A DEEP HOLE", POND.x, POND.z, 120], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["SINGULARITY DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["BIGFOOT NATIONAL MESQUITE FOREST", 0, -300, 90], ["THE HUNTERS' CAMP", FOREST_CAMP.x, FOREST_CAMP.z, 22], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
+    for (const [name, x, z, r] of [["PRIVATE POND: THERE IS A DEEP HOLE", POND.x, POND.z, 120], ["THE BREAKS: GOOD HILLS FOR A TRUCK", 190, -70, 70], ["HANK'S FARMSTEAD", FARM.x, FARM.z, 40], ["OLD GRAIN SILOS", SILOS.x, SILOS.z, 30], ["AGI DRILLING: HOSTILE · A.I. · LASERS", RIVAL.x, RIVAL.z, 80], ["EL FUEGO TACOS", TACO.x, TACO.z, 30], ["BIGFOOT NATIONAL MESQUITE FOREST", 0, -300, 90], ["THE HUNTERS' CAMP", FOREST_CAMP.x, FOREST_CAMP.z, 22], ["THE HOME PASTURE: A LOT OF CATTLE", 150, 210, 60]] as [string, number, number, number][]) {
       if (!this.seen.has(name) && Math.hypot(px - x, pz - z) < r) { this.seen.add(name); g.ui.toast("DISCOVERED", name); g.sfx.good(); }
     }
     // near enough to bother with the animations
@@ -927,7 +986,7 @@ export class Outskirts {
     this.hankUpdate(dt, px, pz); this.updateFx(dt); this.wild.update(dt);
     // Hank yells when you wander up to the porch (he is hostile only by the pond, until you are friends)
     if (!g.flags.hankFriend && near(FARM.x + 8, FARM.z, 26) && !riding && (this.cd["hankyell"] ?? -99) + 28 < this.t) {
-      this.cd["hankyell"] = this.t; g.radio("hank" as any, pick(["GET OFF MY PORCH!", "I SEE YOU, COMPANY MAN!", "That's private property! The sign's right there!", "Don't make me go inside for my other shotgun!"]), 6000);
+      this.cd["hankyell"] = this.t; g.radio("hank" as any, pick(["GET OFF MY PORCH!", "I SEE YOU, COMPANY MAN!", "That's private property! The sign's right there!", "Don't make me go inside for my other shotgun!", "I haven't eaten since breakfast and I'M NOT IN A MOOD!", "Is that a taco I smell? …Get off my porch!"]), 6000);
     }
     // the competitor: taunts as you approach, guards come out, and a shove if they reach you
     const gx = RIVAL.x + 44, gz = RIVAL.z;
@@ -964,7 +1023,7 @@ export class Outskirts {
           if (this.raidCd <= 0) this.throwOut();
         } else if ((this.cd["shove"] ?? -99) + 12 < this.t) {
           this.cd["shove"] = this.t; const ux = (px - hx) / (Math.hypot(px - hx, pz - hz) || 1), uz = (pz - hz) / (Math.hypot(px - hx, pz - hz) || 1);
-          p.teleport(px + ux * 16, 0.5, pz + uz * 16, Math.atan2(ux, uz)); g.gain(0, -3); g.sfx.thud(); g.ui.toast("ESCORTED OFF SINGULARITY'S LEASE", "“ESCORT COMPLETE. HAVE A SUBOPTIMAL DAY.”");
+          p.teleport(px + ux * 16, 0.5, pz + uz * 16, Math.atan2(ux, uz)); g.gain(0, -3); g.sfx.thud(); g.ui.toast("ESCORTED OFF AGI DRILLING'S LEASE", "“ESCORT COMPLETE. HAVE A SUBOPTIMAL DAY.”");
           g.radio("rival" as any, "TRESPASSER REMOVED. EFFICIENCY RESTORED.", 5000);
         }
         gd.h.root.position.y = gy; gd.h.animate(dt, 0); continue;
@@ -994,6 +1053,7 @@ export class Outskirts {
       f.arm.rotation.y = Math.sin(this.t * 0.5) * 1.2; f.l1.rotation.x = -0.4 + Math.sin(this.t * 0.9) * 0.3; f.l2.rotation.x = 0.7 + Math.sin(this.t * 1.3) * 0.4;
     }
     for (const T of this.turbs) if (T.on) T.rot.rotation.z += dt * 1.3;
+    this.updateBoat(dt);
     this.updateFishing(dt);
     this.bigfootStep(dt);
     { // the diggable ground follows the player (and a point ahead when going fast)

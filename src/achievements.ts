@@ -19,7 +19,7 @@ export const ACHIEVEMENTS: Ach[] = [
   { id: "hunt", name: "Hank's Wingman", desc: "Go hunting with Hank.", check: (g) => g.doneIds.has("hunt") },
   { id: "windmill", name: "Lockout Legend", desc: "Shut down the wind turbines the right way.", check: (g) => g.doneIds.has("windmill") },
   { id: "sixty", name: "Old Sixty", desc: "Land the sixty-pound catfish.", check: (g) => g.doneIds.has("sixty") },
-  { id: "secrets", name: "Laser Focus", desc: "Steal Singularity's laser secrets.", check: (g) => g.doneIds.has("secrets") },
+  { id: "secrets", name: "Laser Focus", desc: "Steal AGI Drilling's laser secrets.", check: (g) => g.doneIds.has("secrets") },
   { id: "pew", name: "Pew Pew", desc: "Drill with the laser.", secret: true },
   { id: "taco", name: "Taco Tuesday", desc: "Buy a taco.", check: (g) => ((g.flags.taco as number | undefined) ?? 0) >= 1 },
   { id: "tacos", name: "Taco Addict", desc: "Buy five tacos.", check: (g) => ((g.flags.taco as number | undefined) ?? 0) >= 5 },
@@ -31,8 +31,29 @@ export const ACHIEVEMENTS: Ach[] = [
   { id: "highway", name: "Highway Star", desc: "Get the F-250 past 80 mph.", check: (g) => { const v = g.veh.active; return !!v && v.id === "f250" && v.speed * 2.237 > 80; } },
   { id: "flyer", name: "High Flyer", desc: "Take the drone up 200 feet.", check: (g) => { const v = g.veh.active; return !!v && v.kind === "drone" && v.alt * 3.281 > 200; } },
   { id: "fall", name: "Recordable", desc: "Fall off something. It will be written up.", secret: true },
-  { id: "thrown", name: "Persona Non Grata", desc: "Get thrown out of Singularity's lease.", secret: true },
+  { id: "thrown", name: "Persona Non Grata", desc: "Get thrown out of AGI Drilling's lease.", secret: true },
+  { id: "nightcall", name: "Dead of Night", desc: "Call the engineer between 11pm and 5am and say never mind.", secret: true },
+  { id: "bag1", name: "Dinner Is Served", desc: "Bag an animal." },
+  { id: "variety", name: "Full Game Bag", desc: "Bag five different kinds of animal." },
+  { id: "trophy", name: "Trophy Buck", desc: "Bag the prize buck.", secret: true },
   { id: "td", name: "Total Depth", desc: `Reach ${WELL.td.toLocaleString("en-US")} feet.`, check: (g) => g.sim.s.depth >= WELL.td - 1 },
+];
+
+/** the hard hats: one is always yours, the rest are won with achievements */
+export interface Hat { id: string; name: string; shell: string; ridge: string; band: string; ach?: string; glow?: boolean; shine?: boolean }
+export const HATS: Hat[] = [
+  { id: "white", name: "Company Issue", shell: "#f4f4f4", ridge: "#e6e9ec", band: "#e6e9ec" },
+  { id: "yellow", name: "Safety Yellow", shell: "#ffd21a", ridge: "#e6b800", band: "#fff0a0", ach: "hardhat" },
+  { id: "orange", name: "Kill Switch Orange", shell: "#ff7a1a", ridge: "#c9540a", band: "#ffd0a0", ach: "kill" },
+  { id: "camo", name: "Hunter's Camo", shell: "#5a6b3a", ridge: "#3a2a1a", band: "#8a7a4a", ach: "hunt" },
+  { id: "flames", name: "Roll Coal Flames", shell: "#1b1b1b", ridge: "#ff7a1a", band: "#ff3a1a", ach: "coal", glow: true },
+  { id: "chrome", name: "Pew Pew Chrome", shell: "#cfd8e0", ridge: "#2ee6ff", band: "#8a96a6", ach: "pew", shine: true },
+  { id: "gold", name: "World Saver Gold", shell: "#f2c230", ridge: "#fff2a0", band: "#b8860b", ach: "world", shine: true },
+  { id: "agi", name: "AGI Cyan", shell: "#0b1220", ridge: "#2ee6ff", band: "#ff3ad6", ach: "secrets", glow: true },
+  { id: "lonestar", name: "Lone Star", shell: "#1f3f8f", ridge: "#ffffff", band: "#c4231c", ach: "taco" },
+  { id: "squatch", name: "Squatch Brown", shell: "#4a3322", ridge: "#2b1f18", band: "#6a4a30", ach: "bigfoot" },
+  { id: "catfish", name: "Old Sixty Teal", shell: "#3a7a8a", ridge: "#e8e8d0", band: "#1f4a56", ach: "sixty" },
+  { id: "pink", name: "Zero Harm Pink", shell: "#ff8ad8", ridge: "#ffffff", band: "#d44aa8", ach: "zero" },
 ];
 
 export function checkAchievements(g: Game) {

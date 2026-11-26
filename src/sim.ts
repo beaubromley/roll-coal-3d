@@ -31,11 +31,11 @@ let formOverride: ((d: number) => Formation) | null = null;
 /** the rock under the bit: the Delaware Basin, or (in the finale) the asteroid */
 export const formationAt = (d: number): Formation => (formOverride ? formOverride(d) : FORMATIONS.find((f) => d < f.limit) ?? FORMATIONS[FORMATIONS.length - 1]);
 const ASTEROID: Formation[] = [
-  { name: "Asteroid Crust", limit: 150, color: "#6b5d52", hardness: 0.5, abrasiveness: 0.2 },
-  { name: "Solid Iron Plate", limit: 400, color: "#8a8f98", hardness: 1.1, abrasiveness: 0.5 },
-  { name: "Iron-Nickel Vein", limit: 460, color: "#c9a14a", hardness: 1.9, abrasiveness: 0.8 },
-  { name: "Iron Plate", limit: 560, color: "#8a8f98", hardness: 1.2, abrasiveness: 0.6 },
-  { name: "Vibranium", limit: 99999, color: "#7a4fd0", hardness: 1.5, abrasiveness: 0.9 },
+  { name: "Asteroid Crust", limit: 150, color: "#6b5d52", hardness: 0.7, abrasiveness: 0.3 },
+  { name: "Solid Iron Plate", limit: 400, color: "#8a8f98", hardness: 1.5, abrasiveness: 0.7 },
+  { name: "Iron-Nickel Vein", limit: 460, color: "#c9a14a", hardness: 2.6, abrasiveness: 1.1 },
+  { name: "Iron Plate", limit: 560, color: "#8a8f98", hardness: 1.65, abrasiveness: 0.8 },
+  { name: "Vibranium", limit: 99999, color: "#7a4fd0", hardness: 2.1, abrasiveness: 1.2 },
 ];
 
 export function poreAt(d: number): number {
@@ -220,8 +220,10 @@ export class Sim {
   /** start the asteroid hole: surface, a fresh bit and motor, and the rock changes with depth */
   beginAsteroid() {
     const s = this.s; this.astMode = true; formOverride = (d) => ASTEROID.find((f) => d < f.limit) ?? ASTEROID[ASTEROID.length - 1];
-    this.ropBase = 5; s.depth = 0.1; s.mode = "drilling"; s.paused = false; s.wob = 0; s.wobTarget = 18; s.bit = 100; s.motor = 100; s.stallT = 0; s.needTrip = false;
-    s.kick.active = false; s.kick.shut = false; s.kick.alarm = false; s.kick.gain = 0; s.fuel = 1e9; s.flow = s.flowTarget = 700; s.mw = s.mwTarget = 9; s.pit = 600; s.auto.on = false; this.dist = 0; this.hold = null;
+    this.ropBase = 4.2; s.depth = 0.1; s.mode = "drilling"; s.paused = false; s.wob = 0; s.wobTarget = 18; s.bit = 100; s.motor = 100; s.stallT = 0; s.needTrip = false;
+    s.kick.active = false; s.kick.shut = false; s.kick.alarm = false; s.kick.gain = 0; s.fuel = 1e9; s.flow = s.flowTarget = 700; s.mw = s.mwTarget = 9; s.pit = 600; this.dist = 0; this.hold = null;
+    // the hole starts on the autodriller, with set points that suit the rock (the harder iron will push back on them)
+    s.auto.on = true; s.auto.wob = 22; s.auto.rop = 160; s.auto.dp = 1500; s.auto.torque = 9500; this.pi.on = false;
   }
   /** debris hits the rig: a pressure spike and some motor damage */
   hit(motor: number) { this.spike = 1.35; this.s.motor = Math.max(0, this.s.motor - motor); }

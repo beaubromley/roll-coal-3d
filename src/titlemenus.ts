@@ -1,5 +1,6 @@
 /** Title-screen overlays: the save-slot picker and the feedback form. */
 import type { Game } from "./game";
+import { fetchScores, renderScores, scoresAreLocal } from "./scores";
 
 function overlay(html: string): HTMLDivElement {
   document.getElementById("tmenu")?.remove();
@@ -15,7 +16,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 export function openSlotPicker(game: Game, mode: "new" | "continue", pick: (slot: number) => void) {
   const rows = [1, 2, 3].map((n) => {
     const info = game.slotInfo(n);
-    const label = info ? `DAY ${info.day} · ${Math.round(info.depth).toLocaleString("en-US")} FT${info.done ? " · " + info.done + " JOBS" : ""}<small>${new Date(info.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</small>` : "EMPTY<small>nothing saved here</small>";
+    const star = info?.beaten ? `<i style="color:#ffd24a;font-style:normal">★ BEATEN${info.grade ? " (" + info.grade + ")" : ""}</i> · ` : "";
+    const label = info ? `${star}DAY ${info.day} · ${Math.round(info.depth).toLocaleString("en-US")} FT${info.done ? " · " + info.done + " JOBS" : ""}<small>${new Date(info.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</small>` : "EMPTY<small>nothing saved here</small>";
     const off = mode === "continue" && !info;
     return `<button class="tslot" data-n="${n}" ${off ? "disabled" : ""}><b>SLOT ${n}</b><span>${label}</span></button>`;
   }).join("");
@@ -27,6 +29,13 @@ export function openSlotPicker(game: Game, mode: "new" | "continue", pick: (slot
     d.remove(); pick(n);
   });
   d.querySelector<HTMLElement>("#tmx")!.onclick = () => d.remove();
+}
+
+/** The high-score board, from the main menu. */
+export function openHighScores() {
+  const d = overlay(`<div class="ttitle">HIGH SCORES</div><div id="hsbody" class="hsbody"><div class="thint">Loading…</div></div><button class="tbtn2 alt" id="hsx">CLOSE</button>`);
+  d.querySelector<HTMLElement>("#hsx")!.onclick = () => d.remove();
+  fetchScores().then((rows) => { const box = d.querySelector<HTMLElement>("#hsbody"); if (!box) return; if (!rows) { box.innerHTML = '<div class="thint">The board is only available on the live site.</div>'; return; } if (!rows.length) { box.innerHTML = '<div class="thint">No scores yet. Be the first.</div>'; return; } renderScores(box, rows); if (scoresAreLocal) box.insertAdjacentHTML("beforeend", '<div class="thint" style="margin-top:8px">Scores saved in this browser only.</div>'); });
 }
 
 /** The feedback form: sent to the game's own feedback table. */

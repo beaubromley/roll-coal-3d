@@ -1,4 +1,4 @@
-import { openSlotPicker, openFeedback } from "./titlemenus";
+import { openSlotPicker, openFeedback, openHighScores } from "./titlemenus";
 import {
   Engine, Scene, Color4, Color3, Vector3, HemisphericLight, DirectionalLight, ShadowGenerator, GlowLayer, Mesh,
 } from "@babylonjs/core";
@@ -110,7 +110,7 @@ fx.onThunder = (delay) => { setTimeout(() => sfx.thunder(), delay * 1000); };
 fx.start();
 (window as any).__title = fx;
 const introOpen = () => $("intro").style.display !== "none";
-$("ctrlBtn").addEventListener("click", () => { sfx.init(); sfx.click(); $("controls").style.display = "flex"; $("btnrow").style.visibility = "hidden"; $("pressstart").style.visibility = "hidden"; });
+$("hsBtn").addEventListener("click", () => { sfx.init(); sfx.click(); openHighScores(); });
 $("ctrlBack").addEventListener("click", () => { sfx.click(); $("controls").style.display = "none"; $("btnrow").style.visibility = "visible"; $("pressstart").style.visibility = "visible"; });
 window.addEventListener("keydown", (e) => {
   if (!introOpen() || e.repeat) return;
@@ -196,3 +196,13 @@ engine.runRenderLoop(() => {
   sun.position = player.pos.subtract(sun.direction.scale(110));
   scene.render();
 });
+
+// dev only: a file changed. Do not reload (that wipes the game); offer it instead.
+if (import.meta.hot) {
+  import.meta.hot.on("rc-files-changed", () => {
+    if (document.getElementById("rcreload")) return;
+    const b = document.createElement("button"); b.id = "rcreload"; b.textContent = "New build ready: click to reload (your game is not saved if you are mid-run)";
+    b.style.cssText = "position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:99;padding:6px 12px;font:700 12px system-ui,sans-serif;background:#f4c04a;color:#111;border:2px solid #000;cursor:pointer";
+    b.onclick = () => location.reload(); document.body.appendChild(b);
+  });
+}

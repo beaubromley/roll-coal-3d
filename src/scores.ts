@@ -2,11 +2,22 @@
 export interface ScoreRow { name: string; score: number; grade: string; depth: number; hours: number; cost: number; sig?: string | null }
 export interface ScorePost { score: number; grade: string; depth: number; hours: number; cost: number; approval: number; incidents: number; signature?: string }
 
+/** where the last board came from: the online table, or this browser's own list (used whenever the online one is not reachable, e.g. in local dev) */
+export let scoresAreLocal = false;
+const LOCAL_KEY = "rcmh2.localscores";
+const readLocal = (): ScoreRow[] => { try { const j = JSON.parse(localStorage.getItem(LOCAL_KEY) ?? "[]"); return Array.isArray(j) ? j : []; } catch { return []; } };
+const sortRows = (rows: ScoreRow[]) => rows.sort((x, y) => y.score - x.score);
+
 export async function fetchScores(): Promise<ScoreRow[] | null> {
-  try { const r = await fetch("/api/scores", { cache: "no-store" }); if (!r.ok) return null; const j = await r.json(); return Array.isArray(j.scores) ? j.scores : null; } catch { return null; }
+  try { const r = await fetch("/api/scores", { cache: "no-store" }); if (r.ok) { const j = await r.json(); if (Array.isArray(j.scores)) { scoresAreLocal = false; return j.scores; } } } catch { /* fall through to the local list */ }
+  scoresAreLocal = true; return sortRows(readLocal()).slice(0, 10);
 }
 export async function postScore(name: string, s: ScorePost): Promise<number | null> {
-  try { const r = await fetch("/api/scores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, ...s }) }); if (!r.ok) return null; const j = await r.json(); return typeof j.rank === "number" ? j.rank : null; } catch { return null; }
+  try { const r = await fetch("/api/scores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, ...s }) }); if (r.ok) { const j = await r.json(); if (typeof j.rank === "number") return j.rank; } } catch { /* fall through to the local list */ }
+  // not reachable: keep it in this browser instead (wipe localStorage key "rcmh2.localscores" to clear them)
+  const rows = readLocal(); rows.push({ name, score: s.score, grade: s.grade, depth: s.depth, hours: s.hours, cost: s.cost, sig: s.signature ?? null });
+  const all = sortRows(rows).slice(0, 50); try { localStorage.setItem(LOCAL_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+  scoresAreLocal = true; return all.findIndex((x) => x.name === name && x.score === s.score) + 1 || all.length;
 }
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 export function renderScores(el: HTMLElement, rows: ScoreRow[], mine?: number) {

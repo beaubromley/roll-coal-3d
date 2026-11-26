@@ -222,6 +222,7 @@
   #tmenu .tslot:disabled { filter: grayscale(.9) brightness(.55); cursor: not-allowed; } #tmenu .tslot.warn { background: linear-gradient(#ffb36a, #e5732a); }
   #tmenu .tbtn2 { font-family: inherit; font-size: 11px; padding: 12px; color: #0b1a05; background: #7bc02c; border: 3px solid #0b1a05; box-shadow: 0 4px 0 #3f7a10; cursor: pointer; } #tmenu .tbtn2.alt { background: #8a96a6; box-shadow: 0 4px 0 #4a5666; }
   #tmenu .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; font: 14px system-ui, sans-serif; } #tmenu .checks label { display: flex; align-items: center; gap: 8px; cursor: pointer; } #tmenu .checks input { width: 18px; height: 18px; accent-color: #7bc02c; }
+  #tmenu .hsbody { min-height: 120px; max-height: 52vh; overflow: auto; text-align: left; font-family: system-ui, sans-serif; } #tmenu .hsbody .sbh { font: 700 12px 'Press Start 2P', monospace; color: #ffd24a; margin-bottom: 8px; text-align: center; }
   #tmenu .trow2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   #tmenu select, #tmenu textarea, #tmenu input { font: 14px system-ui, sans-serif; padding: 9px; background: #0d1520; color: #fff; border: 2px solid #3a4a62; } #tmenu textarea { min-height: 120px; resize: vertical; }
 
@@ -499,7 +500,7 @@
     <div id="btnrow">
       <button class="tbtn" id="startBtn">START NEW</button>
       <button class="tbtn" id="contBtn">CONTINUE</button>
-      <button class="tbtn" id="ctrlBtn">CONTROLS</button>
+      <button class="tbtn" id="hsBtn">HIGH SCORES</button>
       <button class="tbtn" id="fbBtn">SUBMIT FEEDBACK</button>
     </div>
     <div id="pressstart">PRESS ENTER</div>

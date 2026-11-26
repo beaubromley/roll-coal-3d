@@ -13,10 +13,23 @@ export class Finale {
   private g: any;
   private O = { x: 4000, z: 4000 };
   // course, in metres along +z from the crash site
-  private readonly RAMP0 = 232; private readonly GAP0 = 260; private readonly GAP1 = 460; private readonly SITE_Z = 660;
+  private readonly RAMP0 = 452; private readonly GAP0 = 480; private readonly GAP1 = 680; private readonly SITE_Z = 880;
+  /** the road from the wreck: a snaking course through four hairpins (about four times the old straight run), then a long straight to the ramp */
+  private readonly PATH: [number, number][] = [[0, 18], [0, 36], [50, 50], [90, 50], [115, 60], [125, 85], [115, 110], [90, 120], [0, 120], [-90, 120], [-115, 130], [-125, 155], [-115, 180], [-90, 190], [0, 190], [90, 190], [115, 200], [125, 225], [115, 250], [90, 260], [45, 262], [0, 278], [0, 305], [0, 452]];
+  private readonly ROAD_HALF = 30;
+  /** nearest point on the road: distance, the point, and which segment */
+  private pathNear(x: number, z: number): { d: number; nx: number; nz: number; i: number } {
+    let best = { d: 1e9, nx: 0, nz: 0, i: 0 };
+    for (let i = 0; i < this.PATH.length - 1; i++) {
+      const [ax, az] = this.PATH[i], [bx, bz] = this.PATH[i + 1], dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1, u = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)), nx = ax + dx * u, nz = az + dz * u, d = Math.hypot(x - nx, z - nz);
+      if (d < best.d) best = { d, nx, nz, i };
+    }
+    return best;
+  }
+  private roadHint = 0; private roadSeg = 0;
   private readonly RAMP_H = 3.4;
   /** small kickers along the run-up: each is a wedge up, then a drop */
-  private readonly KICKERS: [number, number, number][] = [[70, 84, 1.2], [118, 134, 1.6], [166, 184, 2.0]];
+  private readonly KICKERS: [number, number, number][] = [[330, 342, 1.2], [372, 388, 1.6], [414, 432, 2.0]];
   built = false; arrived = false; drawDone = false;
   mode: "off" | "launch" | "walk" | "drive" | "site" | "run" = "off";
   armPos = v3(4000, 1.2, 4018);
@@ -37,6 +50,9 @@ export class Finale {
   earth: Mesh | null = null;
   private derrick: Mesh[] = [];
   private bear: Human | null = null; private lev: Human | null = null;
+  /** the whole crew who came down with you: they all ride the Armadillo, and at Harry's site everyone but A.J. and Harry runs for the Freedom */
+  private crew: Human[] = []; private boarders: { h: Human; sp: number; done: boolean }[] = [];
+  speedOf(h: Human): number { const b = this.boarders.find((x) => x.h === h); return b && !b.done ? b.sp : 0; }
   // the run
   runOn = false; runDone = false; private runT = 0; private blastT = 0; private stun = 0; private blasts: { x: number; z: number; t: number; mark: Mesh; ball: Mesh | null; mat: StandardMaterial | null; boomed: boolean }[] = []; private cracks = false;
   get harryRunning() { return false; }   // Harry stays at the hole with the trigger
@@ -108,7 +124,7 @@ export class Finale {
     const rock = mat("#4a4540"), dark = mat("#26221f"), lava = mat("#000000", "#ff4a10"); lava.disableLighting = true;
     // two slabs of asteroid with the canyon between them (box tops are the ground; the sides are the canyon walls)
     const slab = (z0: number, z1: number, name: string) => { const b = MeshBuilder.CreateBox(name, { width: 900, height: 60, depth: z1 - z0 }, sc); b.material = rock; b.position.set(ox, -30, oz + (z0 + z1) / 2); b.freezeWorldMatrix(); b.isPickable = false; return b; };
-    slab(-350, this.GAP0, "astA"); slab(this.GAP1, 900, "astB");
+    slab(-350, this.GAP0, "astA"); slab(this.GAP1, this.GAP1 + 500, "astB");
     const chasm = MeshBuilder.CreateGround("chasm", { width: 900, height: this.GAP1 - this.GAP0 }, sc); chasm.material = lava; chasm.position.set(ox, -52, oz + (this.GAP0 + this.GAP1) / 2); chasm.isPickable = false;
     // a long launch ramp at the lip of the canyon
     const rl = this.GAP0 - this.RAMP0, ang = Math.atan2(this.RAMP_H, rl), rlen = Math.hypot(rl, this.RAMP_H);
@@ -123,15 +139,20 @@ export class Finale {
     }
     // painted chevrons down the run-up so the line to the ramp is obvious, and a lit post every 50 m counting down
     const chev = mat("#000000", "#ffb23a"); chev.disableLighting = true;
-    for (let z = 30; z < this.RAMP0 - 6; z += 14) for (const s of [-1, 1]) { const c = MeshBuilder.CreateBox("chev", { width: 3.2, height: 0.05, depth: 0.7 }, sc); c.material = chev; c.position.set(ox + s * 1.4, 0.03, oz + z); c.rotation.y = s * 0.6; c.isPickable = false; c.freezeWorldMatrix(); }
-    for (const zm of [60, 110, 160, 210]) for (const s of [-1, 1]) {
-      const post = MeshBuilder.CreateCylinder("post", { diameter: 0.5, height: 4, tessellation: 8 }, sc); post.material = mat("#3a3a3a"); post.position.set(ox + s * 14, 2, oz + zm); post.isPickable = false; post.freezeWorldMatrix();
-      const lamp = MeshBuilder.CreateSphere("plamp", { diameter: 1.1, segments: 8 }, sc); lamp.material = chev; lamp.position.set(ox + s * 14, 4.2, oz + zm); lamp.isPickable = false; lamp.freezeWorldMatrix();
+    // along the road: painted chevrons down the middle, lit posts either side, and a wall of boulders on the edges so the road is obvious
+    const postMat = mat("#3a3a3a");
+    let acc = 0, nextChev = 6, nextPost = 20, nextWall = 4;
+    for (let i = 0; i < this.PATH.length - 1; i++) {
+      const [ax, az] = this.PATH[i], [bx, bz] = this.PATH[i + 1], dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L, yaw = Math.atan2(ux, uz);
+      for (; nextChev < acc + L; nextChev += 14) { const f = nextChev - acc, cx = ax + ux * f, cz = az + uz * f; for (const s of [-1, 1]) { const c = MeshBuilder.CreateBox("chev", { width: 3.2, height: 0.05, depth: 0.7 }, sc); c.material = chev; c.position.set(ox + cx + uz * s * 1.4, 0.03, oz + cz - ux * s * 1.4); c.rotation.y = yaw + s * 0.6; c.isPickable = false; c.freezeWorldMatrix(); } }
+      for (; nextPost < acc + L; nextPost += 40) { const f = nextPost - acc, cx = ax + ux * f, cz = az + uz * f; for (const s of [-1, 1]) { const px = ox + cx + uz * s * 15, pz = oz + cz - ux * s * 15; const post = MeshBuilder.CreateCylinder("post", { diameter: 0.5, height: 4, tessellation: 8 }, sc); post.material = postMat; post.position.set(px, 2, pz); post.isPickable = false; post.freezeWorldMatrix(); const lamp = MeshBuilder.CreateSphere("plamp", { diameter: 1.1, segments: 8 }, sc); lamp.material = chev; lamp.position.set(px, 4.2, pz); lamp.isPickable = false; lamp.freezeWorldMatrix(); } }
+      for (; nextWall < acc + L; nextWall += 12) { const f = nextWall - acc, cx = ax + ux * f, cz = az + uz * f; for (const s of [-1, 1]) { const sz2 = 3 + rnd() * 4, b2 = MeshBuilder.CreatePolyhedron("wallrock", { type: (rnd() * 6) | 0, size: sz2 }, sc); b2.material = rnd() < 0.3 ? dark : rock; b2.position.set(ox + cx + uz * s * (this.ROAD_HALF + 4 + rnd() * 3), sz2 * 0.4, oz + cz - ux * s * (this.ROAD_HALF + 4 + rnd() * 3)); b2.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3); b2.isPickable = false; b2.freezeWorldMatrix(); } }
+      acc += L;
     }
     const sign = MeshBuilder.CreatePlane("rsign", { width: 14, height: 3 }, sc); sign.position.set(ox, 8, oz + this.GAP0 - 8); sign.material = mat("#000000", "#ff7a1a");
     // scattered boulders (kept off the driving line)
-    for (let i = 0; i < 160; i++) {
-      const zz = -300 + rnd() * 1100, xx = (rnd() - 0.5) * 760; if (Math.abs(xx) < 20 || (zz > this.GAP0 - 20 && zz < this.GAP1 + 8)) continue;
+    for (let i = 0; i < 260; i++) {
+      const zz = -300 + rnd() * 1500, xx = (rnd() - 0.5) * 760; if (Math.abs(xx) < 20 || (zz > this.GAP0 - 20 && zz < this.GAP1 + 8) || (zz < this.RAMP0 + 30 && this.pathNear(xx, zz).d < this.ROAD_HALF + 14)) continue;
       const s = 1.5 + rnd() * 9, b = MeshBuilder.CreatePolyhedron("boulder", { type: (rnd() * 6) | 0, size: s }, sc); b.material = rnd() < 0.15 ? dark : rock;
       b.position.set(ox + xx, s * 0.4, oz + zz); b.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3); b.freezeWorldMatrix(); b.isPickable = false;
       if (Math.abs(xx) > 25) g.colliders.push({ x0: ox + xx - s * 0.7, x1: ox + xx + s * 0.7, y0: 0, y1: s * 0.9, z0: oz + zz - s * 0.7, z1: oz + zz + s * 0.7 });
@@ -167,6 +188,11 @@ export class Finale {
       const h = new Human(sc, { shirt: who === "bear" ? "#c4561a" : "#2a4a7a", pants: "#d0d0d0", hat: null, skin: "#d9a77f", vest: false, scale: who === "bear" ? 1.06 : 0.98 }); h.setSuit(true);
       h.root.position.set(ox + x, 0.5, oz + z); h.root.rotation.y = Math.PI * 0.8; (g.armCrew as Human[]).push(h);
       if (who === "bear") this.bear = h; else this.lev = h;
+      this.crew.push(h);
+    }
+    for (const [shirt, x, z, sc2] of [["#7a2a8a", 2, 6, 0.96], ["#2a7a4a", -2, 7, 1.0], ["#8a6a2a", 6, 11, 1.02]] as [string, number, number, number][]) {   // Chick, Max and Rockhound
+      const h = new Human(sc, { shirt, pants: "#d0d0d0", hat: null, skin: "#d9a77f", vest: false, scale: sc2 }); h.setSuit(true);
+      h.root.position.set(ox + x, 0.5, oz + z); h.root.rotation.y = Math.PI * 0.7; (g.armCrew as Human[]).push(h); this.crew.push(h);
     }
   }
 
@@ -232,6 +258,9 @@ export class Finale {
     // A.J. takes the wheel (front left), Bear rides shotgun, Lev squeezes in the back: all seated inside the cab
     const seat = (h: Human, x: number, z: number) => { h.root.parent = this.arm; h.root.position.set(x, 1.6, z); h.root.rotation.set(0, 0, 0); h.seated = true; h.root.setEnabled(true); };
     seat(g.player.body, -0.62, 2.35); g.player.bodyHold = true; g.player.body.root.setEnabled(true);
+    const spots: [number, number][] = [[0.62, 2.35], [-0.62, 0.9], [0.62, 0.9], [-0.62, -0.5], [0.62, -0.5]];   // the rest of the crew pile in behind
+    this.crew.forEach((h, i) => { const s = spots[i % spots.length]; seat(h, s[0], s[1]); });
+    this.boarders = [];
     g.ui.toast("ARMADILLO", "W gas · A/D steer · SPACE thrusters, on the ground for a boost or in the air for lift");
     g.radio("harry", "There's a canyon between us, A.J. Hit that ramp as fast as she'll go and light the thrusters!", 9000);
   }
@@ -266,6 +295,14 @@ export class Finale {
     }
     const prevY = d.y;
     d.x = Math.max(-320, Math.min(320, nx)); d.z = nz; d.y += d.vy * dt;
+    if (d.y < 1.5 && d.z < this.RAMP0 + 6) {
+      const pn = this.pathNear(d.x, d.z); this.roadSeg = pn.i;
+      if (pn.d > this.ROAD_HALF) {   // off the road: the boulder wall and loose rock slow you and shove you back
+        const k = (pn.d - this.ROAD_HALF) / pn.d; d.x += (pn.nx - d.x) * k; d.z += (pn.nz - d.z) * k; d.speed *= 1 - Math.min(0.5, 2.2 * dt); this.shakeAmt = Math.max(this.shakeAmt, 0.2);
+        if (this.roadHint <= 0) { this.roadHint = 6; g.ui.toast("OFF THE ROAD", "Stay between the lit posts: the way is through the hairpins, then the straight to the ramp."); }
+      }
+    }
+    this.roadHint -= dt;
     const g2 = this.groundY(d.z);
     if (g2 > -50 && d.y <= g2 && d.vy <= 0) {
       if (prevY >= g2 - 0.15) { if (d.vy < -13) { g.ui.toast("HARD LANDING", "The Armadillo takes a beating"); this.shakeAmt = 0.4; } d.y = g2; d.vy = 0; }
@@ -273,9 +310,9 @@ export class Finale {
       else { d.y = g2; d.vy = 0; }                                               // anywhere else (the kickers) you just touch down on the slope
     }
     if (d.y < -46) {
-      g.ui.toast("INTO THE CANYON", "Back to the start of the run-up. Hit it faster and use the thrusters.");
+      g.ui.toast("INTO THE CANYON", "Back to the start of the straight. Hit it faster and use the thrusters.");
       g.radio("bear", "We didn't make it. Okay. Okay. Back up and go again, A.J.", 7000);
-      d.x = 0; d.z = 20; d.y = 0; d.speed = 0; d.vy = 0; d.yaw = 0; d.fuel = 1; this.shakeAmt = 0.5;
+      d.x = 0; d.z = 318; d.y = 0; d.speed = 0; d.vy = 0; d.yaw = 0; d.fuel = 1; this.shakeAmt = 0.5;   // back to the start of the long straight: just the jump again
     }
     if (d.z > this.GAP1 && d.vy === 0 && !this.flags_cleared) { this.flags_cleared = true; g.ui.toast("YOU MADE IT", "Across the canyon!"); g.radio("bear", "YEAH! A.J.! That's how you do it!", 7000); g.radio("harry", "I see you, kid! Bring it in!", 7000); }
     this.arm.position.set(this.O.x + d.x, d.y, this.O.z + d.z); this.arm.rotation.y = d.yaw; this.arm.rotation.x = Math.max(-0.5, Math.min(0.5, -d.vy * 0.03));
@@ -308,13 +345,17 @@ export class Finale {
     g.player.ride = false; g.player.body.root.setEnabled(true); g.player.third = true; g.player.enabled = true; g.player.cam.fov = 0.95; this.camPos = null;
     for (const p of this.dust) p.mesh.setEnabled(false);
     g.player.body.root.parent = null; g.player.body.seated = false; g.player.bodyHold = false;
-    for (const [h, dx, dz] of [[this.bear, -5, -2], [this.lev, -7, 1]] as [Human | null, number, number][]) if (h) { h.root.parent = null; h.seated = false; h.root.position.set(this.O.x + 8 + dx, 0.5, this.O.z + this.SITE_Z - 16 + dz); h.root.rotation.y = Math.PI; }
+    this.crew.forEach((h, i) => { h.root.parent = null; h.seated = false; h.root.setEnabled(true); h.root.position.set(this.O.x + 8 - 3 + (i % 3) * 2.2, 0.5, this.O.z + this.SITE_Z - 16 - 2 + Math.floor(i / 3) * 2); this.boarders.push({ h, sp: 7.5 + (i % 3) * 0.4, done: false }); });
+    setTimeout(() => this.g.radio("bear", "Everybody with me! We'll get the Freedom fired up. A.J., Harry: don't be long!", 8000), 1200);
     g.player.teleport(this.O.x + 2, 0.6, this.O.z + this.SITE_Z - 8, Math.PI); g.player.lock();
     g.radio("harry", "A.J.! Thank God. Get on that console and make that hole. Eight hundred feet. Not one foot less.", 10000);
   }
 
   /** where the objective arrow should point while you are crossing the asteroid */
-  siteTarget(): Vector3 { return v3(this.O.x, 1, this.O.z + this.SITE_Z); }
+  siteTarget(): Vector3 {
+    if (this.mode === "drive" && this.d.z < this.RAMP0 - 20) { const i = Math.min(this.PATH.length - 1, this.roadSeg + 3), [px, pz] = this.PATH[i]; return v3(this.O.x + px, 1, this.O.z + pz); }   // the next bend of the road
+    return v3(this.O.x, 1, this.O.z + this.SITE_Z);
+  }
 
   // ------------------------------------------------------------------------------------------------ the drill-site events
   gasPocket() {
@@ -481,6 +522,15 @@ export class Finale {
     tex.update(); tex.hasAlpha = false; return tex;
   }
   update(dt: number) {
+    if (this.boarders.length) {
+      const sp = this.shipPos();
+      for (const b of this.boarders) {
+        if (b.done) continue;
+        const r = b.h.root.position, dx = sp.x - r.x, dz = sp.z - r.z, d = Math.hypot(dx, dz);
+        if (d < 5) { b.done = true; b.h.root.setEnabled(false); continue; }   // up the ramp and inside
+        r.x += (dx / d) * b.sp * dt; r.z += (dz / d) * b.sp * dt; b.h.root.rotation.y = Math.atan2(dx, dz);
+      }
+    }
     if (this.earth) this.earth.rotation.y += dt * 0.012;
     const g = this.g;
     if (this.mode === "off") return;

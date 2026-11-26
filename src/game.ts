@@ -1093,8 +1093,8 @@ export class Game {
   hasSave(n?: number): boolean { try { return n ? !!localStorage.getItem(Game.slotKey(n)) : [1, 2, 3].some((i) => !!localStorage.getItem(Game.slotKey(i))); } catch { return false; } }
   clearSave(n = this.slot) { try { localStorage.removeItem(Game.slotKey(n)); } catch { /* ignore */ } }
   /** what is in a slot, for the picker */
-  slotInfo(n: number): { day: number; depth: number; at: number; done: number } | null {
-    try { const raw = localStorage.getItem(Game.slotKey(n)); if (!raw) return null; const d = JSON.parse(raw); return { day: clockString(d.s?.t ?? 0).day, depth: d.s?.depth ?? 0, at: d.at ?? 0, done: Array.isArray(d.done) ? d.done.length : 0 }; } catch { return null; }
+  slotInfo(n: number): { day: number; depth: number; at: number; done: number; beaten: boolean; grade: string } | null {
+    try { const raw = localStorage.getItem(Game.slotKey(n)); if (!raw) return null; const d = JSON.parse(raw); return { day: clockString(d.s?.t ?? 0).day, depth: d.s?.depth ?? 0, at: d.at ?? 0, done: Array.isArray(d.done) ? d.done.length : 0, beaten: !!d.beaten, grade: d.grade ?? "" }; } catch { return null; }
   }
   save() {
     if (!this.started || this.flags.finish || this.astMode || this.sleeping) return;
@@ -1365,6 +1365,12 @@ export class Game {
     if (!this.sim.astMode) return;
     a.depth = s.depth;
     if (a.bombed || this.flags.armTD) return;
+    // around 450 ft the bit is cooked in the iron-nickel vein: you have to trip out for a new one (the movie calls it a "drill head")
+    if (s.depth >= 440 && !this.flags.armBit) {
+      this.flags.armBit = true; s.bit = 5;
+      this.radio("nasa", "Harry, your drill head just stopped cutting. You need to pull the drill head and put on a new one.", 8000);
+      setTimeout(() => this.radio("harry", "It's a BIT, son. A bit. Nobody calls it a drill head. …Okay. A.J., get on the console, trip out and run a fresh bit. Fast.", 10000), 5200);
+    }
     if (s.depth >= 560 && !this.flags.armGas) { this.flags.armGas = true; this.finale.gasPocket(); }
     if (s.depth >= 799.5 && !this.flags.armTD) { this.flags.armTD = true; this.ui.closePanel(); this.finale.detonatorFails(); return; }
     for (const d of [50, 100, 150, 250, 300, 400, 460, 500, 600, 625, 750, 790]) {
@@ -1405,7 +1411,6 @@ export class Game {
   }
 
   showEnd() {
-    this.clearSave();
     const s = this.sim.s, hours = s.t / 60;
     const over = s.cost - WELL.afe;
     const score = this.approval * 12 + this.morale * 0.3 - over / 70000 - this.incidents * 4 + s.stats.kicksKilled * 6;
@@ -1414,6 +1419,8 @@ export class Game {
       ["Depth drilled", fmt(s.stats.feetDrilled) + " ft"], ["Rig time", `${Math.floor(hours)} hr`], ["Final cost vs AFE", `${money(s.cost)} / ${money(WELL.afe)}`],
       ["Office approval", this.approval.toFixed(1) + " ★"], ["Crew morale", Math.round(this.morale) + "%"], ["Incidents", String(this.incidents)], ["Kicks killed", String(s.stats.kicksKilled)],
     ];
+    // keep the save (it is from just before the finale) and mark the slot with a star
+    try { const k = Game.slotKey(this.slot), raw = localStorage.getItem(k); if (raw) { const d = JSON.parse(raw); d.beaten = true; d.grade = grade; localStorage.setItem(k, JSON.stringify(d)); } } catch { /* ignore */ }
     $("endgrade").textContent = grade;
     const st = (k: string) => this.statGet(k), mi = (m: number) => (m / 1609.34).toFixed(2) + " mi", hm = (sec: number) => Math.floor(sec / 3600) + "h " + Math.floor((sec % 3600) / 60) + "m";
     const stats: [string, string][] = [["Steps walked", fmt(st("walkedM") / 0.75)], ["Distance on foot", mi(st("walkedM"))], ["Distance driven", mi(st("drivenM"))], ["Drone distance", mi(st("droneM"))], ["Time on your feet at a sprint", hm(st("sprintSec"))],
@@ -1619,7 +1626,7 @@ export class Game {
     if (this.flags.laserOn && this.sim.s.mode !== "drilling" && this.sim.s.mode !== "connection") { this.flags.laserOn = false; this.ui.toast("LASER OFF", "The laser only fires while you are drilling. Switch it back on when you are."); }
     this.sim.laser = !!this.flags.laserUnlocked && !!this.flags.laserOn && !this.astMode;
     if (this.started && !this.paused && !this.astMode && !this.flags.finish) this.supplyNotes(realDt); else if (this.supplyEl) this.supplyEl.innerHTML = "";
-    this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : 0)); this.finale.update(realDt);
+    this.armUpdate(realDt); this.armCrew.forEach((h) => h.animate(realDt, this.finale.harryRunning && h === this.finale.harryHuman ? 8 : this.finale.speedOf(h))); this.finale.update(realDt);
     if (this.asteroid) {
       this.asteroidT += realDt;                                            // (the rock itself stays put: only the tail flickers)
       this.asteroidTail.forEach((tl, i) => { const f = 1 + Math.sin(this.asteroidT * (3.1 + i * 0.9) + i) * 0.08 + (Math.random() - 0.5) * 0.05; tl.mesh.scaling.set(f, 1, f); });
@@ -1669,7 +1676,7 @@ export class Game {
     this.ui.setStrip(items);
     this.ui.setStars(this.approval); this.ui.setBars(this.morale, this.incidents);
     let alert: string | null = null;
-    if (this.astMode) alert = null;
+    if (this.astMode) alert = s.needTrip && s.mode !== "tripping" ? "THE BIT IS DEAD: TRIP OUT AT THE CONSOLE FOR A NEW ONE" : null;
     else if (k.active && !k.shut) alert = "⚠ PIT GAIN — WELL FLOWING";
     else if (k.shut && s.kill.stage !== "flowcheck") alert = "WELL SHUT IN — KILL PROCEDURE";
     else if (s.loss.active) alert = "LOST CIRCULATION";
@@ -1716,9 +1723,9 @@ export class Game {
       if (at) markers.push({ title: m.title, pos: at, color: m.side ? SIDE : PAL[ci % PAL.length], primary, side: !!m.side });
     };
     if (this.active) addM(this.active.m, this.active.i, true, 0);
-    for (let j = this.stack.length - 1, c = 1; j >= 0; j--, c++) addM(this.stack[j].m, this.stack[j].i, false, c);
+    if (!this.astMode) for (let j = this.stack.length - 1, c = 1; j >= 0; j--, c++) addM(this.stack[j].m, this.stack[j].i, false, c);
     // trouble that is not a job still points at where to go: low diesel, a dead bit, dry pits, a flat accumulator, lost returns
-    {
+    if (!this.astMode) {
       const sp = this.rig.spots, st = this.sim.s, ALERT = "#ff6a3d";
       const alert = (title: string, at: Vector3 | undefined) => { if (at) markers.push({ title, pos: at, color: ALERT, primary: false }); };
       if (st.fuel < 1200) alert(st.fuel <= 0 ? "OUT OF DIESEL" : "LOW DIESEL", sp.fuel);

@@ -58,11 +58,40 @@ const SCENES: Record<string, Scene> = {
     disc(c, "#ff3a2a", 28, 24, 8); disc(c, "#ffb0a0", 28, 24, 3); for (let k = 0; k < 8; k++) line(c, "#ff5a4a", 28, 24, 28 + Math.cos(k * 0.8) * 18, 24 + Math.sin(k * 0.8) * 18);
   },
   // the asteroid
+  // a comet the size of Texas, burning in over the rig: a jagged glowing head, a long streaming tail, sparks, and a lit horizon
   armageddon: (c) => {
-    sky(c, "#12081a", "#c4501e", 90); const r = rnd(5); for (let i = 0; i < 40; i++) R(c, "#fff", r() * W, r() * 50, 1, 1);
-    disc(c, "#5a4a42", 128, 38, 30); disc(c, "#7a6658", 122, 32, 24); disc(c, "#463830", 140, 48, 7); disc(c, "#463830", 112, 28, 5); disc(c, "#463830", 130, 22, 4);
-    for (let k = 0; k < 14; k++) R(c, "#ffb04a", 110 + k * 4 + (k % 3) * 2, 64 + k * 1.2, 5, 2);
-    ground(c, "#2a1810", 82, "#3a2418"); derrick(c, 40, 82, 34, "#14100c");
+    sky(c, "#07030f", "#d4501a", 84);
+    const rn = rnd(11); for (let i = 0; i < 60; i++) { const x = rn() * W, y = rn() * 60; R(c, rn() < 0.2 ? "#ffd8a0" : "#fff", x, y, 1, 1); }
+    // the glow of the horizon, and a hot haze low in the sky
+    for (let y = 56; y < 84; y++) { c.fillStyle = "rgba(255,140,40," + ((y - 56) / 28) * 0.28 + ")"; c.fillRect(0, y, W, 1); }
+    const hx = 124, hy = 38, dx = 0.93, dy = -0.37;   // the head, and the direction the tail streams (up and to the right)
+    // the tail: hundreds of streaks fanning out behind it, white-hot near the head and fading to red
+    const rt = rnd(3);
+    for (let i = 0; i < 900; i++) {
+      const d = Math.pow(rt(), 0.7) * 150, spread = (rt() - 0.5) * (6 + d * 0.34), px = hx + dx * d - dy * spread, py = hy + dy * d + dx * spread, u = d / 150;
+      const col = u < 0.12 ? "#fff6d0" : u < 0.3 ? "#ffd070" : u < 0.55 ? "#ff9a30" : u < 0.8 ? "#e5481a" : "#8a2a1a";
+      if (px > -2 && px < W && py > -2 && py < H) R(c, col, px, py, rt() < 0.4 ? 2 : 1, 1);
+    }
+    for (let k = 0; k < 7; k++) line(c, k < 2 ? "#fff0b0" : k < 4 ? "#ffb040" : "#e5481a", hx, hy + (k - 3) * 2.2, hx + dx * (60 + k * 14), hy + dy * (60 + k * 14) + (k - 3) * 2.6, 1);
+    // the coma: soft rings of fire round the head
+    for (const [r, col] of [[38, "rgba(255,90,20,0.10)"], [30, "rgba(255,130,30,0.16)"], [24, "rgba(255,180,60,0.22)"], [19, "rgba(255,226,140,0.3)"]] as [number, string][]) { c.fillStyle = col; for (let yy = -r; yy <= r; yy++) { const w = Math.round(Math.sqrt(r * r - yy * yy)); c.fillRect(hx - w, hy + yy, w * 2 + 1, 1); } }
+    // the rock: a jagged lump, lit orange on the side that is burning (down-left, the way it is flying) and dark on the other
+    const nz = rnd(17), jag: number[] = []; for (let i = 0; i < 24; i++) jag.push(0.78 + nz() * 0.42);
+    const rad = (ang: number) => { const f = ((ang + Math.PI) / (Math.PI * 2)) * 24, i0 = Math.floor(f) % 24, i1 = (i0 + 1) % 24, k = f - Math.floor(f); return 16 * (jag[i0] * (1 - k) + jag[i1] * k); };
+    for (let yy = -22; yy <= 22; yy++) for (let xx = -22; xx <= 22; xx++) {
+      const d = Math.hypot(xx, yy); if (d > rad(Math.atan2(yy, xx))) continue;
+      const lit = (-xx * -dx + yy * -dy) / (d || 1) * -1;   // toward the leading (down-left) edge
+      const l = Math.max(0, Math.min(1, 0.5 + 0.5 * ((-xx * dx - yy * dy) / (d + 4)) * -1));
+      const base = l > 0.78 ? "#ffcf70" : l > 0.62 ? "#e8802a" : l > 0.45 ? "#8a5236" : l > 0.3 ? "#5a3a2c" : "#2c1c1a";
+      void lit; R(c, base, hx + xx, hy + yy, 1, 1);
+    }
+    for (const [cx, cy, cr] of [[-4, -3, 4], [5, 4, 3], [-1, 7, 2], [6, -5, 2]] as number[][]) disc(c, "#2a1a18", hx + cx, hy + cy, cr);
+    disc(c, "#fff4c0", hx - 7, hy + 4, 2);
+    // sparks and burning fragments breaking off
+    const rs = rnd(23); for (let i = 0; i < 26; i++) { const d = 14 + rs() * 40, an = Math.atan2(dy, dx) + (rs() - 0.5) * 1.4; R(c, rs() < 0.5 ? "#ffd070" : "#ff6a20", hx + Math.cos(an) * d, hy + Math.sin(an) * d, 1 + (rs() < 0.3 ? 1 : 0), 1); }
+    for (const [fx, fy] of [[102, 52], [96, 60], [108, 62]] as number[][]) { disc(c, "#ff8a30", fx, fy, 1); R(c, "#ffd070", fx + 2, fy - 1, 3, 1); }
+    ground(c, "#1a0e0a", 84, "#2a1810"); derrick(c, 40, 84, 36, "#0c0806");
+    for (let x = 0; x < W; x += 3) R(c, "rgba(255,120,40,0.4)", x, 84, 2, 1);
   },
   deer: (c) => {
     sky(c, "#4a5a9a", "#f0b070"); ground(c, "#5a6a32", 70, "#6a7a3c"); derrick(c, 160, 70, 40, "#22262e");

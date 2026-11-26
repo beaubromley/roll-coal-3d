@@ -1,4 +1,4 @@
-import { MeshBuilder, StandardMaterial, Color3, Vector3, Mesh, TransformNode, Quaternion } from "@babylonjs/core";
+import { MeshBuilder, StandardMaterial, Color3, Vector3, Mesh, TransformNode, Quaternion, DynamicTexture } from "@babylonjs/core";
 import { Human } from "./npcs";
 import { $ } from "./ui";
 
@@ -137,9 +137,10 @@ export class Finale {
       if (Math.abs(xx) > 25) g.colliders.push({ x0: ox + xx - s * 0.7, x1: ox + xx + s * 0.7, y0: 0, y1: s * 0.9, z0: oz + zz - s * 0.7, z1: oz + zz + s * 0.7 });
     }
     // Earth in the sky, small and blue, with the sun behind us
-    const earth = MeshBuilder.CreateSphere("earth", { diameter: 220, segments: 24 }, sc); const em = new StandardMaterial("earthm", sc);
-    em.emissiveColor = new Color3(0.14, 0.34, 0.8); em.diffuseColor = Color3.Black(); em.disableLighting = true; earth.material = em; earth.position.set(-520, 360, 640); earth.infiniteDistance = true; earth.isPickable = false; earth.alwaysSelectAsActiveMesh = true; this.earth = earth;
-    const cl = MeshBuilder.CreateSphere("earthc", { diameter: 224, segments: 12 }, sc); const cm = new StandardMaterial("earthcm", sc); cm.emissiveColor = new Color3(0.9, 0.95, 1); cm.diffuseColor = Color3.Black(); cm.alpha = 0.22; cm.disableLighting = true; cl.material = cm; cl.parent = earth; cl.isPickable = false;
+    const earth = MeshBuilder.CreateSphere("earth", { diameter: 220, segments: 32 }, sc); const em = new StandardMaterial("earthm", sc);
+    em.emissiveTexture = this.earthTexture(); em.diffuseColor = Color3.Black(); em.disableLighting = true; earth.material = em; earth.position.set(-520, 360, 640); earth.infiniteDistance = true; earth.isPickable = false; earth.alwaysSelectAsActiveMesh = true; this.earth = earth;
+    // a thin blue haze of atmosphere round it
+    const cl = MeshBuilder.CreateSphere("earthc", { diameter: 232, segments: 20 }, sc); const cm = new StandardMaterial("earthcm", sc); cm.emissiveColor = new Color3(0.35, 0.62, 1); cm.diffuseColor = Color3.Black(); cm.alpha = 0.2; cm.disableLighting = true; cm.backFaceCulling = false; cl.material = cm; cl.parent = earth; cl.isPickable = false;
     g.colliders.push({ x0: ox - 460, x1: ox + 460, y0: -5, y1: 40, z0: oz + this.GAP0, z1: oz + this.GAP1 });   // nobody walks into the canyon
     this.buildWreck(mat);
     this.buildArmadillo(mat);
@@ -455,7 +456,32 @@ export class Finale {
   private say(who: string, text: string, choices: { label: string; cls?: string; run: () => void }[], eyebrow: string) { this.g.say(who, text, choices, eyebrow, { closable: false }); }
 
   // ------------------------------------------------------------------------------------------------ per frame
+  /** an equirectangular painting of the Earth: deep and shallow ocean, continents in green, tan and brown, white ice caps, and swirls of cloud with a hurricane or two */
+  private earthTexture(): DynamicTexture {
+    const W = 1024, H = 512, tex = new DynamicTexture("earthtex", { width: W, height: H }, this.g.scene, true), c = tex.getContext() as CanvasRenderingContext2D;
+    let seed = 41; const rn = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const g1 = c.createLinearGradient(0, 0, 0, H); g1.addColorStop(0, "#1b4a8c"); g1.addColorStop(0.5, "#1560b8"); g1.addColorStop(1, "#1b4a8c"); c.fillStyle = g1; c.fillRect(0, 0, W, H);
+    // shallow seas round the land
+    const lands: [number, number, number][] = [];
+    for (let i = 0; i < 46; i++) { const cx = rn() * W, cy = 70 + rn() * (H - 140), r = 18 + rn() * 70; lands.push([cx, cy, r]); }
+    const blob = (cx: number, cy: number, r: number, col: string) => { c.fillStyle = col; for (const ox of [-W, 0, W]) { c.beginPath(); for (let k = 0; k <= 22; k++) { const a = (k / 22) * Math.PI * 2, rr = r * (0.65 + 0.55 * Math.abs(Math.sin(a * 3 + cx) * Math.cos(a * 2 + cy))); const x = cx + ox + Math.cos(a) * rr * 1.25, y = cy + Math.sin(a) * rr * 0.8; k ? c.lineTo(x, y) : c.moveTo(x, y); } c.closePath(); c.fill(); } };
+    for (const [cx, cy, r] of lands) blob(cx, cy, r * 1.35, "#2f8fd0");                                   // the shelf
+    for (const [cx, cy, r] of lands) blob(cx, cy, r, "#3f8a3a");                                          // green land
+    for (const [cx, cy, r] of lands) if (r > 40) blob(cx + 6, cy + 4, r * 0.55, rn() < 0.5 ? "#6a9a3c" : "#b79a5a");   // hills, deserts
+    for (let i = 0; i < 18; i++) blob(rn() * W, 110 + rn() * (H - 220), 8 + rn() * 14, "#2f6a2c");        // forests
+    // ice caps
+    c.fillStyle = "#f2f6fa"; c.fillRect(0, 0, W, 26); c.fillRect(0, H - 30, W, 30); for (let x = 0; x < W; x += 12) { c.fillRect(x, 26, 14, 6 + rn() * 12); c.fillRect(x, H - 40 - rn() * 10, 14, 12); }
+    // clouds: long curved streaks, and spiral storms
+    c.lineCap = "round";
+    for (let i = 0; i < 90; i++) { const x = rn() * W, y = 40 + rn() * (H - 80), len = 50 + rn() * 140, bend = (rn() - 0.5) * 60; c.strokeStyle = "rgba(255,255,255," + (0.18 + rn() * 0.4) + ")"; c.lineWidth = 3 + rn() * 9; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x + len * 0.5, y + bend, x + len, y + bend * 0.3); c.stroke(); }
+    for (const [sx, sy, dir] of [[180, 140, 1], [610, 360, -1], [860, 170, 1], [330, 390, 1]] as number[][]) {   // swirling storms
+      for (let k = 0; k < 6; k++) { c.strokeStyle = "rgba(255,255,255," + (0.5 - k * 0.05) + ")"; c.lineWidth = 7 - k * 0.8; c.beginPath(); for (let s = 0; s <= 40; s++) { const a = k * 1.05 + s * 0.2 * dir, rr = 3 + s * 1.5; const x = sx + Math.cos(a) * rr, y = sy + Math.sin(a) * rr * 0.75; s ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); }
+      c.fillStyle = "rgba(255,255,255,0.8)"; c.beginPath(); c.arc(sx, sy, 5, 0, 6.3); c.fill();
+    }
+    tex.update(); tex.hasAlpha = false; return tex;
+  }
   update(dt: number) {
+    if (this.earth) this.earth.rotation.y += dt * 0.012;
     const g = this.g;
     if (this.mode === "off") return;
     if (this.mode === "drive") this.driveStep(dt);

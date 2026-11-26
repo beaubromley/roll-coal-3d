@@ -1444,7 +1444,7 @@ export class Game {
         this.queue.splice(this.queue.indexOf(m), 1); this.beginMission(m); break;
       }
     }
-    if (!this.active && quiet) { const s = this.sideList.find((m) => m.auto && !this.doneIds.has(m.id) && this.realT - (this.declined.get(m.id) ?? -1e9) > 360 && m.auto()); if (s) { this.beginMission(s, { offer: true }); return; } }
+    if (!this.active && quiet) { const s = this.sideList.find((m) => m.auto && !this.doneIds.has(m.id) && !this.seenJob(m.id) && m.auto()); if (s) { this.beginMission(s, { offer: true }); return; } }   // offered once only: after that it waits in the tally book
     if (!this.active) {
       const head = this.queue.find((m) => !m.priority);
       const held = this.sim.s.depth > 8000 && !this.flags.chainDone;   // close to TD: the remaining jobs start straight away instead of waiting on their timers

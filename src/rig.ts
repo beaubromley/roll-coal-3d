@@ -17,7 +17,7 @@ export interface RigFrame {
   depth: number; startDepth: number; rotating: boolean; connecting: boolean; tripping: boolean;
   tripFrac: number; standsRacked: number; night: number; t: number; pumpsOn: boolean; flaring: boolean; kicking?: boolean; laser?: boolean;
   /** live data for the cabin monitors; `near` = the player is close enough for them to be worth redrawing */
-  screens?: import("./screens").ScreenData; near?: boolean;
+  screens?: import("./screens").ScreenData; near?: boolean; nearDesk?: boolean;
 }
 
 export interface Rig {
@@ -285,7 +285,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     door: { side: "+z", c: 4.8, w: 1.3 } });
   let scrN = 0;
   /** a live monitor: black bezel and a unique emissive material whose canvas texture is redrawn from the sim */
-  const tvScreens = new Screens(scene);
+  const tvScreens = new Screens(scene), deskScreens = new Screens(scene);
+  let deskT = 0;
   let tvT = 0, lastScr: import("./screens").ScreenData | undefined;
   const monitorList: Rig["monitors"] = [];
   const monitor = (face: "+x" | "-x", cx: number, cy: number, cz: number, w: number, h: number, kind: ScreenKind, scr: Screens = screens, slot?: [number, number], span?: number, size?: [number, number]) => {
@@ -1154,8 +1155,10 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("wood", 32.7, 0.8, 8.4, 33.4, 1.55, 16.4, true);             // east run
   b.slab("wood", 30.2, 0.8, 8.4, 32.7, 1.55, 9.4, true);              // south run
   b.slab("wood", 30.2, 0.8, 9.4, 31.0, 1.55, 11.4, true);             // front run, under the window
-  b.slab("black", 30.28, 1.55, 9.7, 30.4, 2.1, 10.7); b.slab("screen", 30.4, 1.6, 9.75, 30.44, 2.05, 10.65);   // the computer, facing into the room, on the front run
-  b.slab("black", 30.5, 1.55, 9.8, 30.95, 1.6, 10.6);                 // keyboard
+  // the computer: two monitors side by side on the front run, facing into the room. Left: a WellView-style daily report. Right: the old arcade game.
+  monitor("+x", 30.4, 2.0, 9.95, 0.85, 0.53, "wellview", deskScreens, undefined, undefined, [768, 480]);
+  monitor("+x", 30.4, 2.0, 10.9, 0.85, 0.53, "rcmh1", deskScreens, undefined, undefined, [768, 480]);
+  b.slab("black", 30.55, 1.55, 10.15, 30.95, 1.6, 10.7);               // keyboard
   b.slab("steel", 30.2, 0.8, 17.2, 31.6, 1.3, 19.8, true);            // bunk
   b.slab("white", 30.25, 1.3, 17.25, 31.55, 1.45, 19.75);
   // the bedroom: a partition across the north end with a doorway (the door stands open, swung back into the bedroom)
@@ -1610,6 +1613,7 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
     wmRotor.rotation.z += wmSpin * dt;
     // cabin monitors: live data, redrawn about three times a second and only when someone is near
     scrT -= dt; if (scrT <= 0 && f.near && f.screens) { scrT = 0.33; screens.update(f.screens); }
+    deskT -= dt; if (deskT <= 0 && f.nearDesk && f.screens) { deskT = 0.1; deskScreens.update({ ...f.screens, t: f.t }); }   // the desk monitors animate smoothly, only while you are near the trailer
     tvT -= dt; if (tvT <= 0) { tvT = 0.5; if (f.screens) lastScr = f.screens; if (lastScr) tvScreens.update({ ...lastScr, t: f.t }); }
     // iron roughneck swings in on connection
     rough.rotation.y = f.connecting ? -0.6 : 0;

@@ -175,9 +175,10 @@ engine.runRenderLoop(() => {
     rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
     laser: sim.laser && s.mode === "drilling" && s.rop > 0, connecting: s.mode === "connection", tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), tripFrac: 0,
     standsRacked: s.standsRacked, night: game.nightFactor, t: clock, pumpsOn: s.mode !== "idle", flaring: true, kicking: s.kick.active || s.kick.shut || s.mode === "killing",
+    nearDesk: Math.hypot(player.pos.x - rig.spots.desk.x, player.pos.z - rig.spots.desk.z) < 14 && player.pos.y < 6,   // the desk in the company man trailer
     near: (Math.hypot(player.pos.x - 4.8, player.pos.z + 3) < 22 && player.pos.y > 4) || (game.astMode && !!game.arm.site && Math.hypot(player.pos.x - game.arm.console.x, player.pos.z - game.arm.console.z) < 40),
     screens: { depth: s.depth, wob: s.wob, rop: s.rop, spp: s.spp, flow: s.flow, pit: s.pit, mw: s.mw, mode: s.mode, rotating: s.mode === "drilling" && s.wob > 0 && s.rop > 0,
-      kicking: s.kick.active, dd: game.dd, t: clock,
+      kicking: s.kick.active, dd: game.dd, t: clock, cost: s.cost, simT: s.t,
       wobSet: s.auto.on ? s.auto.wob : s.wobTarget,   // the set point, not the autodriller's moment-to-moment output
       motor: s.motor, dp: s.dp, torque: s.torque, tripping: s.mode === "tripping" || (s.mode === "casing" && s.casing.phase === "run"), tripOut: s.mode === "tripping" ? sim.tripGoingOut : false, bitDepth: s.mode === "casing" ? s.depth * (s.casing.phase === "run" ? s.casing.progress : 1) : sim.bitDepth, casing: s.mode === "casing" || s.mode === "done" ? s.casing.phase : "none",
       auto: { on: s.auto.on, limit: s.auto.limit, rop: s.rop, wob: s.wob, dp: s.dp, tq: s.torque, sp: { rop: s.auto.rop, wob: s.auto.wob, dp: s.auto.dp, tq: s.auto.torque ?? 10000 } } },

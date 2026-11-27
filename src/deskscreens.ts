@@ -52,27 +52,56 @@ export function drawWellView(c: CanvasRenderingContext2D, d: ScreenData) {
   c.fillStyle = "#2f4052"; c.fillRect(0, 151, W, 1); c.fillStyle = "#9aaec1"; c.font = "6px sans-serif"; c.fillText(`Report 1 of 1   ·   printed by nobody   ·   page ${(Math.floor(d.t / 4) % 3) + 1}/3`, 5, 156);
 }
 
-/** a stand-in arcade attract screen for the original "Roll Coal, Make Hole": a pixel rig, a bit going down, the title and a blinking prompt */
+/** The original "Roll Coal, Make Hole" driller's console: the drilling recorder, the drilling window, the mode buttons. It runs a little self-playing demo. */
 export function drawRcmh1(c: CanvasRenderingContext2D, d: ScreenData) {
-  const t = d.t, px = (col: string, x: number, y: number, w: number, h: number) => { c.fillStyle = col; c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
-  // sky and ground, retro low-res
-  px("#241a3a", 0, 0, W, 70); px("#5a2e5a", 0, 40, W, 16); px("#b8505a", 0, 56, W, 10); px("#f0a050", 0, 66, W, 6);
-  px("#6a4a32", 0, 72, W, 20); px("#4a3322", 0, 92, W, 68);
-  for (let i = 0; i < 6; i++) px("#3a281a", 0, 100 + i * 11, W, 1);                         // strata lines
-  // rig (left): derrick triangle + floor
-  const bx = 60;
-  for (let y = 12; y < 72; y += 3) { const half = 3 + (y - 12) * 0.16; px("#e07a10", bx - half, y, 1.5, 3); px("#e07a10", bx + half - 1.5, y, 1.5, 3); if ((y / 3) % 2 === 0) px("#d9d9d9", bx - half, y, half * 2, 1); }
-  px("#e8b923", bx - 8, 10, 16, 3); px("#ff4a4a", bx - 1, 6, 2, 4); px("#3a4a78", bx - 22, 70, 44, 4);
-  // drill string and bit going down, looping
-  const depth = 20 + ((t * 18) % 70);
-  px("#aab4be", bx - 1, 74, 2, depth - 12); px("#e8b923", bx - 3, 74 + depth - 14, 6, 6);
-  for (let i = 0; i < 4; i++) px("#ffe27a", bx - 4 + ((t * 30 + i * 7) % 8), 74 + depth - 4 + ((i * 3) % 4), 1, 1);   // sparks
-  // title and depth meter
-  c.textBaseline = "middle"; c.textAlign = "center"; c.fillStyle = "#ffd24a"; c.font = "bold 15px monospace"; c.fillText("ROLL COAL,", 166, 28);
-  c.fillStyle = "#ff6a2a"; c.fillText("MAKE HOLE", 166, 46);
-  c.fillStyle = "#cfd8e0"; c.font = "bold 8px monospace"; c.textAlign = "left"; c.fillText("DEPTH", 130, 80); c.fillStyle = "#76ff03"; c.font = "bold 12px monospace"; c.fillText(String(Math.round(1000 + depth * 90 + (t * 40) % 90)).padStart(5, "0") + " FT", 130, 93);
-  c.fillStyle = "#cfd8e0"; c.font = "bold 8px monospace"; c.fillText("SCORE", 130, 108); c.fillStyle = "#ffd24a"; c.font = "bold 10px monospace"; c.fillText(String(Math.floor(t * 120) % 1000000).padStart(6, "0"), 130, 120);
-  if (Math.floor(t * 2) % 2 === 0) { c.textAlign = "center"; c.fillStyle = "#fff"; c.font = "bold 9px monospace"; c.fillText("PRESS START", 190, 148); }
-  // scanlines for the CRT look
-  c.fillStyle = "rgba(0,0,0,0.18)"; for (let y = 0; y < H; y += 2) c.fillRect(0, y, W, 1);
+  const t = d.t, G = "#8aff4a", DG = "#2d6a1c", INK = "#14100c", PX = "'Press Start 2P', ui-monospace, monospace";
+  const box = (x: number, y: number, w: number, h: number, fill: string, stroke?: string, lw = 1) => { c.fillStyle = fill; c.fillRect(x, y, w, h); if (stroke) { c.strokeStyle = stroke; c.lineWidth = lw; c.strokeRect(x + lw / 2, y + lw / 2, w - lw, h - lw); } };
+  const text = (str: string, x: number, y: number, size: number, col: string, align: CanvasTextAlign = "left") => { c.font = `${size}px ${PX}`; c.fillStyle = col; c.textAlign = align; c.textBaseline = "middle"; c.fillText(str, x, y); };
+  const mode = Math.floor(t / 4) % 4;                       // 0,2 rotate  1 slide left  3 slide right
+  const sliding = mode === 1 ? -1 : mode === 3 ? 1 : 0;
+  const rop = 250 + 40 * Math.sin(t * 0.7) + (sliding ? -90 : 0), wob = 15 + (sliding ? -3 : 0) + Math.sin(t) * 0.6, dp = 780 + 70 * Math.sin(t * 0.9);
+  const depth = 730 + ((t * 9) % 400);
+  box(0, 0, 256, 160, INK);
+  // drilling recorder: four traces scroll across a green grid
+  box(3, 3, 250, 41, "#1a130d", "#4a3828", 1);
+  text("\u25C6 DRILLING RECORDER \u25C6", 128, 8, 5.5, G, "center");
+  box(8, 13, 240, 28, "#07120a");
+  c.strokeStyle = "rgba(60,150,70,0.35)"; c.lineWidth = 0.5;
+  for (let i = 0; i <= 20; i++) { c.beginPath(); c.moveTo(8 + i * 12, 13); c.lineTo(8 + i * 12, 41); c.stroke(); }
+  for (let i = 0; i <= 4; i++) { c.beginPath(); c.moveTo(8, 13 + i * 7); c.lineTo(248, 13 + i * 7); c.stroke(); }
+  const trace = (col: string, base: number, amp: number, f: number, ph: number) => { c.strokeStyle = col; c.lineWidth = 1.1; c.beginPath(); for (let x = 0; x <= 240; x += 3) { const tt = t * 1.4 - (240 - x) * 0.04; const y = base - amp * Math.sin(tt * f + ph) - amp * 0.4 * Math.sin(tt * f * 2.3 + ph * 2); x ? c.lineTo(8 + x, y) : c.moveTo(8 + x, y); } c.stroke(); };
+  trace("#9be84a", 20, 2.2, 0.6, 0); trace("#e8d34a", 25, 1.6, 0.5, 1); trace("#e254d8", 31, 2.6, 0.8, 2); trace("#4fe0e8", 37, 0.6, 0.3, 3);
+  text("ROP", 10, 16, 3.6, "#9be84a"); text("WOB", 10, 22, 3.6, "#e8d34a"); text("DIFF P", 10, 28, 3.6, "#e254d8"); text("FLOW", 10, 34, 3.6, "#4fe0e8");
+  // readouts
+  const ro: [string, string, string][] = [["DEPTH", Math.round(depth) + " ft", "#4fe0e8"], ["ROP", Math.round(rop) + " ft/hr", "#9be84a"], ["WOB", wob.toFixed(0) + " klbs", "#9be84a"], ["DIFF PRESS", Math.round(dp) + " psi", "#e254d8"], ["FLOW", "550 gpm", "#4fe0e8"], ["MUD WT", "8.5 ppg", "#cfd8e0"]];
+  ro.forEach(([k, v, col], i) => { const x = 8 + i * 41; text(k, x, 48, 3.4, col); text(v, x, 54, 4.2, col); });
+  // the hole: orange above ground, dark rock below, dotted squares
+  box(0, 59, 256, 14, "#e8a46a"); box(0, 73, 256, 47, "#202020");
+  c.fillStyle = "rgba(255,255,255,0.18)"; for (let y = 61; y < 73; y += 10) for (let x = 14; x < 256; x += 15) c.fillRect(x, y, 3, 3);
+  c.fillStyle = "rgba(255,255,255,0.14)"; for (let y = 78; y < 118; y += 10) for (let x = 6; x < 256; x += 15) c.fillRect(x, y, 3, 3);
+  const bx = 128 + sliding * 6 * Math.sin((t % 4) * 0.8), by = 78 + ((t * 8) % 30);
+  box(bx - 1.5, 59, 3, by - 59, "#8aa0b2"); box(bx - 4, by - 4, 8, 6, "#46525e"); box(bx - 5, by + 2, 10, 2.5, "#2a2f35");
+  c.strokeStyle = "#ff4a4a"; c.lineWidth = 1; c.setLineDash([3, 2]); c.beginPath(); c.moveTo(128, by + 6); c.lineTo(128, 118); c.stroke(); c.setLineDash([]);
+  // drilling window
+  box(4, 60, 66, 56, "#0d1410", "#3a4a3a", 1); text("DRILLING WINDOW", 37, 64, 3.8, G, "center");
+  c.fillStyle = "rgba(60,140,60,0.28)"; c.fillRect(24, 68, 22, 44);
+  c.strokeStyle = "rgba(120,200,120,0.5)"; c.lineWidth = 0.5; c.setLineDash([2, 2]); c.beginPath(); c.moveTo(22, 68); c.lineTo(22, 112); c.moveTo(48, 68); c.lineTo(48, 112); c.stroke(); c.setLineDash([]);
+  const wx = 35 + sliding * 9 * Math.sin((t % 4) * 0.8) + Math.sin(t * 2.3) * 1.2;
+  c.strokeStyle = "#ff4a4a"; c.lineWidth = 1; c.beginPath(); c.moveTo(35, 68); c.lineTo(35, 112); c.stroke();
+  c.fillStyle = "#e8f0f4"; c.beginPath(); c.moveTo(wx - 3, 86); c.lineTo(wx + 3, 86); c.lineTo(wx, 92); c.closePath(); c.fill();
+  text(Math.round(Math.abs(wx - 35) * 1.3 + 13) + " ft", 37, 110, 3.8, "#cfeccf", "center");
+  box(190, 62, 62, 14, "#0a1208", G, 1); text(sliding ? (sliding < 0 ? "SLIDING L" : "SLIDING R") : "ROTATING", 221, 69.5, 5, G, "center");
+  // console
+  c.fillStyle = G; c.fillRect(0, 120, 256, 1.2);
+  text("DRILLER'S CONSOLE", 6, 127, 5.5, G); box(196, 122, 36, 10, "#0e1a0a", G, 1); text("PAUSE", 214, 127.5, 3.8, G, "center"); box(236, 122, 14, 10, "#0e1a0a", G, 1); text("\u2013", 243, 127, 5, G, "center");
+  c.fillStyle = G; c.fillRect(0, 133, 256, 0.8);
+  const btn = (x: number, y: number, w: number, h: number, l1: string, on = false) => { box(x, y, w, h, on ? G : "#0e1a0a", G, 1); text(l1, x + w / 2, y + h / 2, 3.4, on ? INK : G, "center"); };
+  text("DRILLING MODE", 33, 137, 3.2, "#9fd88a", "center");
+  btn(6, 140, 20, 16, "SLIDE L", sliding < 0); btn(28, 140, 20, 16, "ROTATE", sliding === 0); btn(50, 140, 20, 16, "SLIDE R", sliding > 0);
+  text("WOB: " + wob.toFixed(0) + " KLBS", 98, 137, 3.2, "#9fd88a", "center"); btn(80, 140, 17, 16, "WOB +", true); btn(99, 140, 17, 16, "WOB -");
+  text("FLOW: 550 GPM", 146, 137, 3.2, "#9fd88a", "center"); btn(128, 140, 17, 16, "FLOW +"); btn(147, 140, 17, 16, "FLOW -");
+  text("MUD WT: 8.5 PPG", 196, 137, 3.2, "#9fd88a", "center"); btn(178, 140, 17, 16, "MW +"); btn(197, 140, 17, 16, "MW -");
+  text("LCM: 0", 234, 137, 3.2, "#9fd88a", "center"); btn(218, 140, 15, 16, "LCM +"); btn(235, 140, 15, 16, "LCM -");
+  // CRT scanlines
+  c.fillStyle = "rgba(0,0,0,0.16)"; for (let y = 0; y < H; y += 2) c.fillRect(0, y, W, 1);
 }

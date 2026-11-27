@@ -1155,8 +1155,8 @@ export function buildRig(scene: Scene, opts: { bump?: boolean; kit?: Kit | null 
   b.slab("wood", 32.7, 0.8, 8.4, 33.4, 1.55, 16.4, true);             // east run
   b.slab("wood", 30.2, 0.8, 8.4, 32.7, 1.55, 9.4, true);              // south run
   b.slab("wood", 30.2, 0.8, 9.4, 31.0, 1.55, 11.4, true);             // front run, under the window
-  // the computer: two monitors side by side on the front run, facing into the room. Left: a WellView-style daily report. Right: the old arcade game.
-  monitor("+x", 30.4, 2.0, 9.95, 0.85, 0.53, "wellview", deskScreens, undefined, undefined, [768, 480]);
+  // the computer: two monitors side by side on the front run, facing into the room. Left: a daily drilling report. Right: the old arcade game.
+  monitor("+x", 30.4, 2.0, 9.95, 0.85, 0.53, "report", deskScreens, undefined, undefined, [768, 480]);
   monitor("+x", 30.4, 2.0, 10.9, 0.85, 0.53, "rcmh1", deskScreens, undefined, undefined, [768, 480]);
   b.slab("black", 30.55, 1.55, 10.15, 30.95, 1.6, 10.7);               // keyboard
   b.slab("steel", 30.2, 0.8, 17.2, 31.6, 1.3, 19.8, true);            // bunk

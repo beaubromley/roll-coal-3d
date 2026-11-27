@@ -3,7 +3,7 @@ import { drawAutoBars, type AutoView } from "./recorder";
 import { formationAt, WELL } from "./sim";
 import { drawDd } from "./ddscreens";
 import type { Dd } from "./dd";
-import { drawWellView, drawRcmh1 } from "./deskscreens";
+import { drawReport, drawRcmh1 } from "./deskscreens";
 
 /** Live data for the cabin's monitors. */
 export interface ScreenData {
@@ -11,7 +11,7 @@ export interface ScreenData {
   rotating: boolean; kicking: boolean; dd: Dd; t: number; auto?: AutoView; wobSet?: number; motor?: number; dp?: number; torque?: number; tripping?: boolean; tripOut?: boolean; bitDepth?: number; cost?: number; simT?: number; casing?: "run" | "cement" | "done" | "none";
 }
 
-export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac" | "systems" | "dirq" | "ddq" | "weight" | "wellview" | "rcmh1";
+export type ScreenKind = "params" | "trends" | "pits" | "alarms" | "pumps" | "hookload" | "survey" | "toolface" | "gamma" | "mwd" | "steer" | "plan" | "edr" | "news" | "auto" | "geo" | "ac" | "systems" | "dirq" | "ddq" | "weight" | "report" | "rcmh1";
 
 const W = 256, H = 160;
 const BG = "#0b0e12", GRID = "rgba(120,140,160,0.22)", CY = "#2fd0d0", GR = "#22c06a", AM = "#e8d34a", RD = "#ff6a7a", TX = "#e6ebf0", DIM = "#8d98a5";
@@ -72,7 +72,7 @@ function quad(c: CanvasRenderingContext2D, d: ScreenData, kinds: ScreenKind[]) {
 
 function draw(kind: ScreenKind, c: CanvasRenderingContext2D, d: ScreenData) {
   c.lineWidth = 1; c.textBaseline = "middle";
-  if (kind === "wellview") { drawWellView(c, d); return; }
+  if (kind === "report") { drawReport(c, d); return; }
   if (kind === "rcmh1") { drawRcmh1(c, d); return; }
   if (kind === "systems") { quad(c, d, ["pits", "pumps", "hookload", "alarms"]); return; }
   if (kind === "dirq") { quad(c, d, ["steer", "plan", "geo", "ac"]); return; }

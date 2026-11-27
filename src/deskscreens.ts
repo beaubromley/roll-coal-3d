@@ -6,13 +6,13 @@ const W = 256, H = 160;
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
-/** WellView-style daily drilling report. */
-export function drawWellView(c: CanvasRenderingContext2D, d: ScreenData) {
+/** daily drilling report. */
+export function drawReport(c: CanvasRenderingContext2D, d: ScreenData) {
   const simT = d.simT ?? 0, cs = clockString(simT), cost = d.cost ?? 0;
   c.fillStyle = "#0f1822"; c.fillRect(0, 0, W, H);
   // title bar
   c.fillStyle = "#16467a"; c.fillRect(0, 0, W, 17);
-  c.fillStyle = "#fff"; c.font = "bold 9px sans-serif"; c.textBaseline = "middle"; c.textAlign = "left"; c.fillText("WellView · Daily Drilling Report", 5, 8.5);
+  c.fillStyle = "#fff"; c.font = "bold 9px sans-serif"; c.textBaseline = "middle"; c.textAlign = "left"; c.fillText("Daily Drilling Report", 5, 8.5);
   c.textAlign = "right"; c.font = "8px sans-serif"; c.fillText(`Day ${cs.day}  ${cs.hhmm}`, W - 5, 8.5);
   // well header block
   c.fillStyle = "#16212d"; c.fillRect(0, 17, W, 28);

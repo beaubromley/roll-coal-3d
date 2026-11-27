@@ -6,6 +6,12 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#07040b" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Roll Coal 2" />
 <title>Roll Coal, Make Hole 2: Company Man</title>
 <meta name="description" content="Open rig. Narrow wellbore. A first-person-ish satire of life as the Company Man on a land drilling rig." />
 <style>
@@ -337,6 +343,10 @@
   body.touch #radio { left: max(12px, env(safe-area-inset-left)); top: 112px; bottom: auto; width: 40vw; max-width: 330px; }
   body.touch #radio .rmsg:nth-last-child(n+3) { display: none; }
   body.touch .rmsg img { width: 30px; height: 30px; } body.touch .rmsg .txt { font-size: 11px; } body.touch .rmsg .who { font-size: 9px; }
+  /* the held-item bar: on a phone it sits in a compact row along the top centre, clear of the RUN / CAM / JUMP / USE buttons on the right */
+  body.touch #itembar { right: auto !important; bottom: auto !important; left: 50% !important; top: max(8px, env(safe-area-inset-top)) !important; transform: translateX(-50%); flex-direction: row !important; min-width: 0 !important; gap: 4px !important; }
+  body.touch #itembar > div { padding: 4px 8px !important; font-size: 11px !important; white-space: nowrap; }
+  body.touch #itembar kbd { display: none !important; }
   body.touch #prompt { display: none !important; }   /* on touch the action label lives only on the right, above the USE button */
   body.touch #alert { top: 104px; font-size: 16px; padding: 5px 12px; }
   body.touch #toast { top: 18%; }

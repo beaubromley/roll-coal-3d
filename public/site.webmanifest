@@ -1,0 +1,16 @@
+{
+  "name": "Roll Coal, Make Hole 2: Company Man",
+  "short_name": "Roll Coal 2",
+  "description": "A 3D satire of life as the Company Man on a land drilling rig.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07040b",
+  "theme_color": "#07040b",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
